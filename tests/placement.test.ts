@@ -4,7 +4,7 @@ import { RESOURCES } from '../src/data/resources';
 import { makeCollider, type Collider } from '../src/sim/colliders';
 import { countItem } from '../src/sim/inventory';
 import { checkPlacement, type PlacementEnv } from '../src/sim/placement';
-import { fakeTerrain, colliderQuery, findValidSpot, give, quietSim, run, teleport } from './helpers';
+import { fakeTerrain, colliderQuery, findValidSpot, give, giveRecipe, quietSim, run, teleport } from './helpers';
 
 /** A dry point on the spawn-side shore and a water point ~3m out into the lake. */
 function shoreline(sim: ReturnType<typeof quietSim>) {
@@ -87,7 +87,8 @@ describe('placement in the real world', () => {
   it('consumes ingredients only when placement succeeds', () => {
     const sim = quietSim();
     sim.state.known.push('campfire');
-    give(sim, { stone: 5, stick: 6, fiber: 1 });
+    giveRecipe(sim, 'campfire');
+    give(sim, { stick: 2 });
     expect(sim.beginPlacement('campfire')).toBe(true);
 
     // invalid: in the lake
@@ -97,7 +98,7 @@ describe('placement in the real world', () => {
     expect(sim.placement!.valid).toBe(false);
     expect(sim.placement!.reason).toBe('water');
     expect(sim.confirmPlacement()).toBe(false);
-    expect(countItem(sim.state.inventory, 'stone')).toBe(5);
+    expect(countItem(sim.state.inventory, 'stone')).toBe(25);
     expect(sim.state.structures).toHaveLength(0);
 
     // valid spot near spawn
@@ -113,7 +114,7 @@ describe('placement in the real world', () => {
     expect(sim.placement).toBeNull();
 
     // the new campfire now blocks a second one at the same spot
-    give(sim, { stone: 5, stick: 4, fiber: 1 });
+    giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.setPlacementAt(spot.x, spot.z);
     expect(sim.placement!.reason).toBe('structure');
@@ -139,7 +140,7 @@ describe('placement in the real world', () => {
     expect(checkPlacement(env, 'campfire', r.x, r.z, 0).valid).toBe(true);
 
     sim.state.known.push('campfire');
-    give(sim, { stone: 5, stick: 4, fiber: 1 });
+    giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.setPlacementAt(r.x, r.z);
     expect(sim.confirmPlacement()).toBe(true);
@@ -168,17 +169,17 @@ describe('placement in the real world', () => {
   it('cancelling placement keeps every ingredient', () => {
     const sim = quietSim();
     sim.state.known.push('campfire');
-    give(sim, { stone: 5, stick: 4, fiber: 1 });
+    giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.cancelPlacement();
     expect(sim.placement).toBeNull();
-    expect(countItem(sim.state.inventory, 'stone')).toBe(5);
+    expect(countItem(sim.state.inventory, 'stone')).toBe(25);
   });
 
   it('reports missing ingredients if they disappear mid-placement', () => {
     const sim = quietSim();
     sim.state.known.push('campfire');
-    give(sim, { stone: 5, stick: 4, fiber: 1 });
+    giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.state.inventory.slots.fill(null);
     const spot = findValidSpot(sim, 'campfire');

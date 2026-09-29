@@ -153,7 +153,19 @@ describe('energy', () => {
     expect(n.exhausted).toBe(false);
   });
 
-  it('is generous: a normal hour of mostly walking with some sprinting never runs dry', () => {
+  // round 3 values, before energy was made a real resource again
+  const ROUND3 = { walk: 0.05, sprint: 0.5, swim: 0.12, swing: 0.35, gather: 0.18, craft: 1.5, build: 3 };
+
+  it('walking drains a little and running drains more than it used to', () => {
+    expect(E.walkDrainPerSec).toBeGreaterThan(ROUND3.walk);
+    expect(E.sprintDrainPerSec).toBeGreaterThan(ROUND3.sprint);
+    const walk = createNeeds();
+    updateEnergy(walk, 'walk', 60);
+    expect(100 - walk.energy).toBeCloseTo(E.walkDrainPerSec * 60);
+    expect(100 - walk.energy).toBeLessThan(10);
+  });
+
+  it('an hour of mostly walking with some sprinting now wears you down without rest or food', () => {
     const n = createNeeds();
     let min = 100;
     for (let cycle = 0; cycle < 60; cycle++) {
@@ -162,10 +174,18 @@ describe('energy', () => {
       for (let i = 0; i < 12; i++) updateEnergy(n, 'idle', 1);
       min = Math.min(min, n.energy);
     }
-    expect(min).toBeGreaterThan(60);
+    expect(min).toBeLessThan(25);
+    // the first ten minutes are still comfortable
+    const early = createNeeds();
+    for (let cycle = 0; cycle < 10; cycle++) {
+      for (let i = 0; i < 42; i++) updateEnergy(early, 'walk', 1);
+      for (let i = 0; i < 6; i++) updateEnergy(early, 'sprint', 1);
+      for (let i = 0; i < 12; i++) updateEnergy(early, 'idle', 1);
+    }
+    expect(early.energy).toBeGreaterThan(60);
   });
 
-  it('swimming drains more than walking but far less than sprinting; a long swim is fine', () => {
+  it('swimming drains more than walking but less than sprinting; a five-minute swim is fine', () => {
     const walk = createNeeds();
     const swim = createNeeds();
     const sprint = createNeeds();
@@ -176,25 +196,28 @@ describe('energy', () => {
     expect(swim.energy).toBeLessThan(walk.energy);
     expect(swim.energy).toBeGreaterThan(sprint.energy);
     const long = createNeeds();
-    updateEnergy(long, 'swim', 600);
+    updateEnergy(long, 'swim', 300);
     expect(long.energy).toBeGreaterThan(0);
   });
 
-  it('tasks drain less than before; crafting and building now cost a little', () => {
-    expect(E.swingCost).toBeLessThan(0.5);
-    expect(E.gatherCost).toBeLessThan(0.25);
-    expect(E.craftCost).toBeGreaterThan(0);
-    expect(E.buildCost).toBeGreaterThan(E.craftCost);
+  it('every task costs more than before, and tool actions all cost something', () => {
+    expect(E.swingCost).toBeGreaterThan(ROUND3.swing);
+    expect(E.gatherCost).toBeGreaterThan(ROUND3.gather);
+    expect(E.craftCost).toBeGreaterThan(ROUND3.craft);
+    expect(E.buildCost).toBeGreaterThan(ROUND3.build);
+    expect(E.castCost).toBeGreaterThan(0);
+    expect(E.hookCost).toBeGreaterThan(0);
   });
 
-  it('about three minutes of continuous sprinting from full is possible', () => {
+  it('about two minutes of continuous sprinting empties a full bar', () => {
     const n = createNeeds();
     let t = 0;
     while (n.energy > 0 && t < 1000) {
       updateEnergy(n, 'sprint', 1);
       t++;
     }
-    expect(t).toBeGreaterThan(150);
+    expect(t).toBeGreaterThan(100);
+    expect(t).toBeLessThan(150);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { GameState } from '../sim/state';
+import { RECIPE_BY_ID } from './recipes';
 
 export interface Objective {
   id: string;
@@ -11,7 +12,8 @@ export interface Objective {
 const got = (s: GameState, item: keyof GameState['stats']['gathered']) => s.stats.gathered[item] ?? 0;
 const made = (s: GameState, id: string) => s.stats.crafted[id] ?? 0;
 const ev = (s: GameState, id: string) => s.stats.events[id] ?? 0;
-const MEALS = ['skewer', 'stew', 'berryTea', 'cedarTrout'];
+const MEALS = ['skewer', 'stew', 'berryTea', 'cedarTrout', 'troutChowder', 'troutSkewer'];
+const CANTEEN_BARK = RECIPE_BY_ID.canteen.inputs.find((i) => i.item === 'bark')!.count;
 
 /** Onboarding chain: gather -> tools -> fire -> water -> meals -> hunting -> chopping -> shelter -> sleep. */
 export const OBJECTIVES: Objective[] = [
@@ -46,7 +48,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'canteen', title: 'Make a Bark Canteen',
     hint: 'Peel bark from white paper birches by hand, twist fiber into cordage, then craft a canteen.',
     done: (s) => made(s, 'canteen') >= 1,
-    progress: (s) => `Birch bark ${Math.min(3, got(s, 'bark'))}/3`,
+    progress: (s) => `Birch bark ${Math.min(CANTEEN_BARK, got(s, 'bark'))}/${CANTEEN_BARK}`,
   },
   {
     id: 'boil', title: 'Fill your canteen and boil water',

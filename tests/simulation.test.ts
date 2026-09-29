@@ -7,7 +7,7 @@ import { createAnimal } from '../src/sim/animals';
 import { countItem } from '../src/sim/inventory';
 import { lookDir } from '../src/sim/movement';
 import type { Simulation } from '../src/sim/simulation';
-import { drain, findValidSpot, give, quietSim, run, teleport } from './helpers';
+import { buildFresh, drain, give, giveRecipe, quietSim, run, teleport } from './helpers';
 
 function nearestResource(sim: Simulation, kind: keyof typeof RESOURCES): number {
   const p = sim.state.player;
@@ -41,13 +41,7 @@ function nearestTree(sim: Simulation, species?: string): number {
 }
 
 function placeCampfire(sim: Simulation) {
-  sim.state.known.push('campfire');
-  give(sim, { stone: 5, stick: 4, fiber: 1 });
-  sim.beginPlacement('campfire');
-  const spot = findValidSpot(sim, 'campfire');
-  sim.setPlacementAt(spot.x, spot.z);
-  expect(sim.confirmPlacement()).toBe(true);
-  return sim.state.structures[sim.state.structures.length - 1];
+  return buildFresh(sim, 'campfire');
 }
 
 /** Aim the camera at a world point. */
@@ -188,7 +182,7 @@ describe('task energy', () => {
     sim.perform({ kind: 'resource', index: nearestResource(sim, 'stonePile'), dist: 1 });
     expect(sim.state.needs.energy).toBeCloseTo(50 - E.gatherCost);
     sim.state.needs.energy = 50;
-    give(sim, { fiber: 3 });
+    giveRecipe(sim, 'cordage');
     expect(sim.craft('cordage').ok).toBe(true);
     expect(sim.state.needs.energy).toBeCloseTo(50 - E.craftCost);
     sim.state.needs.energy = 50;
@@ -202,7 +196,7 @@ describe('task energy', () => {
     expect(sim.craft('cordage').ok).toBe(false);
     expect(sim.state.needs.energy).toBe(50);
     sim.state.needs.energy = 0.5;
-    give(sim, { fiber: 3 });
+    giveRecipe(sim, 'cordage');
     expect(sim.craft('cordage').ok).toBe(true);
     expect(sim.state.needs.energy).toBe(0);
   });
@@ -390,13 +384,7 @@ describe('hunting', () => {
 
 describe('sleep', () => {
   function withShelter(sim: Simulation) {
-    sim.state.known.push('leanTo');
-    give(sim, { log: 3, stick: 4, fiber: 4, cordage: 1 });
-    sim.beginPlacement('leanTo');
-    const spot = findValidSpot(sim, 'leanTo');
-    sim.setPlacementAt(spot.x, spot.z);
-    expect(sim.confirmPlacement()).toBe(true);
-    return sim.state.structures[0];
+    return buildFresh(sim, 'leanTo');
   }
 
   it('is only allowed in the evening/night', () => {
@@ -510,6 +498,7 @@ describe('onboarding objectives', () => {
     expect(sim.state.objective).toBe(1);
     res('fern', 3);
     expect(sim.state.objective).toBe(2);
+    giveRecipe(sim, 'axe');
     expect(sim.craft('axe').ok).toBe(true);
     collect();
     placeCampfire(sim);
@@ -523,8 +512,9 @@ describe('onboarding objectives', () => {
       sim.state.trees[b].bark = 2;
       sim.perform({ kind: 'tree', index: b, dist: 1 });
     }
-    give(sim, { fiber: 3 });
+    giveRecipe(sim, 'cordage');
     expect(sim.craft('cordage').ok).toBe(true);
+    giveRecipe(sim, 'canteen');
     expect(sim.craft('canteen').ok).toBe(true);
     collect();
     sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
@@ -543,11 +533,7 @@ describe('onboarding objectives', () => {
     const tree = nearestTree(sim, 'fir');
     for (let k = 0; k < TREES.fir.hp + TREES.fir.logs * BALANCE.trees.cutsPerLog; k++) sim.perform({ kind: 'tree', index: tree, dist: 1 });
     collect();
-    give(sim, { log: 3, stick: 4, fiber: 4, cordage: 1 });
-    sim.beginPlacement('leanTo');
-    const spot = findValidSpot(sim, 'leanTo');
-    sim.setPlacementAt(spot.x, spot.z);
-    expect(sim.confirmPlacement()).toBe(true);
+    buildFresh(sim, 'leanTo');
     collect();
     sim.devSetHour(21);
     const hut = sim.state.structures.find((s) => s.prefab === 'leanTo')!;

@@ -4,7 +4,7 @@ import type { SpeciesId } from '../data/species';
 
 export const STATE_VERSION = 2;
 
-export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting';
+export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
 export interface Wear {
   dur: number;
