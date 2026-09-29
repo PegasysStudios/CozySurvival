@@ -190,6 +190,34 @@ describe('task energy', () => {
     expect(sim.state.needs.energy).toBeCloseTo(50 - E.buildCost);
   });
 
+  it('every tool action costs energy: swinging the axe, spear or torch at nothing, and loosing an arrow', () => {
+    const sim = quietSim();
+    sim.state.tools.push('axe', 'spear', 'torch', 'bow');
+    const sky = { pitch: 1.3 };
+    for (const tool of ['axe', 'spear', 'torch'] as const) {
+      sim.selectTool(tool);
+      run(sim, 1);
+      sim.state.needs.energy = 50;
+      const ev = run(sim, 1 / 60, { ...sky, primary: true, primaryPressed: true });
+      expect(ev.some((e) => e.type === 'swing' && e.tool === tool)).toBe(true);
+      expect(sim.state.needs.energy).toBeCloseTo(50 - E.swingCost, 1);
+    }
+    sim.selectTool('hands');
+    run(sim, 1);
+    sim.state.needs.energy = 50;
+    run(sim, 1 / 60, { ...sky, primary: true, primaryPressed: true });
+    expect(sim.state.needs.energy).toBeGreaterThanOrEqual(50);
+    sim.selectTool('bow');
+    give(sim, { arrow: 2 });
+    run(sim, 1);
+    run(sim, 1 / 60, { ...sky, primary: true, primaryPressed: true });
+    run(sim, 1, { ...sky, primary: true });
+    sim.state.needs.energy = 50;
+    const shot = run(sim, 1 / 60, { ...sky, primaryReleased: true });
+    expect(shot.some((e) => e.type === 'arrowFired')).toBe(true);
+    expect(sim.state.needs.energy).toBeCloseTo(50 - E.swingCost, 1);
+  });
+
   it('a failed craft or placement costs nothing, and energy never goes negative', () => {
     const sim = quietSim();
     sim.state.needs.energy = 50;

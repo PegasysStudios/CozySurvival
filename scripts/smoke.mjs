@@ -123,7 +123,7 @@ async function main() {
     const learned = await page.evaluate(() => {
       const sim = window.__cozy.game.sim;
       sim.devGive('stick', 6);
-      sim.devGive('stone', 4);
+      sim.devGive('stone', 6);
       sim.devGive('fiber', 6);
       return sim.state.known.length;
     });
@@ -230,9 +230,11 @@ async function main() {
     await page.evaluate(() => {
       const sim = window.__cozy.game.sim;
       if (!sim.state.known.includes('campfire')) sim.state.known.push('campfire');
-      sim.devGive('stone', 5);
-      sim.devGive('stick', 4);
-      sim.devGive('fiber', 1);
+      // a campfire's 25 stone, 20 sticks and 5 fiber fill a starting pack on their own
+      sim.state.inventory.slots.fill(null);
+      sim.devGive('stone', 25);
+      sim.devGive('stick', 20);
+      sim.devGive('fiber', 5);
     });
     await lock();
     await page.keyboard.press('KeyC');
@@ -281,7 +283,7 @@ async function main() {
       const placed = await state();
       check(
         'clicking a valid spot builds it and spends the ingredients',
-        placed.structures === good.structures + 1 && placed.stone === good.stone - 5 && placed.stick === good.stick - 4 && placed.fiber === good.fiber - 1 && !placed.placing,
+        placed.structures === good.structures + 1 && placed.stone === good.stone - 25 && placed.stick === good.stick - 20 && placed.fiber === good.fiber - 5 && !placed.placing,
         JSON.stringify({ before: [good.structures, good.stone, good.stick, good.fiber], after: [placed.structures, placed.stone, placed.stick, placed.fiber] }),
       );
 

@@ -6,7 +6,7 @@ import { countItem } from '../src/sim/inventory';
 import { checkPlacement } from '../src/sim/placement';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
-import { TRUNK_AXIS_LIFT } from '../src/sim/trunks';
+import { barkStripped, TRUNK_AXIS_LIFT } from '../src/sim/trunks';
 import { aimAt, drain, nearestTree, quietSim, run, teleport } from './helpers';
 
 const CUTS = BALANCE.trees.cutsPerLog;
@@ -134,5 +134,51 @@ describe('two-step trees', () => {
     loaded.selectTool('axe');
     loaded.perform({ kind: 'tree', index: i, dist: 1 });
     expect(countItem(loaded.state.inventory, 'log')).toBe(2);
+  });
+});
+
+describe('stripped birch', () => {
+  function peeledBirch() {
+    const sim = quietSim();
+    sim.selectTool('hands');
+    const i = nearestTree(sim, 'birch');
+    const t = sim.gen.trees[i];
+    teleport(sim, t.x + 1.2, t.z);
+    for (let k = 0; k < TREES.birch.bark; k++) sim.perform({ kind: 'tree', index: i, dist: 1 });
+    drain(sim);
+    return { sim, i };
+  }
+
+  it('shows bare wood only once all the bark is peeled, and never on other species or felled trees', () => {
+    const sim = quietSim();
+    const i = nearestTree(sim, 'birch');
+    const dyn = sim.state.trees[i];
+    expect(barkStripped('birch', dyn)).toBe(false);
+    dyn.bark = 1;
+    expect(barkStripped('birch', dyn)).toBe(false);
+    dyn.bark = 0;
+    expect(barkStripped('birch', dyn)).toBe(true);
+    expect(barkStripped('birch', { ...dyn, felled: true })).toBe(false);
+    for (const s of ['fir', 'cedar', 'maple'] as const) expect(barkStripped(s, { ...dyn, bark: 0 })).toBe(false);
+  });
+
+  it('peeling a birch leaves it stripped, and the look survives a save and load', () => {
+    const { sim, i } = peeledBirch();
+    expect(countItem(sim.state.inventory, 'bark')).toBe(TREES.birch.bark);
+    expect(barkStripped('birch', sim.state.trees[i])).toBe(true);
+    const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
+    expect(loaded.state.trees[i]).toMatchObject({ bark: 0, barkAt: sim.state.trees[i].barkAt });
+    expect(barkStripped('birch', loaded.state.trees[i])).toBe(true);
+  });
+
+  it('the bark grows back after a day and the trunk looks whole again, also after loading', () => {
+    const { sim, i } = peeledBirch();
+    const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
+    const v = loaded.worldVersion;
+    loaded.state.totalHours = loaded.state.trees[i].barkAt + 0.01;
+    run(loaded, 3);
+    expect(loaded.state.trees[i].bark).toBe(TREES.birch.bark);
+    expect(barkStripped('birch', loaded.state.trees[i])).toBe(false);
+    expect(loaded.worldVersion).toBeGreaterThan(v);
   });
 });
