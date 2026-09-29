@@ -1,3 +1,4 @@
+import { volumePercent } from '../audio/mix';
 import type { BestRecord, DeathSummary, Settings } from '../sim/run';
 import { formatDuration } from '../sim/time';
 import { button, el, escapeHtml } from './dom';
@@ -35,7 +36,8 @@ const CONTROLS = `
   <div class="controls-grid">
     <span>Move</span><b>W A S D</b>
     <span>Run</span><b>Shift</b>
-    <span>Jump</span><b>Space</b>
+    <span>Jump · climb onto rocks and logs</span><b>Space</b>
+    <span>Swim</span><b>W A S D in deep water</b>
     <span>Look</span><b>Mouse</b>
     <span>Gather · use · interact</span><b>Left-click (hold to repeat)</b>
     <span>Tools</span><b>1–5 · mouse wheel</b>
@@ -144,7 +146,7 @@ export class Screens {
     const settings = el('div', 'settings');
     const s = this.settings;
     settings.innerHTML = `
-      <label>Volume <input type="range" min="0" max="1" step="0.05" value="${s.volume}" data-k="volume"></label>
+      <label>Master volume <span class="vol-pct">${s.muted ? 'Muted' : volumePercent(s.masterVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-k="masterVolume" aria-label="Master volume"></label>
       <label>Mouse sensitivity <input type="range" min="0.3" max="2.5" step="0.05" value="${s.sensitivity}" data-k="sensitivity"></label>
       <label class="check"><input type="checkbox" ${s.muted ? 'checked' : ''} data-k="muted"> Mute audio</label>
       <label class="check"><input type="checkbox" ${s.invertY ? 'checked' : ''} data-k="invertY"> Invert mouse Y</label>`;
@@ -171,8 +173,16 @@ export class Screens {
     this.pause.classList.remove('show');
   }
 
+  /** Keep the pause-menu controls in step with settings changed elsewhere (e.g. the M key). */
   syncSettings(s: Settings): void {
     this.settings = { ...s };
+    this.pause.querySelectorAll<HTMLInputElement>('.settings input').forEach((inp) => {
+      const k = inp.dataset.k as keyof Settings;
+      if (k === 'muted' || k === 'invertY') inp.checked = s[k];
+      else if (document.activeElement !== inp) inp.value = String(s[k]);
+    });
+    const pct = this.pause.querySelector('.vol-pct');
+    if (pct) pct.textContent = s.muted ? 'Muted' : volumePercent(s.masterVolume);
   }
 
   showDeath(d: DeathSummary, day: number): void {

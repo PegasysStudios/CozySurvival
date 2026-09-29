@@ -1,3 +1,4 @@
+import { clampVolume, DEFAULT_MASTER_VOLUME } from '../audio/mix';
 import { randomSeed } from '../core/rng';
 import type { SimEvent } from './events';
 import { deserializeState, serializeState } from './save';
@@ -67,7 +68,8 @@ export const STORAGE_KEYS = {
 
 export interface Settings {
   muted: boolean;
-  volume: number;
+  /** Scales all game audio (effects, ambience and music), 0..1. */
+  masterVolume: number;
   sensitivity: number;
   invertY: boolean;
 }
@@ -93,7 +95,22 @@ export interface DeathSummary {
   newBest: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { muted: false, volume: 0.8, sensitivity: 1, invertY: false };
+export const DEFAULT_SETTINGS: Settings = { muted: false, masterVolume: DEFAULT_MASTER_VOLUME, sensitivity: 1, invertY: false };
+
+/**
+ * Settings read back from storage, with anything missing or malformed replaced by its default.
+ * The old `volume` field (default 80%, before music) is deliberately dropped so everyone starts at the new 50% default.
+ */
+export function normalizeSettings(raw: unknown): Settings {
+  const s = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+  const d = DEFAULT_SETTINGS;
+  return {
+    muted: typeof s.muted === 'boolean' ? s.muted : d.muted,
+    masterVolume: clampVolume(s.masterVolume, d.masterVolume),
+    sensitivity: typeof s.sensitivity === 'number' && Number.isFinite(s.sensitivity) ? s.sensitivity : d.sensitivity,
+    invertY: typeof s.invertY === 'boolean' ? s.invertY : d.invertY,
+  };
+}
 
 /**
  * Owns persistence across runs: autosave, the start-of-day snapshot, best record, and the three
@@ -121,7 +138,7 @@ export class RunManager {
             worldSeed: m.worldSeed,
             best: m.best ?? null,
             deaths: m.deaths ?? 0,
-            settings: { ...DEFAULT_SETTINGS, ...(m.settings ?? {}) },
+            settings: normalizeSettings(m.settings),
           };
         }
       }
