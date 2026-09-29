@@ -237,6 +237,8 @@ export class MpMenu {
 
   closeOverlay(): void {
     this.overlay.classList.remove('show');
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && this.overlay.contains(focused)) focused.blur();
   }
 }
 

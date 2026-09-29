@@ -38,7 +38,7 @@ type Mode = UiMode;
 const BASE_FOV = 72;
 const AUTOSAVE_SECONDS = 30;
 const LOOK_SPEED = 0.0022;
-/** Hidden tabs get no animation frames; a multiplayer host still has to run the shared world. */
+/** Hidden or occluded tabs get no animation frames; a multiplayer host still has to run the shared world. */
 const BACKGROUND_TICK_MS = 250;
 
 function errText(err: unknown): string {
@@ -181,7 +181,7 @@ export class Game {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.saveNow();
-        if (this.mode === 'playing') this.pause();
+        if (this.mode === 'playing' && !this.mp) this.pause();
       }
     });
     window.addEventListener('pagehide', () => {
@@ -189,7 +189,7 @@ export class Game {
       if (this.mp && !this.mp.ended) this.mp.leave();
     });
     setInterval(() => {
-      if (document.hidden && this.mp) this.backgroundTick();
+      if (this.mp && performance.now() - this.last > BACKGROUND_TICK_MS * 1.5) this.backgroundTick();
     }, BACKGROUND_TICK_MS);
 
     const current = this.run.loadCurrent();

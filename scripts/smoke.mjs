@@ -1,12 +1,13 @@
 // Headless boot smoke check: builds the app, serves dist/, loads it in Chrome
-// (SwiftShader WebGL), starts a run, walks, opens crafting, and fails on any
+// (SwiftShader WebGL), starts a run, walks, opens crafting, plays a two-tab
+// multiplayer session over BroadcastChannel (?net=local), and fails on any
 // console error or uncaught exception.
 //
 //   npm run smoke                 build + check
 //   SMOKE_NO_BUILD=1 npm run smoke   reuse the existing dist/
 //   CHROME_PATH=/path/to/chrome npm run smoke
 import { existsSync } from 'node:fs';
-import { build, preview } from 'vite';
+import { build, loadEnv, preview } from 'vite';
 import puppeteer from 'puppeteer-core';
 
 const PORT = Number(process.env.SMOKE_PORT ?? 5299);
@@ -76,6 +77,14 @@ async function main() {
 
     await sleep(1200);
     check('title screen shown', await page.$eval('.title-screen', (e) => e.classList.contains('show')));
+    const env = loadEnv('production', process.cwd(), 'VITE_');
+    const mpConfigured = !!(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_PUBLISHABLE_KEY);
+    const mpTitle = await page.evaluate(() => {
+      const s = document.querySelector('.title-screen .mp-section');
+      return { found: !!s, off: !!s?.classList.contains('off'), createDisabled: !!s?.querySelector('.mp-create')?.disabled, text: s?.textContent ?? '' };
+    });
+    if (mpConfigured) check('multiplayer section is live on the title screen', mpTitle.found && !mpTitle.off, JSON.stringify(mpTitle));
+    else check('without Supabase env vars multiplayer is greyed out with a "not set up" note', mpTitle.found && mpTitle.off && mpTitle.createDisabled && /not set up/i.test(mpTitle.text), JSON.stringify(mpTitle));
     check('canvas rendering', await page.evaluate(() => {
       const c = document.querySelector('canvas.view');
       return !!c && c.width > 0 && c.height > 0;
@@ -380,6 +389,109 @@ async function main() {
     );
 
     await collectRuntimeErrors();
+    await page.close();
+
+    // Multiplayer over BroadcastChannel: two tabs, host creates through the UI, guest joins from the list.
+    const mpUrl = `http://127.0.0.1:${PORT}/?net=local&dev=1`;
+    const openTab = async () => {
+      const p = await browser.newPage();
+      await p.setViewport({ width: 1100, height: 660 });
+      p.on('console', (msg) => {
+        if (msg.type() === 'error') consoleErrors.push(msg.text());
+      });
+      p.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
+      await p.goto(mpUrl, { waitUntil: 'load', timeout: 60_000 });
+      await p.waitForFunction(() => window.__cozy?.ready, { timeout: 90_000 });
+      return p;
+    };
+    const fillForm = async (p, name, serverName) => {
+      await p.waitForSelector('.mp-screen.show input[name="name"]', { timeout: 10_000 });
+      await p.$eval('.mp-screen input[name="name"]', (e) => (e.value = ''));
+      await p.type('.mp-screen input[name="name"]', name);
+      if (serverName) await p.type('.mp-screen input[name="server"]', serverName);
+      await p.click('.mp-screen .mp-avatar:nth-child(2)');
+      await p.click('.mp-screen .mp-actions .btn.primary');
+    };
+    const hostTab = await openTab();
+    const guestTab = await openTab();
+    const mpTitleLocal = await hostTab.evaluate(() => document.querySelector('.mp-section .mp-pill')?.textContent ?? '');
+    check('?net=local enables multiplayer in local test mode', /local test mode/i.test(mpTitleLocal), mpTitleLocal);
+
+    await hostTab.bringToFront();
+    await hostTab.click('.mp-section .mp-create');
+    await fillForm(hostTab, 'Ana', 'Smoke camp');
+    await hostTab.waitForFunction(() => window.__cozy.game.mp?.role === 'host' && window.__cozy.game.mode === 'playing', { timeout: 20_000, polling: 250 });
+    const hostWorld = await hostTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, name: window.__cozy.game.mp.profile.name }));
+    check('host creates a server with a brand-new world from the menu', hostWorld.name === 'Ana', JSON.stringify(hostWorld));
+
+    await guestTab.bringToFront();
+    const listed = await guestTab
+      .waitForFunction(() => [...document.querySelectorAll('.mp-server')].some((r) => r.textContent.includes('Smoke camp')), { timeout: 20_000, polling: 250 })
+      .then(() => true, () => false);
+    check('the server shows up in the other tab\'s server list', listed);
+    if (listed) {
+      await guestTab.evaluate(() => [...document.querySelectorAll('.mp-server')].find((r) => r.textContent.includes('Smoke camp')).querySelector('.mp-join').click());
+      await fillForm(guestTab, 'Ben');
+      const joined = await guestTab
+        .waitForFunction(() => window.__cozy.game.mp?.role === 'guest' && window.__cozy.game.mode === 'playing', { timeout: 30_000, polling: 250 })
+        .then(() => true, () => false);
+      const guestWorld = await guestTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, trees: window.__cozy.game.sim.state.trees.length }));
+      check('guest joins from the list and gets the host\'s world', joined && guestWorld.seed === hostWorld.seed, JSON.stringify({ joined, guestWorld, host: hostWorld.seed }));
+
+      const seeEach = async (p, other) => {
+        await p.bringToFront();
+        return p.waitForFunction((n) => {
+          const g = window.__cozy.game;
+          const peer = [...g.mp.peers.values()].find((q) => q.name === n);
+          return !!peer?.target && g.view.avatars.group.children.length === 1;
+        }, { timeout: 15_000, polling: 250 }, other).then(() => true, () => false);
+      };
+      check('host and guest see each other\'s avatars', (await seeEach(hostTab, 'Ben')) && (await seeEach(guestTab, 'Ana')));
+
+      // Switching tabs drops pointer lock, which opens the (non-pausing) settings overlay.
+      await guestTab.evaluate(() => {
+        const g = window.__cozy.game;
+        if (g.mode === 'paused') g.resume();
+        g.input.locked = true;
+      });
+      await guestTab.keyboard.press('Enter');
+      await guestTab.waitForSelector('.mp-chat.open .mp-input', { timeout: 5000 });
+      await guestTab.keyboard.type('hello from the lake');
+      await guestTab.keyboard.press('Enter');
+      const chatArrived = await hostTab
+        .waitForFunction(() => [...document.querySelectorAll('.mp-line')].some((l) => l.textContent.includes('hello from the lake')), { timeout: 10_000, polling: 250 })
+        .then(() => true, () => false);
+      check('chat typed in one tab arrives in the other', chatArrived);
+
+      const gathered = await guestTab.evaluate(() => {
+        const sim = window.__cozy.game.sim;
+        const p = sim.state.player;
+        const order = sim.state.resources
+          .map((r, i) => ({ r, i, d: Math.hypot(sim.gen.resources[i].x - p.x, sim.gen.resources[i].z - p.z) }))
+          .filter((o) => o.r.charges > 1)
+          .sort((a, b) => a.d - b.d);
+        for (const { r, i } of order.slice(0, 12)) {
+          const before = r.charges;
+          sim.perform({ kind: 'resource', index: i, dist: 1 });
+          if (sim.state.resources[i].charges < before) return { index: i, charges: sim.state.resources[i].charges };
+        }
+        return null;
+      });
+      const synced = gathered && (await hostTab
+        .waitForFunction((g) => window.__cozy.game.sim.state.resources[g.index].charges === g.charges, { timeout: 10_000, polling: 250 }, gathered)
+        .then(() => true, () => false));
+      check('a guest\'s gathering changes the host\'s world', !!synced, JSON.stringify(gathered));
+
+      await hostTab.evaluate(() => window.__cozy.game.leaveMp(null));
+      const closed = await guestTab
+        .waitForFunction(() => window.__cozy.game.mode === 'title' && !window.__cozy.game.mp && /host closed the server/i.test(document.querySelector('.mp-notice')?.textContent ?? ''), { timeout: 10_000, polling: 250 })
+        .then(() => true, () => false);
+      check('closing the server sends the guest back to the menu with a note', closed);
+      const hostBack = await hostTab.evaluate(() => ({ mode: window.__cozy.game.mode, mp: !!window.__cozy.game.mp }));
+      check('the host returns to their single-player title screen', hostBack.mode === 'title' && !hostBack.mp, JSON.stringify(hostBack));
+    }
+    for (const p of [hostTab, guestTab]) runtimeErrors.push(...(await p.evaluate(() => window.__cozy?.errors ?? [])));
+
     check('no runtime errors', runtimeErrors.length === 0, runtimeErrors.join(' | '));
   } finally {
     check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 8).join(' | '));
