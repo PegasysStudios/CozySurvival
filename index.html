@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#1c1814" />
+    <meta name="description" content="A cozy first-person survival game in the Pacific Northwest woods." />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 7 14h4l-6 8h5l-5 6h22l-5-6h5l-6-8h4z' fill='%233f6b3a'/%3E%3Crect x='14' y='27' width='4' height='4' fill='%236e4a30'/%3E%3C/svg%3E"
+    />
+    <title>CozySurvival</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #141a13;
+        color: #f6eddc;
+      }
+      #boot {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        font-family: Georgia, serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="boot" class="loading-screen">
+      <div class="loading-inner">
+        <div class="logo">CozySurvival</div>
+        <div class="loading-bar"><div></div></div>
+        <div class="loading-text">Growing the forest…</div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
