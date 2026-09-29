@@ -510,6 +510,25 @@ b {
   color: var(--ink-mute);
 }
 
+.tool .ammo {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 15px;
+  text-align: center;
+  color: var(--amber-hi);
+}
+
+.tool .ammo.empty {
+  color: #e0664d;
+}
+
 .tool-name {
   font-size: 10.5px;
   font-weight: 750;
@@ -1108,6 +1127,57 @@ b {
 
 .fuel-btn {
   margin-top: 4px;
+}
+
+.fire-fuel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 22px 14px;
+  flex: none;
+}
+
+.fuel-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 220px;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--ink-soft);
+}
+
+.fuel-meter .fuel-track {
+  flex: 1 1 auto;
+  height: 10px;
+}
+
+.fuel-meter b {
+  white-space: nowrap;
+  color: var(--amber-hi);
+}
+
+.fuel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fuel-actions .fuel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.fuel-actions .fuel-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.fire-fuel > .effects {
+  flex-basis: 100%;
 }
 
 .tabs {

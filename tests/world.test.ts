@@ -68,7 +68,7 @@ describe('worldgen', () => {
     const t = getTerrain(seed);
     const g = getWorldGen(seed);
     expect(g.trees.length).toBeGreaterThan(700);
-    expect(g.resources.length).toBeGreaterThan(300);
+    expect(g.resources.length).toBeGreaterThan(200);
     for (const tree of g.trees) {
       expect(t.heightAt(tree.x, tree.z)).toBeGreaterThan(WATER_LEVEL);
       expect(t.inPlayBounds(tree.x, tree.z)).toBe(true);

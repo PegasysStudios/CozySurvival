@@ -10,7 +10,8 @@ export const SAVE_FORMAT = 'cozysurvival-save';
 
 /**
  * Serializes a run. Trees and resources are stored sparsely (only entries that differ from worldgen
- * defaults) so saves stay small even with ~1000 trees.
+ * defaults) so saves stay small even with ~1000 trees. Resources are keyed by their worldgen spot, which is
+ * the same number older saves used as the resource index, so thinning forage never shifts saved state.
  */
 export function serializeState(s: GameState): string {
   const gen = getWorldGen(s.seed);
@@ -22,7 +23,7 @@ export function serializeState(s: GameState): string {
   const resources: number[][] = [];
   s.resources.forEach((r, i) => {
     const def = RESOURCES[gen.resources[i].kind];
-    if (r.charges !== def.charges) resources.push([i, r.charges, r.respawnAt]);
+    if (r.charges !== def.charges) resources.push([gen.resources[i].spot, r.charges, r.respawnAt]);
   });
   const out: Record<string, unknown> = { ...s, format: SAVE_FORMAT };
   out.trees = trees;
@@ -84,10 +85,14 @@ export function deserializeState(json: string | null): GameState | null {
     };
   }
   const resources: ResourceDyn[] = gen.resources.map((r) => ({ charges: RESOURCES[r.kind].charges, respawnAt: 0 }));
+  const bySpot = new Map(gen.resources.map((r, i) => [r.spot, i]));
   for (const e of raw.resources as unknown[]) {
     if (!Array.isArray(e) || e.length < 3) return null;
-    const [i, charges, respawnAt] = e as number[];
-    if (!resources[i]) return null;
+    const [spot, charges, respawnAt] = e as number[];
+    if (!Number.isInteger(spot) || spot < 0 || spot >= gen.resourceSpots) return null;
+    const i = bySpot.get(spot);
+    // Saves from before forage was thinned can mention spots where nothing grows any more.
+    if (i === undefined) continue;
     resources[i] = { charges, respawnAt };
   }
   const skills = createSkills();

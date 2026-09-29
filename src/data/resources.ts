@@ -17,15 +17,23 @@ export interface ResourceDef {
   blockRadius: number;
   /** Stays in the world (and keeps blocking placement) while depleted; others vanish until they regrow. */
   persistent?: boolean;
+  /** How many grow in the starter patch around the spawn (out of the patch's candidate spots). */
+  starter: number;
+  /** Share of this kind's map-wide scatter spots that actually grow. */
+  scatter: number;
 }
 
+/**
+ * Forage is deliberately sparse so the goal track spans several days: the starter patch covers the first steps
+ * (gathering, fiber, stone axe and most of a campfire), and the rest needs roaming further out and waiting on regrowth.
+ */
 export const RESOURCES: Record<ResourceKind, ResourceDef> = {
-  stickPile: { kind: 'stickPile', name: 'Fallen Branches', verb: 'Gather sticks', item: 'stick', yield: 2, charges: 3, respawnHours: 12, hitRadius: 0.6, hitHeight: 0.15, blockRadius: 0.5 },
-  stonePile: { kind: 'stonePile', name: 'Loose Stones', verb: 'Pick up stones', item: 'stone', yield: 2, charges: 3, respawnHours: 30, hitRadius: 0.55, hitHeight: 0.15, blockRadius: 0.5 },
-  berryBush: { kind: 'berryBush', name: 'Salmonberry Bush', verb: 'Pick berries', item: 'berries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.6, blockRadius: 0.7, persistent: true },
-  fern: { kind: 'fern', name: 'Sword Fern', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.35, blockRadius: 0.55, persistent: true },
-  mushroom: { kind: 'mushroom', name: 'Chanterelles', verb: 'Pick mushrooms', item: 'mushroom', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.1, blockRadius: 0.35 },
-  onion: { kind: 'onion', name: 'Nodding Onion', verb: 'Pull onions', item: 'onion', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.15, blockRadius: 0.35 },
+  stickPile: { kind: 'stickPile', name: 'Fallen Branches', verb: 'Gather sticks', item: 'stick', yield: 1, charges: 3, respawnHours: 12, hitRadius: 0.6, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
+  stonePile: { kind: 'stonePile', name: 'Loose Stones', verb: 'Pick up stones', item: 'stone', yield: 1, charges: 3, respawnHours: 30, hitRadius: 0.55, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
+  berryBush: { kind: 'berryBush', name: 'Salmonberry Bush', verb: 'Pick berries', item: 'berries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.6, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
+  fern: { kind: 'fern', name: 'Sword Fern', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.35, blockRadius: 0.55, persistent: true, starter: 2, scatter: 0.4 },
+  mushroom: { kind: 'mushroom', name: 'Chanterelles', verb: 'Pick mushrooms', item: 'mushroom', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.1, blockRadius: 0.35, starter: 1, scatter: 0.5 },
+  onion: { kind: 'onion', name: 'Nodding Onion', verb: 'Pull onions', item: 'onion', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.15, blockRadius: 0.35, starter: 1, scatter: 0.5 },
 };
 
 export const RESOURCE_KINDS: ResourceKind[] = ['stickPile', 'stonePile', 'berryBush', 'fern', 'mushroom', 'onion'];

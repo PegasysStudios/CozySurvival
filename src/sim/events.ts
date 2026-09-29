@@ -31,7 +31,7 @@ export type SimEvent =
   | { type: 'death'; cause: DamageSource }
   | { type: 'dayStart'; day: number }
   | { type: 'nightfall'; day: number }
-  | { type: 'slept'; day: number }
+  | { type: 'slept'; day: number; byFire: boolean }
   | { type: 'sleepDenied'; reason: string }
   | { type: 'animalHit'; id: number; species: SpeciesId; x: number; y: number; z: number; killed: boolean }
   | { type: 'animalFlee'; id: number; species: SpeciesId }

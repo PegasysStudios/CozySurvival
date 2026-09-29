@@ -275,6 +275,25 @@ async function main() {
         placed.structures === good.structures + 1 && placed.stone === good.stone - 5 && placed.stick === good.stick - 4 && placed.fiber === good.fiber - 1 && !placed.placing,
         JSON.stringify({ before: [good.structures, good.stone, good.stick, good.fiber], after: [placed.structures, placed.stone, placed.stick, placed.fiber] }),
       );
+
+      // The campfire opens its own menu, and Esc closes it without opening pause.
+      await page.evaluate(() => {
+        const sim = window.__cozy.game.sim;
+        const fire = sim.state.structures[sim.state.structures.length - 1];
+        sim.perform({ kind: 'structure', id: fire.id, dist: 1 });
+      });
+      await waitFrames(3);
+      const fireMenu = await page.evaluate(() => ({
+        mode: window.__cozy.game.mode,
+        campfire: !!document.querySelector('.panel-campfire .fuel-meter'),
+        fuelButtons: document.querySelectorAll('.panel-campfire .fuel-btn').length,
+        tabs: document.querySelectorAll('.panel-campfire .tab').length,
+      }));
+      check('campfire opens its own menu with a fuel meter', fireMenu.mode === 'panel' && fireMenu.campfire && fireMenu.fuelButtons === 2 && fireMenu.tabs === 0, JSON.stringify(fireMenu));
+      await page.keyboard.press('Escape');
+      await waitFrames(3);
+      const afterEsc = await page.evaluate(() => ({ mode: window.__cozy.game.mode, paused: document.querySelector('.pause-screen')?.classList.contains('show') ?? false }));
+      check('Esc closes the campfire menu without pausing', afterEsc.mode === 'playing' && !afterEsc.paused, JSON.stringify(afterEsc));
     }
 
     // Save survives a reload and Continue resumes the same run.

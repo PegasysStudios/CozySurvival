@@ -1,7 +1,7 @@
 import { smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
 import { SpatialGrid } from '../core/spatialGrid';
-import { TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
+import { RESOURCES, TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
 import { getTerrain, PLAY_HALF, type Terrain } from './terrain';
 
 export interface TreeGen {
@@ -20,6 +20,8 @@ export interface ResourceGen {
   kind: ResourceKind;
   rot: number;
   scale: number;
+  /** Index among all candidate forage spots (grown or not); saves key resource state by it. */
+  spot: number;
 }
 
 export interface RockGen {
@@ -44,6 +46,8 @@ export interface WorldGen {
   seed: number;
   trees: TreeGen[];
   resources: ResourceGen[];
+  /** Number of candidate forage spots, including the ones where nothing grows. */
+  resourceSpots: number;
   rocks: RockGen[];
   logs: LogGen[];
 }
@@ -167,14 +171,19 @@ export function generateWorld(seed: number): WorldGen {
     logs.push({ x, z, rot: rng.range(0, Math.PI), length, r: rng.range(0.28, 0.42) });
   }
 
-  const addResource = (x: number, z: number, kind: ResourceKind): boolean => {
+  // Every candidate spot is rolled from the main rng exactly as before forage was thinned, so trees, rocks and
+  // spot positions never move; a separate rng then decides which spots actually grow something.
+  const growRng = new Rng(seed ^ 0x2545f491);
+  let spots = 0;
+  const addResource = (x: number, z: number, kind: ResourceKind, grows: boolean): boolean => {
     if (!occ.free(x, z, 0.8)) return false;
     occ.add(x, z, 0.5);
-    resources.push({ x, z, kind, rot: rng.range(0, Math.PI * 2), scale: rng.range(0.85, 1.15) });
+    const r: ResourceGen = { x, z, kind, rot: rng.range(0, Math.PI * 2), scale: rng.range(0.85, 1.15), spot: spots++ };
+    if (grows) resources.push(r);
     return true;
   };
 
-  // Starter patch around the spawn so the first minutes feel generous.
+  // Starter patch around the spawn: candidate spots per kind; the first RESOURCES[kind].starter of them grow.
   const starter: [ResourceKind, number][] = [
     ['stickPile', 5], ['stonePile', 5], ['fern', 4], ['berryBush', 3], ['mushroom', 2], ['onion', 2],
   ];
@@ -186,11 +195,11 @@ export function generateWorld(seed: number): WorldGen {
       const x = sx + Math.cos(a) * d;
       const z = sz + Math.sin(a) * d;
       if (!dryAndGentle(t, x, z, 0.6, 0.6)) continue;
-      if (addResource(x, z, kind)) placed++;
+      if (addResource(x, z, kind, placed < RESOURCES[kind].starter)) placed++;
     }
   }
 
-  // Scatter across the map by biome
+  // Scatter across the map by biome; each spot grows with its kind's RESOURCES[kind].scatter chance.
   const resCell = 8;
   for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += resCell) {
     for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += resCell) {
@@ -205,11 +214,11 @@ export function generateWorld(seed: number): WorldGen {
       if (h < 1.6) kind = roll < 0.55 ? 'stonePile' : roll < 0.8 ? 'berryBush' : 'stickPile';
       else if (forest > 0.55) kind = roll < 0.3 ? 'stickPile' : roll < 0.6 ? 'fern' : roll < 0.78 ? 'mushroom' : roll < 0.9 ? 'berryBush' : 'stonePile';
       else kind = roll < 0.24 ? 'onion' : roll < 0.48 ? 'berryBush' : roll < 0.64 ? 'stonePile' : roll < 0.82 ? 'stickPile' : 'fern';
-      addResource(x, z, kind);
+      addResource(x, z, kind, growRng.chance(RESOURCES[kind].scatter));
     }
   }
 
-  return { seed, trees, resources, rocks, logs };
+  return { seed, trees, resources, resourceSpots: spots, rocks, logs };
 }
 
 const cache = new Map<number, WorldGen>();

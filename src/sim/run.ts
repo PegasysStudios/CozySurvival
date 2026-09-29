@@ -1,4 +1,4 @@
-import { clampVolume, DEFAULT_MASTER_VOLUME } from '../audio/mix';
+import { clampVolume, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME } from '../audio/mix';
 import { randomSeed } from '../core/rng';
 import type { SimEvent } from './events';
 import { deserializeState, serializeState } from './save';
@@ -70,6 +70,10 @@ export interface Settings {
   muted: boolean;
   /** Scales all game audio (effects, ambience and music), 0..1. */
   masterVolume: number;
+  /** Background music only, 0..1 (on top of master). */
+  musicVolume: number;
+  /** Effects and ambience, everything but the music, 0..1 (on top of master). */
+  sfxVolume: number;
   sensitivity: number;
   invertY: boolean;
 }
@@ -95,11 +99,20 @@ export interface DeathSummary {
   newBest: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { muted: false, masterVolume: DEFAULT_MASTER_VOLUME, sensitivity: 1, invertY: false };
+export const DEFAULT_SETTINGS: Settings = {
+  muted: false,
+  masterVolume: DEFAULT_MASTER_VOLUME,
+  musicVolume: DEFAULT_MUSIC_VOLUME,
+  sfxVolume: DEFAULT_SFX_VOLUME,
+  sensitivity: 1,
+  invertY: false,
+};
 
 /**
  * Settings read back from storage, with anything missing or malformed replaced by its default.
  * The old `volume` field (default 80%, before music) is deliberately dropped so everyone starts at the new 50% default.
+ * Settings saved before music had its own slider keep their master volume and pick up music at 10% and effects at 100%
+ * (effects sound exactly as loud as before).
  */
 export function normalizeSettings(raw: unknown): Settings {
   const s = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
@@ -107,6 +120,8 @@ export function normalizeSettings(raw: unknown): Settings {
   return {
     muted: typeof s.muted === 'boolean' ? s.muted : d.muted,
     masterVolume: clampVolume(s.masterVolume, d.masterVolume),
+    musicVolume: clampVolume(s.musicVolume, d.musicVolume),
+    sfxVolume: clampVolume(s.sfxVolume, d.sfxVolume),
     sensitivity: typeof s.sensitivity === 'number' && Number.isFinite(s.sensitivity) ? s.sensitivity : d.sensitivity,
     invertY: typeof s.invertY === 'boolean' ? s.invertY : d.invertY,
   };
