@@ -77,7 +77,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   - Fallen branches and loose stones give one stick or stone per harvest (three per pile), down from two.
   - The starter patch around the spawn has 2 stick piles, 2 stone piles, 2 ferns, 2 berry bushes, 1 chanterelle patch and 1 onion: enough for the first steps (gathering, fiber, the Stone Axe) and most of a campfire.
   - Across the map, 40% of the spots that used to grow sticks, stones or ferns still do, and 50% of the berry, mushroom and onion spots. That's about 260 forage spots per world instead of about 560. Trees, boulders and fallen logs are unchanged.
-  - Near the spawn this leaves roughly a quarter of the old sticks and stones. Averaged over 8 worlds, a 25 m radius holds about 11 sticks, 9 stones and 13 fiber, down from 49, 44 and 28. The whole track needs about 14 sticks, 8 stones and 16 fiber, plus firewood. So after day 1 you range further out and wait on regrowth (sticks 12 h, ferns 16 h, stones 30 h).
+  - Near the spawn this leaves about a fifth of the old sticks and stones. Averaged over 8 worlds, a 25 m radius holds about 11 sticks, 9 stones and 13 fiber, down from 49, 44 and 28. The whole track needs about 14 sticks, 8 stones and 16 fiber, plus firewood. So after day 1 you range further out and wait on regrowth (sticks 12 h, ferns 16 h, stones 30 h).
 - **Campfire menu.** Clicking a lit campfire opens its own menu instead of the full crafting menu. It has a fuel meter (hours left out of 16), separate buttons to add a stick (+1.5 h) or a log (+4 h), and only the recipes you cook over a fire. **C** still opens the full crafting menu.
 - **Wildlife.**
   - Rabbits, deer and fish each have their own fear radius and flee behaviour. Deer spook from far away, so a bow helps.
@@ -196,8 +196,9 @@ Rendering is built for 60 fps:
 - Trunk and boulder surfaces approximate the rendered meshes (a flat-topped slab and a half-ellipsoid dome).
 - Predators don't follow you into the water.
 - Saves from before this update carry over. Skills start at level 1, tools get fresh durability on first use, and existing shelters and benches start at full condition. A tree felled in an old save leaves just a stump, because its logs were already collected. The old volume setting resets to the new 50% default.
-- Saves from before the forage change load into the sparser world. Forage now grows on a subset of the old spots, so nothing appears under structures you've built. Plants that no longer grow are simply gone, and a saved master volume keeps its level, with music at 10% and effects at 100%.
+- Saves from before the forage change load into the sparser world. Forage now grows on a subset of the old spots, so nothing appears under structures you've built, and plants that no longer grow are simply gone.
+- Audio settings saved before the Music slider existed keep their master volume, and pick up music at 10% and effects at 100%.
 - Multi-day pacing is an estimate from forage supply against the goal track's needs, not a playtest. A player who knows where to look can still move faster. To slow it further, lower the `scatter` shares in `src/data/resources.ts`.
 - Headless Chrome fakes pointer lock, so the smoke check can't reproduce the browser's own Esc lock release. That case is covered by unit tests only.
-- With the pointer captured, Chrome eats the Esc key press itself, so pausing comes from the lock release. If the browser refuses to re-capture the pointer after a menu closes, the click-to-continue overlay appears instead.
+- With the pointer captured, the browser usually handles the Esc press itself, so pausing comes from the lock release. If the browser refuses to re-capture the pointer after a menu closes, the click-to-continue overlay appears instead.
 - While muted, the music keeps playing silently, so unmuting picks it back up mid-track.
