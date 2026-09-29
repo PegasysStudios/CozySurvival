@@ -165,6 +165,28 @@ describe('energy', () => {
     expect(min).toBeGreaterThan(60);
   });
 
+  it('swimming drains more than walking but far less than sprinting; a long swim is fine', () => {
+    const walk = createNeeds();
+    const swim = createNeeds();
+    const sprint = createNeeds();
+    updateEnergy(walk, 'walk', 60);
+    updateEnergy(swim, 'swim', 60);
+    updateEnergy(sprint, 'sprint', 60);
+    expect(swim.energy).toBeCloseTo(100 - E.swimDrainPerSec * 60);
+    expect(swim.energy).toBeLessThan(walk.energy);
+    expect(swim.energy).toBeGreaterThan(sprint.energy);
+    const long = createNeeds();
+    updateEnergy(long, 'swim', 600);
+    expect(long.energy).toBeGreaterThan(0);
+  });
+
+  it('tasks drain less than before; crafting and building now cost a little', () => {
+    expect(E.swingCost).toBeLessThan(0.5);
+    expect(E.gatherCost).toBeLessThan(0.25);
+    expect(E.craftCost).toBeGreaterThan(0);
+    expect(E.buildCost).toBeGreaterThan(E.craftCost);
+  });
+
   it('about three minutes of continuous sprinting from full is possible', () => {
     const n = createNeeds();
     let t = 0;

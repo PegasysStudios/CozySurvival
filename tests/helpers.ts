@@ -1,4 +1,5 @@
 import { Rng } from '../src/core/rng';
+import { BALANCE } from '../src/data/balance';
 import type { ItemId } from '../src/data/items';
 import type { AnimalEnv } from '../src/sim/animals';
 import type { Collider } from '../src/sim/colliders';
@@ -6,7 +7,7 @@ import type { SimEvent } from '../src/sim/events';
 import type { MoveEnv } from '../src/sim/movement';
 import { checkPlacement } from '../src/sim/placement';
 import { IDLE_INPUT, Simulation, type SimInput } from '../src/sim/simulation';
-import type { DamageSource } from '../src/sim/state';
+import type { DamageSource, StructureState } from '../src/sim/state';
 import { PLAY_HALF, type Terrain } from '../src/sim/terrain';
 
 export const SEED = 42;
@@ -55,6 +56,63 @@ export function findValidSpot(sim: Simulation, prefab: Parameters<typeof checkPl
     }
   }
   throw new Error('no valid spot found');
+}
+
+export function nearestResource(sim: Simulation, kind: string): number {
+  const p = sim.state.player;
+  let best = -1;
+  let bd = Infinity;
+  sim.gen.resources.forEach((r, i) => {
+    if (r.kind !== kind) return;
+    const d = Math.hypot(r.x - p.x, r.z - p.z);
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/** Nearest standing tree (optionally of one species). */
+export function nearestTree(sim: Simulation, species?: string): number {
+  const p = sim.state.player;
+  let best = -1;
+  let bd = Infinity;
+  sim.gen.trees.forEach((t, i) => {
+    if ((species && t.species !== species) || sim.state.trees[i].felled) return;
+    const d = Math.hypot(t.x - p.x, t.z - p.z);
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  });
+  return best;
+}
+
+export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench' | 'hideTent'): StructureState {
+  const inputs = { campfire: { stone: 5, stick: 4, fiber: 1 }, leanTo: { log: 3, stick: 4, fiber: 4, cordage: 1 }, bench: { log: 2 }, hideTent: { hide: 3, log: 2, cordage: 2 } }[recipe];
+  if (!sim.state.known.includes(recipe)) sim.state.known.push(recipe);
+  give(sim, inputs);
+  sim.beginPlacement(recipe);
+  const spot = findValidSpot(sim, recipe);
+  sim.setPlacementAt(spot.x, spot.z);
+  if (!sim.confirmPlacement()) throw new Error(`could not place ${recipe}`);
+  drain(sim);
+  return sim.state.structures[sim.state.structures.length - 1];
+}
+
+/** Aim the camera at a world point. */
+export function aimAt(sim: Simulation, x: number, y: number, z: number): void {
+  const p = sim.state.player;
+  const dx = x - p.x;
+  const dy = y - (p.y + BALANCE.player.eyeHeight);
+  const dz = z - p.z;
+  p.yaw = Math.atan2(-dx, -dz);
+  p.pitch = Math.atan2(dy, Math.hypot(dx, dz));
+}
+
+export function keepAlive(sim: Simulation): void {
+  Object.assign(sim.state.needs, { hunger: 100, thirst: 100, warmth: 100, health: 100, energy: 100 });
 }
 
 /** Move the player (teleport) to a location on the ground. */

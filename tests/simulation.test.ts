@@ -173,6 +173,40 @@ describe('trees', () => {
   });
 });
 
+describe('task energy', () => {
+  const E = BALANCE.needs.energy;
+
+  it('chopping, gathering, crafting and building each cost their share of energy', () => {
+    const sim = quietSim();
+    sim.state.needs.energy = 50;
+    sim.state.tools.push('axe');
+    sim.selectTool('axe');
+    sim.perform({ kind: 'tree', index: nearestTree(sim), dist: 1 });
+    expect(sim.state.needs.energy).toBeCloseTo(50 - E.swingCost);
+    sim.state.needs.energy = 50;
+    sim.perform({ kind: 'resource', index: nearestResource(sim, 'stonePile'), dist: 1 });
+    expect(sim.state.needs.energy).toBeCloseTo(50 - E.gatherCost);
+    sim.state.needs.energy = 50;
+    give(sim, { fiber: 3 });
+    expect(sim.craft('cordage').ok).toBe(true);
+    expect(sim.state.needs.energy).toBeCloseTo(50 - E.craftCost);
+    sim.state.needs.energy = 50;
+    placeCampfire(sim);
+    expect(sim.state.needs.energy).toBeCloseTo(50 - E.buildCost);
+  });
+
+  it('a failed craft or placement costs nothing, and energy never goes negative', () => {
+    const sim = quietSim();
+    sim.state.needs.energy = 50;
+    expect(sim.craft('cordage').ok).toBe(false);
+    expect(sim.state.needs.energy).toBe(50);
+    sim.state.needs.energy = 0.5;
+    give(sim, { fiber: 3 });
+    expect(sim.craft('cordage').ok).toBe(true);
+    expect(sim.state.needs.energy).toBe(0);
+  });
+});
+
 describe('water', () => {
   it('drinking by hand quenches thirst; a canteen fills to capacity', () => {
     const sim = quietSim();

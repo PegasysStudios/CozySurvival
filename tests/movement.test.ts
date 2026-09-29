@@ -5,7 +5,8 @@ import { makeCollider, type Collider } from '../src/sim/colliders';
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, SWIM_FLOAT_Y, type MoveInput } from '../src/sim/movement';
 import type { PlayerState } from '../src/sim/state';
 import type { Terrain } from '../src/sim/terrain';
-import { colliderQuery, fakeTerrain } from './helpers';
+import { rockTop } from '../src/sim/trunks';
+import { colliderQuery, fakeTerrain, input, quietSim, run, teleport } from './helpers';
 
 const P = BALANCE.player;
 const flat = fakeTerrain(() => 2);
@@ -205,5 +206,247 @@ describe('solid collisions', () => {
     const p = createPlayer(0, 2, 0, 0);
     sim(p, flat, 1.5, mv({ moveZ: 1 }), 1 / 60, [bush]);
     expect(p.x).toBeGreaterThan(4);
+  });
+});
+
+describe('standing on boulders and fallen trunks', () => {
+  // a boulder at x=3 whose top is 0.8 above the ground (within jump height)
+  const domeTop = { type: 'dome' as const, x: 3, z: 0, base: 1.9, height: 0.9, ax: 1, az: 1, rot: 0 };
+  const rock = makeCollider('rock', 0, circle(3, 0, 0.85), circle(3, 0, 0.9), domeTop);
+  const rockPeak = domeTop.base + domeTop.height;
+
+  /** Walk toward +X, jumping once past `jumpAt`, and stop as soon as you've landed on something raised. */
+  function jumpOnto(p: PlayerState, colliders: Collider[], jumpAt: number, raised: number) {
+    const env = { terrain: flat, query: colliderQuery(colliders) };
+    let jumped = false;
+    let onTop = false;
+    for (let i = 0; i < 240; i++) {
+      const wantJump = !jumped && p.x >= jumpAt;
+      const r = stepPlayer(p, onTop ? mv() : mv({ moveZ: 1, jumpPressed: wantJump }), env, 1 / 60, opts);
+      if (r.jumped) jumped = true;
+      if (jumped && p.grounded && p.y > raised) onTop = true;
+    }
+    return { jumped, onTop };
+  }
+
+  it('walking into a boulder is blocked like a wall', () => {
+    const p = createPlayer(0, 2, 0, 0);
+    sim(p, flat, 2, mv({ moveZ: 1 }), 1 / 60, [rock]);
+    expect(p.x).toBeLessThan(3 - 1);
+    expect(p.x).toBeGreaterThan(1);
+    expect(p.y).toBeCloseTo(2, 1);
+    expect(p.grounded).toBe(true);
+  });
+
+  it('you can jump onto a boulder and stand on top without sliding off or sinking in', () => {
+    const p = createPlayer(0, 2, 0, 0);
+    const r = jumpOnto(p, [rock], 1.2, 2.4);
+    expect(r).toEqual({ jumped: true, onTop: true });
+    expect(Math.abs(p.x - 3)).toBeLessThan(1);
+    const y = p.y;
+    sim(p, flat, 1, mv(), 1 / 60, [rock]);
+    expect(p.grounded).toBe(true);
+    expect(p.y).toBeCloseTo(y, 6);
+    expect(p.y).toBeGreaterThan(rockPeak - 0.3);
+    expect(p.y).toBeLessThanOrEqual(rockPeak + 1e-9);
+  });
+
+  it('walks off the far side of a boulder back onto the ground', () => {
+    const p = createPlayer(3, rockPeak, 0, 0);
+    sim(p, flat, 2, mv({ moveZ: 1 }), 1 / 60, [rock]);
+    expect(p.x).toBeGreaterThan(5);
+    expect(p.y).toBeCloseTo(2, 6);
+    expect(p.grounded).toBe(true);
+  });
+
+  it('a boulder taller than a jump cannot be climbed by hopping onto its steep side', () => {
+    const tall = makeCollider('rock', 0, circle(3, 0, 0.85), circle(3, 0, 0.9), { ...domeTop, height: 2.5 });
+    const p = createPlayer(0, 2, 0, 0);
+    const env = { terrain: flat, query: colliderQuery([tall]) };
+    let maxY = p.y;
+    let jumps = 0;
+    for (let i = 0; i < 360; i++) {
+      const r = stepPlayer(p, mv({ moveZ: 1, jumpPressed: p.grounded && p.x > 1 }), env, 1 / 60, opts);
+      if (r.jumped) jumps++;
+      maxY = Math.max(maxY, p.y);
+    }
+    expect(jumps).toBeGreaterThan(3);
+    expect(maxY).toBeLessThan(2 + P.jumpHeight + 0.05);
+    sim(p, flat, 1, mv(), 1 / 60, [tall]);
+    expect(p.grounded).toBe(true);
+    expect(p.y).toBeCloseTo(2, 6);
+    expect(p.x).toBeLessThan(3 - 1);
+  });
+
+  it('a fallen trunk blocks walking but can be hopped onto', () => {
+    // trunk lying across the path along Z at x=3, radius 0.4, top 0.68 above the ground
+    const shape = box(3, 0, 3, 0.4, Math.PI / 2);
+    const trunk = makeCollider('trunk', 0, shape, shape, { type: 'slab', shape, lift: 0.68 });
+    const walker = createPlayer(0, 2, 0, 0);
+    sim(walker, flat, 2, mv({ moveZ: 1 }), 1 / 60, [trunk]);
+    expect(walker.x).toBeLessThan(3 - 0.4 - P.radius + 0.05);
+    const hopper = createPlayer(0, 2, 0, 0);
+    expect(jumpOnto(hopper, [trunk], 1.8, 2.4)).toEqual({ jumped: true, onTop: true });
+    expect(hopper.y).toBeCloseTo(2.68, 6);
+  });
+
+  it('animals are still kept out by the boulder body (tops only affect the player)', () => {
+    expect(rock.body).not.toBeNull();
+    expect(rock.top).toBe(domeTop);
+  });
+});
+
+describe('boulders in the world', () => {
+  it('every boulder has a standable top matching its size, and still blocks animals', () => {
+    const w = quietSim();
+    const out: Collider[] = [];
+    w.gen.rocks.slice(0, 40).forEach((r, i) => {
+      w.queryColliders(r.x, r.z, 0.1, out);
+      const c = out.find((k) => k.kind === 'rock' && k.ref === i)!;
+      expect(c.top).toEqual(rockTop(r, w.terrain.heightAt(r.x, r.z)));
+      expect(c.body).not.toBeNull();
+      const peak = c.top!.type === 'dome' ? c.top!.base + c.top!.height : 0;
+      expect(peak - w.terrain.heightAt(r.x, r.z)).toBeGreaterThan(0.2);
+      expect(peak - w.terrain.heightAt(r.x, r.z)).toBeLessThan(r.r * 1.1);
+    });
+  });
+
+  it('a small boulder near spawn can be jumped onto and stood on', () => {
+    const w = quietSim();
+    const t = w.terrain;
+    const sp = w.state.player;
+    const candidates = w.gen.rocks
+      .map((r) => ({ r, top: rockTop(r, t.heightAt(r.x, r.z)) }))
+      .filter(({ r, top }) => {
+        if (top.type !== 'dome') return false;
+        const rise = top.base + top.height - t.heightAt(r.x, r.z);
+        const sx = r.x - Math.max(top.ax, top.az) - 2;
+        const clear = w.gen.trees.every((tr) => Math.hypot(tr.x - r.x, tr.z - r.z) > Math.max(top.ax, top.az) + 4);
+        const others = w.gen.rocks.every((o) => o === r || Math.hypot(o.x - r.x, o.z - r.z) > 7);
+        return rise > 0.4 && rise < 0.85 && clear && others && t.slopeAt(r.x, r.z) < 0.15 && t.slopeAt(sx, r.z) < 0.15 && t.waterDepth(sx, r.z) === 0;
+      })
+      .sort((a, b) => Math.hypot(a.r.x - sp.x, a.r.z - sp.z) - Math.hypot(b.r.x - sp.x, b.r.z - sp.z));
+    expect(candidates.length).toBeGreaterThan(0);
+    const { r, top } = candidates[0];
+    const reachX = Math.max(top.type === 'dome' ? top.ax : 0, top.type === 'dome' ? top.az : 0);
+    teleport(w, r.x - reachX - 2, r.z);
+    const ground = t.heightAt(r.x, r.z);
+    let jumped = false;
+    let on = false;
+    for (let i = 0; i < 180 && !on; i++) {
+      const p = w.state.player;
+      const jump = !jumped && p.x > r.x - reachX - 0.9;
+      w.step(1 / 60, input({ moveZ: 1, jumpPressed: jump, yaw: -Math.PI / 2 }));
+      if (jump) jumped = true;
+      on = jumped && p.grounded && p.y > ground + 0.3;
+    }
+    expect(on).toBe(true);
+    run(w, 1, { yaw: -Math.PI / 2 });
+    expect(w.state.player.grounded).toBe(true);
+    expect(w.state.player.y).toBeGreaterThan(ground + 0.3);
+  });
+});
+
+describe('swimming in the world', () => {
+  function inLake() {
+    const w = quietSim();
+    const lake = w.terrain.lakes.find((l) => l.depth > P.swimDepth + 0.5)!;
+    teleport(w, lake.x, lake.z);
+    run(w, 1.5, {});
+    return w;
+  }
+
+  it('deep lake water floats you, and swimming drains energy gently', () => {
+    const w = inLake();
+    const p = w.state.player;
+    expect(p.swimming).toBe(true);
+    expect(p.y).toBeCloseTo(SWIM_FLOAT_Y, 1);
+    expect(w.activity).toBe('swim');
+    w.state.needs.energy = 50;
+    run(w, 10, {});
+    expect(w.state.needs.energy).toBeCloseTo(50 - BALANCE.needs.energy.swimDrainPerSec * 10, 1);
+  });
+
+  it('cold rules are unchanged: swimming chills you exactly like wading', () => {
+    const w = inLake();
+    const p = w.state.player;
+    expect(p.wading).toBe(true);
+    const swimming = w.warmthTarget();
+    p.swimming = false;
+    expect(w.warmthTarget()).toEqual(swimming);
+    p.wading = false;
+    expect(w.warmthTarget().target).toBeCloseTo(swimming.target + BALANCE.needs.warmth.wadingPenalty);
+  });
+
+  it('jumping into deep water makes a splash event', () => {
+    const w = inLake();
+    const p = w.state.player;
+    p.swimming = false;
+    p.grounded = false;
+    p.y = 2;
+    const ev = run(w, 1, {});
+    expect(ev.some((e) => e.type === 'splash' && e.impact > 3)).toBe(true);
+    expect(ev.some((e) => e.type === 'land')).toBe(false);
+  });
+});
+
+describe('swimming', () => {
+  // shore at x<4, water deepens past swimming depth around x=6.5
+  const lake = fakeTerrain((x) => 2 - x * 0.5);
+  const floating = (x: number) => {
+    const p = createPlayer(x, SWIM_FLOAT_Y, 0, 0);
+    p.swimming = true;
+    p.grounded = false;
+    p.wading = true;
+    return p;
+  };
+
+  it('floats at a steady depth, swims at swim speed and cannot sprint or jump', () => {
+    const p = floating(12);
+    const res = sim(p, lake, 1.5, (i) => mv({ moveZ: 1, sprint: true, jumpPressed: i % 10 === 0 }));
+    expect(res.some((r) => r.jumped)).toBe(false);
+    expect(p.swimming).toBe(true);
+    expect(p.sprinting).toBe(false);
+    expect(p.y).toBeCloseTo(SWIM_FLOAT_Y, 6);
+    expect(horizontalSpeed(p)).toBeCloseTo(P.swimSpeed, 1);
+  });
+
+  it('treading water in place stays afloat', () => {
+    const p = floating(12);
+    sim(p, lake, 3, mv());
+    expect(p.swimming).toBe(true);
+    expect(p.y).toBeCloseTo(SWIM_FLOAT_Y, 6);
+    expect(horizontalSpeed(p)).toBeLessThan(0.05);
+  });
+
+  it('swimming back to shore, you stand up and walk out', () => {
+    const p = floating(12);
+    sim(p, lake, 6, mv({ moveZ: 1, yaw: Math.PI / 2 })); // face -X
+    expect(p.swimming).toBe(false);
+    expect(p.grounded).toBe(true);
+    expect(p.x).toBeLessThan(3);
+    expect(p.wading).toBe(false);
+    expect(p.y).toBeCloseTo(lake.heightAt(p.x, p.z), 6);
+  });
+
+  it('dropping into deep water splashes instead of landing', () => {
+    const deep = fakeTerrain(() => -4);
+    const p = createPlayer(0, 3, 0, 0);
+    p.grounded = false;
+    const res = sim(p, deep, 1.5, mv());
+    const splash = res.filter((r) => r.splash > 0);
+    expect(splash).toHaveLength(1);
+    expect(splash[0].splash).toBeGreaterThan(5);
+    expect(res.every((r) => r.landed === 0)).toBe(true);
+    expect(p.swimming).toBe(true);
+    expect(p.y).toBeCloseTo(SWIM_FLOAT_Y, 6);
+  });
+
+  it('water shallower than swimming depth never makes you swim, even landing from a jump', () => {
+    const shallow = fakeTerrain(() => -(P.swimDepth - 0.2));
+    const p = createPlayer(0, shallow.heightAt(0, 0), 0, 0);
+    sim(p, shallow, 1, mv({ moveZ: 1, jumpPressed: true }));
+    expect(p.swimming).toBe(false);
+    expect(p.wading).toBe(true);
   });
 });
