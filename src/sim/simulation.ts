@@ -1806,6 +1806,15 @@ export class Simulation {
     this.projectiles.length = 0;
   }
 
+  /** Guest: the host reports that this player's hit killed an animal. */
+  creditKill(species: SpeciesId): void {
+    const s = this.state;
+    s.stats.kills[species] = (s.stats.kills[species] ?? 0) + 1;
+    this.gainXp('hunting', BALANCE.skills.xp.kill);
+    if (species === 'fish' && this.give('rawFish', 1, s.player.x, s.player.y + 1, s.player.z, 'carcass') > 0) this.message('Caught a trout!', 'good');
+    this.progress();
+  }
+
   /** Host: a remote player's hit on an animal (damage already includes their hunting skill). */
   applyRemoteHit(pid: string, id: number, damage: number, fromX: number, fromZ: number): void {
     const a = this.state.animals.find((x) => x.id === id);
