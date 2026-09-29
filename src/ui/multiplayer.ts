@@ -260,7 +260,7 @@ export class MpHud {
   private readonly roster = el('div', 'mp-roster');
   private readonly sleep = el('div', 'mp-sleep');
   private readonly sleepText = el('div', 'mp-sleep-text');
-  private readonly away = el('div', 'mp-away', 'Lost touch with the host… reconnecting');
+  private readonly away = el('div', 'mp-away', 'Host is away… waiting for them to come back');
   private readonly lines: { e: HTMLElement; t: number }[] = [];
   private readonly host: MpHudHost;
   private rosterKey = '';
