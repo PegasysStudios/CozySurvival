@@ -1,8 +1,9 @@
-import { DEFAULT_MASTER_VOLUME, masterGain, MUSIC_FADE_SECONDS, MUSIC_URL, musicFadeLevel } from './mix';
+import { busGains, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME, MUSIC_FADE_SECONDS, MUSIC_URL, musicFadeLevel, type VolumeSettings } from './mix';
 
 /**
  * Web Audio: a looping background music track plus procedural layered ambience (wind, water, fire, birds,
- * crickets, owls) and synthesized SFX. Everything runs through one master gain, so volume and mute apply to all of it.
+ * crickets, owls) and synthesized SFX. Music and effects/ambience each have their own volume bus, and both
+ * run through one master gain, so master volume and mute apply to all of it.
  */
 
 export type Sfx =
@@ -23,6 +24,8 @@ export interface AmbienceInput {
 export class AudioSystem {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  private fxVolume!: GainNode;
+  private musicVolume!: GainNode;
   private sfxBus!: GainNode;
   private ambBus!: GainNode;
   private noise!: AudioBuffer;
@@ -33,7 +36,7 @@ export class AudioSystem {
   private musicGain!: GainNode;
   private music: HTMLAudioElement | null = null;
   private musicFaded = false;
-  private volume = DEFAULT_MASTER_VOLUME;
+  private volume: VolumeSettings = { masterVolume: DEFAULT_MASTER_VOLUME, musicVolume: DEFAULT_MUSIC_VOLUME, sfxVolume: DEFAULT_SFX_VOLUME, muted: false };
   private muted = false;
   private nextBird = 2;
   private nextCricket = 0;
@@ -59,12 +62,16 @@ export class AudioSystem {
     this.ctx = ctx;
     this.master = ctx.createGain();
     this.master.connect(ctx.destination);
+    this.fxVolume = ctx.createGain();
+    this.fxVolume.connect(this.master);
+    this.musicVolume = ctx.createGain();
+    this.musicVolume.connect(this.master);
     this.sfxBus = ctx.createGain();
     this.sfxBus.gain.value = 0.9;
-    this.sfxBus.connect(this.master);
+    this.sfxBus.connect(this.fxVolume);
     this.ambBus = ctx.createGain();
     this.ambBus.gain.value = 0.8;
-    this.ambBus.connect(this.master);
+    this.ambBus.connect(this.fxVolume);
     this.applyVolume();
 
     const len = ctx.sampleRate * 2;
@@ -106,7 +113,7 @@ export class AudioSystem {
     el.preload = 'auto';
     this.musicGain = ctx.createGain();
     this.musicGain.gain.value = 0;
-    this.musicGain.connect(this.master);
+    this.musicGain.connect(this.musicVolume);
     try {
       ctx.createMediaElementSource(el).connect(this.musicGain);
     } catch {
@@ -142,15 +149,19 @@ export class AudioSystem {
     return !!this.music && !this.music.paused;
   }
 
-  setVolume(volume: number, muted: boolean): void {
-    this.volume = volume;
-    this.muted = muted;
+  setVolume(s: VolumeSettings): void {
+    this.volume = { masterVolume: s.masterVolume, musicVolume: s.musicVolume, sfxVolume: s.sfxVolume, muted: s.muted };
+    this.muted = s.muted;
     this.applyVolume();
   }
 
   private applyVolume(): void {
     if (!this.ctx) return;
-    this.master.gain.setTargetAtTime(masterGain(this.volume, this.muted), this.ctx.currentTime, 0.05);
+    const g = busGains(this.volume);
+    const t = this.ctx.currentTime;
+    this.master.gain.setTargetAtTime(g.master, t, 0.05);
+    this.musicVolume.gain.setTargetAtTime(g.music, t, 0.05);
+    this.fxVolume.gain.setTargetAtTime(g.sfx, t, 0.05);
   }
 
   suspend(): void {

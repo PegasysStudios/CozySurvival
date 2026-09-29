@@ -146,7 +146,9 @@ export class Screens {
     const settings = el('div', 'settings');
     const s = this.settings;
     settings.innerHTML = `
-      <label>Master volume <span class="vol-pct">${s.muted ? 'Muted' : volumePercent(s.masterVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-k="masterVolume" aria-label="Master volume"></label>
+      <label>Master volume <span class="vol-pct" data-pct="masterVolume">${s.muted ? 'Muted' : volumePercent(s.masterVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-k="masterVolume" aria-label="Master volume"></label>
+      <label>Music <span class="vol-pct" data-pct="musicVolume">${volumePercent(s.musicVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.musicVolume}" data-k="musicVolume" aria-label="Music volume"></label>
+      <label>Effects <span class="vol-pct" data-pct="sfxVolume">${volumePercent(s.sfxVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.sfxVolume}" data-k="sfxVolume" aria-label="Effects volume"></label>
       <label>Mouse sensitivity <input type="range" min="0.3" max="2.5" step="0.05" value="${s.sensitivity}" data-k="sensitivity"></label>
       <label class="check"><input type="checkbox" ${s.muted ? 'checked' : ''} data-k="muted"> Mute audio</label>
       <label class="check"><input type="checkbox" ${s.invertY ? 'checked' : ''} data-k="invertY"> Invert mouse Y</label>`;
@@ -181,8 +183,10 @@ export class Screens {
       if (k === 'muted' || k === 'invertY') inp.checked = s[k];
       else if (document.activeElement !== inp) inp.value = String(s[k]);
     });
-    const pct = this.pause.querySelector('.vol-pct');
-    if (pct) pct.textContent = s.muted ? 'Muted' : volumePercent(s.masterVolume);
+    this.pause.querySelectorAll<HTMLElement>('.vol-pct').forEach((pct) => {
+      const k = pct.dataset.pct as 'masterVolume' | 'musicVolume' | 'sfxVolume';
+      pct.textContent = k === 'masterVolume' && s.muted ? 'Muted' : volumePercent(s[k]);
+    });
   }
 
   showDeath(d: DeathSummary, day: number): void {

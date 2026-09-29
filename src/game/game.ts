@@ -138,7 +138,7 @@ export class Game {
     this.isPreview = !current;
     this.view.setWorld(this.sim);
     this.syncCameraToPlayer();
-    this.audio.setVolume(this.settings.masterVolume, this.settings.muted);
+    this.audio.setVolume(this.settings);
     this.hud.setVisible(false);
     if (current && current.state.dead) {
       this.isPreview = false;
@@ -333,7 +333,7 @@ export class Game {
     this.settings = s;
     this.run.meta.settings = { ...s };
     this.run.saveMeta();
-    this.audio.setVolume(s.masterVolume, s.muted);
+    this.audio.setVolume(s);
     this.screens.syncSettings(s);
   }
 
