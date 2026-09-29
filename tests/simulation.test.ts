@@ -109,12 +109,13 @@ describe('gathering by hand', () => {
   it('partial fits drop the overflow on the ground to pick up later', () => {
     const sim = quietSim();
     for (let k = 0; k < 6; k++) sim.state.inventory.slots[k] = { item: 'stone', count: 10 };
-    sim.state.inventory.slots[5] = { item: 'stick', count: 11 };
-    const i = nearestResource(sim, 'stickPile');
+    // stick and stone piles give one per harvest, so use a fern (two fiber) to get a partial fit
+    sim.state.inventory.slots[5] = { item: 'fiber', count: 15 };
+    const i = nearestResource(sim, 'fern');
     sim.perform({ kind: 'resource', index: i, dist: 1 });
-    expect(countItem(sim.state.inventory, 'stick')).toBe(12);
+    expect(countItem(sim.state.inventory, 'fiber')).toBe(16);
     expect(sim.state.drops).toHaveLength(1);
-    expect(sim.state.drops[0]).toMatchObject({ item: 'stick', count: 1 });
+    expect(sim.state.drops[0]).toMatchObject({ item: 'fiber', count: 1 });
     sim.state.inventory.slots[0] = null;
     sim.perform({ kind: 'drop', id: sim.state.drops[0].id, dist: 1 });
     expect(sim.state.drops).toHaveLength(0);
