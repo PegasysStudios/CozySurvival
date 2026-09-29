@@ -7,6 +7,16 @@ import { RECIPE_BY_ID } from '../data/recipes';
 import { SPECIES } from '../data/species';
 import { AudioSystem, type Sfx } from '../audio/audio';
 import { volumePercent } from '../audio/mix';
+import { randomSeed } from '../core/rng';
+import { localNetRequested, supabaseConfig } from '../net/config';
+import { GuestSession } from '../net/guest';
+import { HostSession } from '../net/host';
+import { checkBackend, LobbyWatcher, type ServerInfo } from '../net/lobby';
+import type { Avatar, Profile } from '../net/protocol';
+import type { Session, SessionEvent } from '../net/session';
+import { createSupabaseTransport } from '../net/supabase';
+import { broadcastBus, LocalTransport, type Transport } from '../net/transport';
+import { avatarPortrait } from '../render/avatars';
 import type { SimEvent } from '../sim/events';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import { browserStorage, RunManager, type DeathSummary, type Settings } from '../sim/run';
@@ -17,6 +27,7 @@ import type { ViewModelInput } from '../render/viewmodel';
 import { DevPanel, TIME_SCALES } from '../ui/dev';
 import { effectSummary, Hud } from '../ui/hud';
 import { itemIcon, toolIcon } from '../ui/icons';
+import { MpHud, MpMenu } from '../ui/multiplayer';
 import { Panels } from '../ui/panels';
 import { Screens } from '../ui/screens';
 import { EscapeRouter, type UiMode } from './escape';
@@ -27,6 +38,12 @@ type Mode = UiMode;
 const BASE_FOV = 72;
 const AUTOSAVE_SECONDS = 30;
 const LOOK_SPEED = 0.0022;
+/** Hidden or occluded tabs get no animation frames; a multiplayer host still has to run the shared world. */
+const BACKGROUND_TICK_MS = 250;
+
+function errText(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : 'Check your connection and try again.';
+}
 
 /** Wires the simulation to rendering, audio, UI, input and persistence. */
 export class Game {
@@ -73,6 +90,23 @@ export class Game {
   private settings: Settings;
   private lastDay = 0;
 
+  readonly mpMenu: MpMenu;
+  readonly mpHud: MpHud;
+  mp: Session | null = null;
+  private mpJoining = false;
+  private joinName = '';
+  private mpDeathCause: string | null = null;
+  /** The single-player world to return to after leaving a server. */
+  private solo: { sim: Simulation; preview: boolean } | null = null;
+  private net: Promise<Transport> | null = null;
+  private lobby: LobbyWatcher | null = null;
+  private lobbyGen = 0;
+  private joinGen = 0;
+  private readonly netCfg = supabaseConfig();
+  private readonly localNet = localNetRequested();
+  private readonly portraits = new Map<Avatar, string>();
+  private readonly idle: SimInput = { ...IDLE_INPUT };
+
   constructor(root: HTMLElement, devMode: boolean) {
     this.run = new RunManager(browserStorage());
     this.settings = { ...this.run.meta.settings };
@@ -98,11 +132,30 @@ export class Game {
       onRestartDay1: () => this.beginPlay(this.run.restartFromDay1(), true),
       onStartFromScratch: () => this.beginPlay(this.run.startFromScratch(), true),
       onSettings: (s) => this.applySettings(s),
+      onLeaveServer: () => this.leaveMp(null),
+      onRespawn: () => this.respawnMp(),
       sfx: () => {
         this.audio.start();
         this.sfx('click');
       },
     }, this.settings);
+    this.mpMenu = new MpMenu(ui, {
+      onCreate: (p, name) => void this.hostServer(p, name),
+      onJoin: (p, server) => void this.joinServer(p, server),
+      onCancel: () => this.cancelJoin(),
+      onRetry: () => this.refreshLobby(true),
+      portrait: (kind) => this.portrait(kind),
+      sfx: () => {
+        this.audio.start();
+        this.sfx('click');
+      },
+    });
+    this.screens.setTitleExtra(this.mpMenu.section);
+    this.mpHud = new MpHud(ui, {
+      onSend: (text) => this.sendChat(text),
+      onCloseChat: () => this.closeChat(),
+      onGetUp: () => this.sim.getUp(),
+    });
     this.dev = devMode
       ? new DevPanel(ui, {
           sim: () => this.sim,
@@ -128,10 +181,16 @@ export class Game {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.saveNow();
-        if (this.mode === 'playing') this.pause();
+        if (this.mode === 'playing' && !this.mp) this.pause();
       }
     });
-    window.addEventListener('pagehide', () => this.saveNow());
+    window.addEventListener('pagehide', () => {
+      this.saveNow();
+      if (this.mp && !this.mp.ended) this.mp.leave();
+    });
+    setInterval(() => {
+      if (this.mp && performance.now() - this.last > BACKGROUND_TICK_MS * 1.5) this.backgroundTick();
+    }, BACKGROUND_TICK_MS);
 
     const current = this.run.loadCurrent();
     this.sim = current ?? Simulation.newGame(this.run.meta.worldSeed);
@@ -175,6 +234,7 @@ export class Game {
       best: this.run.meta.best,
       deaths: this.run.meta.deaths,
     });
+    this.refreshLobby(false);
   }
 
   private continueRun(): void {
@@ -187,6 +247,7 @@ export class Game {
 
   private beginPlay(sim: Simulation, fresh: boolean): void {
     this.audio.start();
+    this.stopLobby();
     const worldChanged = sim !== this.sim;
     this.sim = sim;
     this.isPreview = false;
@@ -223,7 +284,11 @@ export class Game {
     this.mode = 'paused';
     this.saveNow();
     this.screens.syncSettings(this.settings);
-    this.screens.showPause();
+    if (this.mp) {
+      this.sim.bowDraw = -1;
+      this.mpHud.closeChat();
+    }
+    this.screens.showPause(this.mp ? { host: this.mp.role === 'host', players: this.mp.roster().length } : null);
   }
 
   private resume(): void {
@@ -305,6 +370,21 @@ export class Game {
     }
     if (this.mode !== 'playing') return;
     const sim = this.sim;
+    if (this.mp && !this.mpJoining) {
+      if (code === 'Enter' || code === 'NumpadEnter') {
+        this.openChat();
+        return;
+      }
+      if (code === 'Space' && sim.sleepingIn !== null) {
+        sim.getUp();
+        return;
+      }
+      if (code === 'KeyG' && !sim.state.dead) {
+        this.mp.wave();
+        this.throttledToast('wave', 'You wave to the others.', 'info', 2);
+        return;
+      }
+    }
     if (code === 'Tab') this.openPanel('inventory');
     else if (code === 'KeyC') this.openPanel('crafting');
     else if (code === 'KeyF') sim.quickConsume();
@@ -312,7 +392,7 @@ export class Game {
     else if (code === 'KeyQ' && sim.placement) {
       sim.cancelPlacement();
       this.hud.toast('Placement cancelled');
-    } else if (code === 'KeyT' && this.dev) {
+    } else if (code === 'KeyT' && this.dev && this.mp?.role !== 'guest') {
       const i = TIME_SCALES.indexOf(this.timeScale);
       this.setTimeScale(TIME_SCALES[(i + 1) % TIME_SCALES.length]);
     } else if (code.startsWith('Digit')) {
@@ -338,7 +418,7 @@ export class Game {
   }
 
   private saveNow(): void {
-    if (this.isPreview) return;
+    if (this.isPreview || this.mp) return;
     this.run.save(this.sim);
   }
 
@@ -357,11 +437,12 @@ export class Game {
     const dt = clamp(rawDt, 0, 0.1);
     this.time += dt;
     if (rawDt > 0) this.fpsAvg = this.fpsAvg * 0.95 + (1 / Math.max(rawDt, 1e-3)) * 0.05;
-    const sim = this.sim;
+    let sim = this.sim;
     const input = this.input;
 
-    const playing = this.mode === 'playing' && input.locked;
-    this.screens.setClickToPlay(this.mode === 'playing' && !input.locked);
+    const chatting = this.mpHud.chatting;
+    const playing = this.mode === 'playing' && input.locked && !chatting;
+    this.screens.setClickToPlay(this.mode === 'playing' && !input.locked && !chatting);
     if (playing) {
       const sens = LOOK_SPEED * this.settings.sensitivity;
       this.yaw -= input.mouseDX * sens;
@@ -385,15 +466,22 @@ export class Game {
         sim.cycleTool(input.wheel);
       }
       sim.step(dt, inp);
+    } else if (this.mpInWorld) {
+      // No pausing in multiplayer: menus, chat and death screens leave the shared world running.
+      sim.step(dt, this.idleInput());
     }
 
     sim.takeEvents(this.events);
     if (this.events.length) {
       for (const e of this.events) this.handleEvent(e);
-      if (!this.isPreview) {
+      if (!this.isPreview && !this.mp) {
         const summary = this.run.handleEvents(sim, this.events);
         if (summary) this.onDeath(summary);
       }
+    }
+    if (this.mp) {
+      this.updateMp(dt);
+      sim = this.sim;
     }
 
     if (playing) {
@@ -426,7 +514,8 @@ export class Game {
     vm.draw = sim.bowDraw >= 0 ? Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw) : -1;
     vm.sitting = ps.sitting;
     vm.hasArrows = sim.state.inventory.slots.some((s) => s?.item === 'arrow');
-    this.view.showViewModel = this.mode !== 'title' && this.mode !== 'dead' && !sim.placement;
+    this.view.showViewModel = this.mode !== 'title' && this.mode !== 'dead' && !sim.placement && sim.sleepingIn === null;
+    if (this.mpInWorld) this.view.avatars.update(this.mp!.peers.values(), dt, this.pose.x, this.pose.y, this.pose.z);
     this.view.frame(sim, dt, this.time, this.pose, vm);
 
     if (this.mode !== 'title') this.hud.update(sim, dt, this.timeScale);
@@ -434,10 +523,11 @@ export class Game {
     this.updateAudio(dt);
     if (this.mode === 'dead') {
       this.deathT += dt;
-      if (!this.deathShown && this.deathT > 1.8 && this.death) {
+      if (!this.deathShown && this.deathT > 1.8 && (this.death || this.mpDeathCause !== null)) {
         this.deathShown = true;
         this.hud.setVisible(false);
-        this.screens.showDeath(this.death, this.run.snapshotDay() ?? sim.day);
+        if (this.death) this.screens.showDeath(this.death, this.run.snapshotDay() ?? sim.day);
+        else this.screens.showMpDeath(this.mpDeathCause!, this.mp?.role === 'host');
       }
     }
     for (const [k, v] of this.cooldowns) {
@@ -560,6 +650,7 @@ export class Game {
         this.sfx('packFull');
         break;
       case 'swing':
+        this.mp?.noteSwing();
         this.view.viewModel.swing(e.tool, e.hit);
         if (!e.hit) this.sfx('swing');
         break;
@@ -673,6 +764,7 @@ export class Game {
         break;
       }
       case 'death':
+        if (this.mp) this.onMpDeath(e.cause);
         break;
       case 'dayStart':
         if (e.day !== this.lastDay) {
@@ -688,7 +780,12 @@ export class Game {
         this.sfx('nightfall');
         break;
       case 'slept':
-        this.sleepTransition(e.day, e.byFire);
+        if (this.mp && this.mode !== 'playing') this.hud.showBanner(`Day ${e.day}`, 'Everyone slept through the night.');
+        else this.sleepTransition(e.day, e.byFire);
+        break;
+      case 'sleepWait':
+        this.sfx('sleep');
+        this.throttledToast('sleepWait', 'You lie down. The night passes once everyone is asleep. Space gets you up.', 'info', 4);
         break;
       case 'sleepDenied':
         this.throttledToast('sleep', e.reason, 'warn', 2);
@@ -754,5 +851,323 @@ export class Game {
         this.sfx('dawn');
       }
     });
+  }
+
+  // ------------------------------------------------------------------ multiplayer
+
+  /** In a server's world (not still joining, not on the title screen). */
+  private get mpInWorld(): boolean {
+    return !!this.mp && !this.mpJoining && this.mode !== 'title';
+  }
+
+  private idleInput(): SimInput {
+    const inp = this.idle;
+    inp.yaw = this.yaw;
+    inp.pitch = this.pitch;
+    return inp;
+  }
+
+  private transport(): Promise<Transport> {
+    if (!this.net) {
+      const net = this.localNet ? Promise.resolve<Transport>(new LocalTransport(broadcastBus(), 1000)) : createSupabaseTransport(this.netCfg!);
+      net.catch(() => {
+        if (this.net === net) this.net = null;
+      });
+      this.net = net;
+    }
+    return this.net;
+  }
+
+  /** Title screen: check the backend (once, or on retry) and keep the server list live. */
+  private refreshLobby(force: boolean): void {
+    if (this.mode !== 'title' || this.mp) return;
+    if (this.localNet) {
+      this.mpMenu.setStatus({ kind: 'online', local: true });
+      this.startLobby();
+      return;
+    }
+    const cfg = this.netCfg;
+    if (!cfg) {
+      this.mpMenu.setStatus({ kind: 'unconfigured' });
+      return;
+    }
+    if (this.lobby && !force) return;
+    this.stopLobby();
+    const gen = this.lobbyGen;
+    this.mpMenu.setStatus({ kind: 'checking' });
+    void checkBackend(cfg).then((st) => {
+      if (gen !== this.lobbyGen || this.mode !== 'title' || this.mp) return;
+      if (st.state === 'online') {
+        this.mpMenu.setStatus({ kind: 'online', local: false });
+        this.startLobby();
+      } else {
+        this.mpMenu.setStatus({ kind: st.state, message: st.message });
+      }
+    });
+  }
+
+  private startLobby(): void {
+    if (this.lobby) return;
+    const gen = this.lobbyGen;
+    this.mpMenu.setServers(null);
+    this.transport()
+      .then(async (t) => {
+        if (gen !== this.lobbyGen || this.lobby || this.mode !== 'title' || this.mp) return;
+        let heard = false;
+        const w = new LobbyWatcher(t, (list) => {
+          heard = true;
+          if (this.lobby === w) this.mpMenu.setServers(list);
+        });
+        this.lobby = w;
+        await w.start();
+        setTimeout(() => {
+          if (!heard && this.lobby === w) this.mpMenu.setServers([]);
+        }, 1500);
+      })
+      .catch((err: unknown) => {
+        if (gen === this.lobbyGen) this.mpMenu.setStatus({ kind: 'offline', message: `Couldn't reach the lobby. ${errText(err)}` });
+      });
+  }
+
+  private stopLobby(): void {
+    this.lobbyGen++;
+    this.lobby?.close();
+    this.lobby = null;
+  }
+
+  private portrait(kind: Avatar): string {
+    let url = this.portraits.get(kind);
+    if (!url) {
+      url = avatarPortrait(this.view.renderer, kind);
+      this.portraits.set(kind, url);
+    }
+    return url;
+  }
+
+  private async hostServer(profile: Profile, serverName: string): Promise<void> {
+    if (this.mp) return;
+    const gen = ++this.joinGen;
+    this.mpMenu.showBusy('Opening your server…');
+    try {
+      const t = await this.transport();
+      if (gen !== this.joinGen) return;
+      this.stopLobby();
+      const host = new HostSession(t, Simulation.newGame(randomSeed()), profile, serverName);
+      await host.start();
+      if (gen !== this.joinGen) {
+        host.leave();
+        return;
+      }
+      this.mp = host;
+      this.enterMp(host, serverName, 'A brand-new world. Friends can join from their main menu.');
+    } catch (err) {
+      if (gen !== this.joinGen) return;
+      this.mpMenu.showError(`Couldn't open the server. ${errText(err)}`);
+      this.refreshLobby(true);
+    }
+  }
+
+  private async joinServer(profile: Profile, server: ServerInfo): Promise<void> {
+    if (this.mp) return;
+    const gen = ++this.joinGen;
+    this.mpMenu.showBusy(`Joining ${server.name}…`);
+    try {
+      const t = await this.transport();
+      if (gen !== this.joinGen) return;
+      this.stopLobby();
+      const guest = new GuestSession(t, profile, server.sid);
+      this.mp = guest;
+      this.mpJoining = true;
+      this.joinName = server.name;
+      await guest.start();
+    } catch (err) {
+      if (gen !== this.joinGen) return;
+      this.abandonJoin();
+      this.mpMenu.showError(`Couldn't join ${server.name}. ${errText(err)}`);
+    }
+  }
+
+  private cancelJoin(): void {
+    this.joinGen++;
+    this.abandonJoin();
+    this.mpMenu.closeOverlay();
+  }
+
+  private abandonJoin(): void {
+    if (this.mp && this.mpJoining) {
+      if (!this.mp.ended) this.mp.leave();
+      this.mp = null;
+      this.mpJoining = false;
+    }
+    this.refreshLobby(true);
+  }
+
+  private enterMp(mp: Session, title: string, text: string): void {
+    this.mpJoining = false;
+    if (!this.solo) {
+      if (!this.isPreview) this.run.save(this.sim);
+      this.solo = { sim: this.sim, preview: this.isPreview };
+    }
+    this.mpMenu.closeOverlay();
+    this.mpMenu.setNotice(null);
+    this.mpHud.reset();
+    for (const line of mp.chatLog) this.mpHud.addChat(line.name, line.t, line.pid === mp.pid);
+    this.mpDeathCause = null;
+    this.beginPlay(mp.sim!, false);
+    this.mpHud.setVisible(true);
+    this.hud.showBanner(title, text);
+    this.hud.toast('Enter to chat · G to wave · Esc for settings (the world keeps running)', 'info');
+  }
+
+  private updateMp(dt: number): void {
+    const mp = this.mp!;
+    mp.update(dt);
+    for (const e of mp.takeEvents()) {
+      this.onMpEvent(mp, e);
+      if (this.mp !== mp) return;
+    }
+    if (!this.mpJoining) this.mpHud.update(dt, mp.roster(), this.sim.sleepingIn !== null && !this.sim.state.dead);
+  }
+
+  private onMpEvent(mp: Session, e: SessionEvent): void {
+    switch (e.type) {
+      case 'chat':
+        this.mpHud.addChat(e.name, e.text, e.pid === mp.pid);
+        break;
+      case 'system':
+        this.mpHud.addSystem(e.text);
+        break;
+      case 'emote':
+        this.mpHud.addSystem(`${e.name} waves.`);
+        break;
+      case 'ready':
+        if (!e.resync) {
+          this.enterMp(mp, this.joinName || 'Joined', 'You join the others in their world. Your pack starts empty.');
+        } else if (mp.sim && mp.sim !== this.sim) {
+          this.sim = mp.sim;
+          this.view.setWorld(this.sim);
+        }
+        break;
+      case 'failed':
+        this.mp = null;
+        this.mpJoining = false;
+        this.mpMenu.showError(e.reason);
+        this.refreshLobby(true);
+        break;
+      case 'ended':
+        if (this.mpJoining) {
+          this.mp = null;
+          this.mpJoining = false;
+          this.mpMenu.showError(e.reason);
+          this.refreshLobby(true);
+        } else {
+          this.leaveMp(e.reason);
+        }
+        break;
+      case 'hostAway':
+        this.mpHud.setHostAway(e.away);
+        break;
+      case 'dawn':
+        break;
+    }
+  }
+
+  /** Leave (guest) or close (host) the server and go back to the single-player title screen. */
+  private leaveMp(reason: string | null): void {
+    const mp = this.mp;
+    if (!mp) return;
+    this.mp = null;
+    this.mpJoining = false;
+    this.mpDeathCause = null;
+    if (!mp.ended) mp.leave();
+    this.view.avatars.clear();
+    this.mpHud.reset();
+    this.screens.hidePause();
+    this.screens.hideDeath();
+    this.panels.close();
+    const solo = this.solo;
+    this.solo = null;
+    if (solo) {
+      this.sim = solo.sim;
+      this.isPreview = solo.preview;
+    }
+    this.sim.timeScale = this.timeScale;
+    this.view.setWorld(this.sim);
+    this.syncCameraToPlayer();
+    if (this.input.locked) {
+      this.expectUnlock = true;
+      this.input.exitLock();
+    }
+    this.mpMenu.setNotice(reason);
+    this.showTitle();
+  }
+
+  private onMpDeath(cause: string): void {
+    this.mpDeathCause = cause;
+    this.death = null;
+    this.mode = 'dead';
+    this.deathT = 0;
+    this.deathShown = false;
+    this.panels.close();
+    this.screens.hidePause();
+    this.mpHud.closeChat();
+    if (this.input.locked) {
+      this.expectUnlock = true;
+      this.input.exitLock();
+    }
+    this.sfx('death');
+  }
+
+  private respawnMp(): void {
+    const mp = this.mp;
+    if (!mp) return;
+    mp.respawn();
+    this.mpDeathCause = null;
+    this.screens.hideDeath();
+    this.hud.setVisible(true);
+    this.mode = 'playing';
+    this.syncCameraToPlayer();
+    this.pose.roll = 0;
+    this.lastWalked = this.sim.distanceWalked;
+    this.panels.refresh();
+    this.hud.showBanner('Back on your feet', 'A fresh start in the same world. Your old pack is where you fell.');
+    this.input.requestLock();
+  }
+
+  private openChat(): void {
+    if (!this.mp || this.mpJoining) return;
+    this.input.releaseAll();
+    this.sim.bowDraw = -1;
+    if (this.input.locked) {
+      this.expectUnlock = true;
+      this.input.exitLock();
+    }
+    this.mpHud.openChat();
+  }
+
+  private closeChat(): void {
+    if (!this.mpHud.chatting) return;
+    this.mpHud.closeChat();
+    if (this.mode === 'playing') this.input.requestLock();
+  }
+
+  private sendChat(text: string): void {
+    if (this.mp?.sendChat(text) === 'slow') this.hud.toast('Easy there: one message a second.', 'warn');
+  }
+
+  /** Keeps a multiplayer world (and the connection) alive while the tab is hidden. */
+  private backgroundTick(): void {
+    const now = performance.now();
+    const total = Math.min(1, (now - this.last) / 1000);
+    this.last = now;
+    if (total <= 0) return;
+    this.time += total;
+    if (this.mpInWorld) {
+      const inp = this.idleInput();
+      for (let t = total; t > 1e-6; t -= 0.1) this.sim.step(Math.min(0.1, t), inp);
+      this.sim.takeEvents(this.events);
+      for (const e of this.events) this.handleEvent(e);
+    }
+    if (this.mp) this.updateMp(total);
   }
 }

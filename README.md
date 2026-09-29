@@ -22,7 +22,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | `npm run preview` | Serve the production build on port **5288** |
 | `npm test` | Vitest suite for the simulation (no browser or WebGL needed) |
 | `npm run typecheck` | TypeScript only |
-| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Fails on any console error |
+| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then play a two-tab multiplayer session over `?net=local`. Fails on any console error |
 
 `npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one.
 
@@ -113,6 +113,20 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 
   **M** mutes and unmutes everything without changing the sliders.
 
+## Multiplayer
+
+Up to 4 players share one world over Supabase Realtime. The host's browser runs the world, including the clock, the animals and the sleep vote, so there's no game server to deploy.
+
+- **Set up.** Copy `.env.example` to `.env.local`, fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, and restart `npm run dev`. [docs/multiplayer-setup.md](docs/multiplayer-setup.md) walks through the free Supabase project and its one SQL snippet. Without these variables the game is single-player only: the Multiplayer block on the title screen is greyed out with a "not set up" note, and the Supabase library is never downloaded.
+- **Try it without Supabase.** Open `http://localhost:5287/?net=local` in two tabs of the same browser. The tabs talk over a BroadcastChannel ("Local test mode").
+- **Play.**
+  - **Create multiplayer server** starts a brand-new world. Other players see it in the server list and click **Join**. Everyone picks a name and a male or female character.
+  - Your pack, needs and skills are your own. Trees, forage, structures, fires, dropped items and animals are shared.
+  - **Enter** opens chat, and messages show as bubbles over heads. **G** waves. **Esc** only opens settings, because the world keeps running.
+  - The host's clock sets the time of day. Sleeping in a shelter lies you down until everyone is in bed, then the night skips. **Space** gets you up.
+  - Dying drops your whole pack as a pile anyone can loot, you included. You respawn with an empty pack and fresh needs and skills.
+  - Multiplayer worlds aren't saved. When the host leaves, the server closes for everyone. Your single-player run is kept as it was.
+
 ## Dev tools
 
 Available on the dev server, or on any build with `?dev=1` in the URL.
@@ -138,7 +152,10 @@ src/
   render/  Three.js views: terrain, water, sky, instanced nature, creatures,
            structures, placement ghost, particles, first-person view model
   audio/   procedural Web Audio ambience and sound effects, music, volume mixing
-  ui/      HTML/CSS HUD, crafting, campfire and pack panels, title/pause/death screens, dev panel
+  net/     multiplayer: transport interface (Supabase Realtime, in-memory, BroadcastChannel),
+           lobby, wire protocol, world sync, host and guest sessions
+  ui/      HTML/CSS HUD, crafting, campfire and pack panels, title/pause/death screens,
+           multiplayer menu and chat, dev panel
   game/    input, Esc/menu routing, and the Game class that wires sim, view, audio, UI and saves together
 tests/     Vitest suite for sim/, core/ and the DOM-free parts of ui/, game/ and audio/
 scripts/   headless smoke check
@@ -162,7 +179,7 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 296 tests covering:
+`npm test` runs 308 tests covering:
 
 - inventory stacking and carry limits
 - crafting, recipe unlocks, and ingredients consumed only on success
@@ -184,8 +201,16 @@ Rendering is built for 60 fps:
 - save and load round-trips, migration of version-1 saves, and corrupted saves
 - animal fear, flee and predator state machines
 - movement and collision physics
+- multiplayer, with 2–5 simulated players on an in-memory transport:
+  - the server list, joining, and the 4-player cap
+  - the late-join world snapshot
+  - shared gathering, chopping and building, co-op chopping, and hunting with kill credit
+  - chat, its rate limit and history
+  - the sleep vote
+  - death loot and respawn
+  - a guest leaving, and the host closing the server
 
-`npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, the campfire menu and Esc, save/reload, and the death screen.
+`npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, the campfire menu and Esc, save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
 ## Known gaps
 
@@ -202,3 +227,6 @@ Rendering is built for 60 fps:
 - Headless Chrome fakes pointer lock, so the smoke check can't reproduce the browser's own Esc lock release. That case is covered by unit tests only.
 - With the pointer captured, the browser usually handles the Esc press itself, so pausing comes from the lock release. If the browser refuses to re-capture the pointer after a menu closes, the click-to-continue overlay appears instead.
 - While muted, the music keeps playing silently, so unmuting picks it back up mid-track.
+- Multiplayer has only run over the in-memory and BroadcastChannel transports here. The Supabase transport is written against the setup guide but hasn't been played live.
+- Multiplayer trusts every client: the host doesn't check a guest's reach or placement. If two players take the last item at the same moment, both may get it, though the world's count stays right.
+- Other players' actions make no sound yet. The host's tab keeps the world running when it's in the background, but a browser may slow its timers there, and guests then see a "Host is away" note.
