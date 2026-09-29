@@ -33,6 +33,8 @@ export type SimEvent =
   | { type: 'nightfall'; day: number }
   | { type: 'slept'; day: number; byFire: boolean }
   | { type: 'sleepDenied'; reason: string }
+  /** Multiplayer: lay down to sleep and now waits for the other players. */
+  | { type: 'sleepWait'; structure: number }
   | { type: 'animalHit'; id: number; species: SpeciesId; x: number; y: number; z: number; killed: boolean }
   | { type: 'animalFlee'; id: number; species: SpeciesId }
   | { type: 'predatorAlert'; id: number; species: SpeciesId; x: number; z: number }

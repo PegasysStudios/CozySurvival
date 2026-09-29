@@ -18,7 +18,7 @@ import { createPlayer, horizontalSpeed, lookDir, stepPlayer, type MoveEnv } from
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
 import { checkPlacement, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, huntDamageMultiplier, SKILL_INFO } from './skills';
-import { STATE_VERSION, type AnimalState, type DamageSource, type GameState, type SkillId, type StructureState, type Wear } from './state';
+import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, WATER_LEVEL, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
 import { freshTree, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
@@ -78,9 +78,30 @@ export interface Projectile {
   life: number;
 }
 
+/** `solo` is single-player. In multiplayer the host's simulation owns the world and guests follow it. */
+export type Authority = 'solo' | 'host' | 'guest';
+
+/** Another player as the host's animal AI sees them. */
+export interface RemotePlayer {
+  pid: string;
+  x: number;
+  z: number;
+  noise: number;
+  dead: boolean;
+  sleeping: boolean;
+  deterrent: boolean;
+}
+
+/** Requests a guest's simulation leaves for its network session. */
+export type NetRequest =
+  | { k: 'hit'; id: number; dmg: number }
+  | { k: 'sleep'; structure: number }
+  | { k: 'wake' };
+
 export const COOK_RADIUS = 4;
 const ARROW_GRAVITY = 9.8;
 const START_HOURS = BALANCE.time.startHour - BALANCE.time.dayStartHour;
+const PREDATOR_ACTIVE = ['stalk', 'chase', 'attack', 'warn', 'reposition'];
 
 let runCounter = 0;
 
@@ -90,20 +111,26 @@ function makeRunId(): string {
   return Date.now().toString(36) + Math.floor(Math.random() * 0xffffff).toString(36) + runCounter.toString(36);
 }
 
+/** A new player at the world spawn, facing the lake. */
+function spawnPlayer(terrain: Terrain): PlayerState {
+  const lake = terrain.lakes[0];
+  const sx = terrain.spawn.x;
+  const sz = terrain.spawn.z;
+  return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-(lake.x - sx), -(lake.z - sz)));
+}
+
 export function createNewState(seed: number): GameState {
   const terrain = getTerrain(seed);
   const gen = getWorldGen(seed);
   const rng = new Rng(seed ^ 0x3c6ef372);
-  const lake = terrain.lakes[0];
   const sx = terrain.spawn.x;
   const sz = terrain.spawn.z;
-  const yaw = Math.atan2(-(lake.x - sx), -(lake.z - sz));
   const state: GameState = {
     version: STATE_VERSION,
     seed,
     runId: makeRunId(),
     totalHours: START_HOURS,
-    player: createPlayer(sx, terrain.heightAt(sx, sz), sz, yaw),
+    player: spawnPlayer(terrain),
     needs: createNeeds(),
     inventory: createInventory(BALANCE.carry.baseSlots),
     tools: ['hands'],
@@ -166,6 +193,20 @@ export class Simulation {
   lastLanding = 0;
   distanceWalked = 0;
 
+  authority: Authority = 'solo';
+  /** Host only: the other players, so animals notice and attack whoever is nearest. */
+  readonly remotePlayers: RemotePlayer[] = [];
+  /** Host only: predator hits on remote players, for the session to forward. */
+  readonly remoteHits: { pid: string; amount: number; source: DamageSource; fromX: number; fromZ: number }[] = [];
+  /** Host only: animals a remote player's hit killed, so the session can credit them. */
+  readonly remoteKills: { pid: string; species: SpeciesId }[] = [];
+  /** Guest only: requests for the host. */
+  readonly netOut: NetRequest[] = [];
+  /** Multiplayer: the shelter this player sleeps in while waiting for everyone else. */
+  sleepingIn: number | null = null;
+  private sleepByFire = false;
+  private aiTarget: RemotePlayer | null = null;
+
   private readonly events: SimEvent[] = [];
   private readonly rng: Rng;
   private readonly treeColliders: Collider[] = [];
@@ -203,7 +244,8 @@ export class Simulation {
       night: false,
       events: this.events,
       hurtPlayer(amount, source, fromX, fromZ) {
-        self.hurtPlayer(amount, source, fromX, fromZ);
+        if (self.aiTarget) self.remoteHits.push({ pid: self.aiTarget.pid, amount, source, fromX, fromZ });
+        else self.hurtPlayer(amount, source, fromX, fromZ);
       },
     };
     this.refreshLitFires();
@@ -306,7 +348,7 @@ export class Simulation {
 
   step(dtIn: number, input: SimInput): void {
     const s = this.state;
-    if (s.dead) return;
+    if (s.dead && this.authority === 'solo') return;
     const dt = Math.min(Math.max(dtIn, 0), 0.1);
     const p = s.player;
 
@@ -322,6 +364,21 @@ export class Simulation {
       this.emit({ type: 'nightfall', day: this.day });
     }
     this.wasNight = night;
+    const world = this.authority !== 'guest';
+
+    // Multiplayer only: the world keeps running while this player is dead or asleep.
+    if (s.dead || this.sleepingIn !== null) {
+      this.updateProjectiles(dt);
+      this.updateAnimals(dt);
+      if (world) {
+        this.updateFires(gameHours);
+        this.updateWear(gameHours, false, true, false);
+        this.updateRespawns(dt);
+        this.checkPopulation();
+      }
+      s.rng = this.rng.s;
+      return;
+    }
 
     // movement
     p.yaw = input.yaw;
@@ -353,9 +410,9 @@ export class Simulation {
 
     this.updateProjectiles(dt);
     this.updateAnimals(dt);
-    this.updateFires(gameHours);
-    this.updateWear(gameHours, true);
-    this.updateRespawns(dt);
+    if (world) this.updateFires(gameHours);
+    this.updateWear(gameHours, true, world);
+    if (world) this.updateRespawns(dt);
 
     // needs
     const warm = this.warmthTarget();
@@ -371,11 +428,16 @@ export class Simulation {
     if (cause) this.die(cause);
 
     this.progress();
+    if (world) this.checkPopulation();
+    s.rng = this.rng.s;
+  }
+
+  private checkPopulation(): void {
+    const s = this.state;
     if (s.totalHours >= s.spawnCheckAt) {
       s.spawnCheckAt = s.totalHours + 1;
       this.maintainPopulation();
     }
-    s.rng = this.rng.s;
   }
 
   private progress(): void {
@@ -926,16 +988,19 @@ export class Simulation {
   }
 
   /** Slow decay over `hours`: every owned tool, the lit torch (only while held and awake), and shelters and benches. */
-  private updateWear(hours: number, awake: boolean): void {
+  private updateWear(hours: number, awake: boolean, structures = true, tools = true): void {
     if (hours <= 0) return;
     const s = this.state;
     const D = BALANCE.durability;
-    for (const tool of [...s.tools]) {
-      if (!toolWears(tool)) continue;
-      let amount = D.tools[tool].perHour * hours;
-      if (tool === 'torch' && awake && s.activeTool === 'torch') amount += D.tools.torch.burnPerHour * hours;
-      this.wearTool(tool, amount);
+    if (tools) {
+      for (const tool of [...s.tools]) {
+        if (!toolWears(tool)) continue;
+        let amount = D.tools[tool].perHour * hours;
+        if (tool === 'torch' && awake && s.activeTool === 'torch') amount += D.tools.torch.burnPerHour * hours;
+        this.wearTool(tool, amount);
+      }
     }
+    if (!structures) return;
     for (const st of [...s.structures]) {
       if (st.wear && prefabWears(st.prefab)) this.wearStructure(st, D.structures[st.prefab].perHour * hours);
     }
@@ -1055,6 +1120,15 @@ export class Simulation {
 
   /** The player's hit on an animal; the hunting skill adds damage. */
   hitAnimal(a: AnimalState, damage: number): void {
+    if (this.authority === 'guest') {
+      // The host owns the animals: it applies the hit and reports any kill back.
+      const dmg = damage * huntDamageMultiplier(this.state.skills.hunting);
+      a.hurt = 0.35;
+      this.netOut.push({ k: 'hit', id: a.id, dmg });
+      this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + SPECIES[a.species].hitHeight, z: a.z, killed: false });
+      this.gainXp('hunting', BALANCE.skills.xp.hit);
+      return;
+    }
     const killed = damageAnimal(a, damage * huntDamageMultiplier(this.state.skills.hunting), this.animalEnv);
     const def = SPECIES[a.species];
     this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + def.hitHeight, z: a.z, killed });
@@ -1062,17 +1136,23 @@ export class Simulation {
     if (killed) this.killAnimal(a);
   }
 
-  private killAnimal(a: AnimalState): void {
+  /** `by` is the remote player whose hit killed it (host only); they get the credit and any fish. */
+  private killAnimal(a: AnimalState, by: string | null = null): void {
     const s = this.state;
     const i = s.animals.indexOf(a);
     if (i >= 0) s.animals.splice(i, 1);
-    s.stats.kills[a.species] = (s.stats.kills[a.species] ?? 0) + 1;
-    this.gainXp('hunting', BALANCE.skills.xp.kill);
+    if (by === null) {
+      s.stats.kills[a.species] = (s.stats.kills[a.species] ?? 0) + 1;
+      this.gainXp('hunting', BALANCE.skills.xp.kill);
+    } else {
+      this.remoteKills.push({ pid: by, species: a.species });
+    }
     const def = SPECIES[a.species];
     const remaining = def.drops.map((d) => ({ item: d.item, count: d.count }));
     const meat = remaining.find((r) => r.item === 'rawMeat');
-    if (meat && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
+    if (meat && by === null && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
     if (a.species === 'fish') {
+      if (by !== null) return;
       const added = this.give('rawFish', 1, a.x, WATER_LEVEL + 0.2, a.z, 'carcass');
       if (added > 0) {
         this.message('Caught a trout!', 'good');
@@ -1167,21 +1247,56 @@ export class Simulation {
   // ------------------------------------------------------------------ world systems
 
   private updateAnimals(dt: number): void {
+    if (this.authority === 'guest') return;
     const s = this.state;
     const env = this.animalEnv;
     env.playerX = s.player.x;
     env.playerZ = s.player.z;
     env.playerNoise = this.noise;
-    env.playerDead = s.dead;
+    env.playerDead = s.dead || this.sleepingIn !== null;
     env.playerDeterrent = s.activeTool === 'torch';
     env.night = this.night;
+    const remote = this.remotePlayers.length > 0;
     for (let i = 0; i < s.animals.length; i++) {
       const a = s.animals[i];
       const prevMode = a.mode;
+      if (remote) this.aimAi(a);
       updateAnimal(a, env, dt);
       if (a.mode === 'flee' && prevMode !== 'flee' && a.species === 'deer') {
         s.stats.events.deerSpooked = (s.stats.events.deerSpooked ?? 0) + 1;
       }
+    }
+    this.aiTarget = null;
+  }
+
+  /** Point the animal AI at the nearest awake, living player (local or remote). */
+  private aimAi(a: AnimalState): void {
+    const s = this.state;
+    const env = this.animalEnv;
+    const localOk = !s.dead && this.sleepingIn === null;
+    let best: RemotePlayer | null = null;
+    let bestD = localOk ? Math.hypot(s.player.x - a.x, s.player.z - a.z) : Infinity;
+    for (const r of this.remotePlayers) {
+      if (r.dead || r.sleeping) continue;
+      const d = Math.hypot(r.x - a.x, r.z - a.z);
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    this.aiTarget = best;
+    if (best) {
+      env.playerX = best.x;
+      env.playerZ = best.z;
+      env.playerNoise = best.noise;
+      env.playerDead = false;
+      env.playerDeterrent = best.deterrent;
+    } else {
+      env.playerX = s.player.x;
+      env.playerZ = s.player.z;
+      env.playerNoise = this.noise;
+      env.playerDead = !localOk;
+      env.playerDeterrent = s.activeTool === 'torch';
     }
   }
 
@@ -1240,6 +1355,10 @@ export class Simulation {
     const p = s.player;
     const avoidPrey: AvoidPoint[] = [{ x: p.x, z: p.z, minDist: PREY_MIN_SPAWN_DIST }];
     const avoidPred: AvoidPoint[] = [{ x: p.x, z: p.z, minDist: PREDATOR_MIN_SPAWN_DIST }];
+    for (const r of this.remotePlayers) {
+      avoidPrey.push({ x: r.x, z: r.z, minDist: PREY_MIN_SPAWN_DIST });
+      avoidPred.push({ x: r.x, z: r.z, minDist: PREDATOR_MIN_SPAWN_DIST });
+    }
     for (const st of s.structures) avoidPred.push({ x: st.x, z: st.z, minDist: 35 });
     for (const id of ['rabbit', 'deer', 'fish'] as const) {
       const def = SPECIES[id];
@@ -1537,12 +1656,25 @@ export class Simulation {
       return false;
     }
     const p = s.player;
-    const threat = s.animals.some((a) => SPECIES[a.species].kind === 'predator' && ['stalk', 'chase', 'attack', 'warn', 'reposition'].includes(a.mode) && Math.hypot(a.x - p.x, a.z - p.z) < 35);
+    const threat = s.animals.some((a) => SPECIES[a.species].kind === 'predator' && PREDATOR_ACTIVE.includes(a.mode) && Math.hypot(a.x - p.x, a.z - p.z) < 35);
     if (threat) {
       this.emit({ type: 'sleepDenied', reason: "You can't sleep with a predator nearby!" });
       return false;
     }
     const byFire = this.warmingFire() !== null;
+    if (this.authority !== 'solo') {
+      // Multiplayer: lie down and wait until everyone is asleep; the host then skips the night.
+      this.sleepingIn = st.id;
+      this.sleepByFire = byFire;
+      this.placement = null;
+      this.bowDraw = -1;
+      p.sitting = false;
+      p.vx = 0;
+      p.vz = 0;
+      this.netOut.push({ k: 'sleep', structure: st.id });
+      this.emit({ type: 'sleepWait', structure: st.id });
+      return true;
+    }
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
     const elapsed = s.totalHours - before;
@@ -1573,6 +1705,187 @@ export class Simulation {
     this.emit({ type: 'dayStart', day: this.day });
     this.progress();
     return true;
+  }
+
+  // ------------------------------------------------------------------ multiplayer
+
+  /** Get up without waiting for the others. */
+  getUp(): void {
+    if (this.sleepingIn === null) return;
+    this.sleepingIn = null;
+    this.netOut.push({ k: 'wake' });
+  }
+
+  /** Host, once everyone is asleep: the world half of a night's sleep. Returns the game hours skipped. */
+  skipNight(sleepers: readonly { x: number; z: number }[]): number {
+    const s = this.state;
+    const before = s.totalHours;
+    s.totalHours = nextDayStart(s.totalHours);
+    const elapsed = s.totalHours - before;
+    for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
+    this.refreshLitFires();
+    this.updateWear(elapsed, false, true, false);
+    for (const a of s.animals) {
+      if (SPECIES[a.species].kind !== 'predator') continue;
+      a.mode = 'wander';
+      a.timer = 5;
+      a.aggroCooldown = 10;
+      if (sleepers.some((q) => Math.hypot(a.x - q.x, a.z - q.z) < 60)) {
+        a.x = a.homeX;
+        a.z = a.homeZ;
+        a.y = this.terrain.heightAt(a.x, a.z);
+      }
+    }
+    this.wasNight = this.night;
+    this.worldVersion++;
+    return elapsed;
+  }
+
+  /** Every client, at the shared dawn: the personal half of a night's sleep. */
+  wakeUp(elapsed: number): void {
+    const id = this.sleepingIn;
+    if (id === null) return;
+    this.sleepingIn = null;
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === id);
+    const shelter = st ? PREFABS[st.prefab].shelter : undefined;
+    if (shelter) applySleep(s.needs, shelter, this.sleepByFire);
+    this.updateWear(elapsed, false, false);
+    if (st && prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
+    this.wasNight = this.night;
+    s.stats.events.slept = (s.stats.events.slept ?? 0) + 1;
+    this.worldVersion++;
+    this.emit({ type: 'slept', day: this.day, byFire: this.sleepByFire });
+    this.emit({ type: 'dayStart', day: this.day });
+    this.progress();
+  }
+
+  /** Guest: follow the host's clock, snapping on large drift and easing out small drift. */
+  followClock(hours: number, timeScale: number): void {
+    const s = this.state;
+    this.timeScale = timeScale;
+    const prevDay = this.day;
+    const d = hours - s.totalHours;
+    s.totalHours = Math.abs(d) > 0.05 ? hours : s.totalHours + d * 0.3;
+    if (this.day !== prevDay) this.emit({ type: 'dayStart', day: this.day });
+  }
+
+  /** Multiplayer death: the pack spills onto the ground as a pile anyone can loot. */
+  dropPack(): void {
+    const s = this.state;
+    const p = s.player;
+    s.inventory.slots.forEach((slot, i) => {
+      if (!slot) return;
+      const a = i * 2.4;
+      const r = 0.3 + 0.14 * i;
+      this.dropAt(slot.item, slot.count, p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
+      s.inventory.slots[i] = null;
+    });
+  }
+
+  /** Multiplayer respawn: a fresh character at the world spawn in the same, still-running world. */
+  respawn(): void {
+    const s = this.state;
+    s.player = spawnPlayer(this.terrain);
+    s.needs = createNeeds();
+    s.inventory = createInventory(BALANCE.carry.baseSlots);
+    s.tools = ['hands'];
+    s.activeTool = 'hands';
+    s.toolWear = {};
+    s.gear = [];
+    s.known = [];
+    s.skills = createSkills();
+    s.stats = { gathered: {}, crafted: {}, events: {}, kills: {} };
+    s.objective = 0;
+    s.dead = false;
+    s.deathCause = null;
+    s.lastDamage = null;
+    this.sleepingIn = null;
+    this.placement = null;
+    this.bowDraw = -1;
+    this.projectiles.length = 0;
+  }
+
+  /** Host: a remote player's hit on an animal (damage already includes their hunting skill). */
+  applyRemoteHit(pid: string, id: number, damage: number, fromX: number, fromZ: number): void {
+    const a = this.state.animals.find((x) => x.id === id);
+    if (!a) return;
+    this.animalEnv.playerX = fromX;
+    this.animalEnv.playerZ = fromZ;
+    if (damageAnimal(a, damage, this.animalEnv)) this.killAnimal(a, pid);
+  }
+
+  /** Remote world state: replace tree `i`, keeping colliders in step. */
+  setTree(i: number, v: TreeDyn): void {
+    const dyn = this.state.trees[i];
+    if (!dyn) return;
+    const wasFelled = dyn.felled;
+    Object.assign(dyn, v);
+    if (wasFelled !== dyn.felled) {
+      this.colliders.remove(this.treeColliders[i]);
+      this.treeColliders[i] = this.colliders.add(this.makeTreeCollider(i, dyn.felled));
+    }
+    this.syncTrunkCollider(i);
+    this.worldVersion++;
+  }
+
+  setResource(i: number, v: ResourceDyn): void {
+    const dyn = this.state.resources[i];
+    if (!dyn) return;
+    Object.assign(dyn, v);
+    this.worldVersion++;
+  }
+
+  putStructure(v: StructureState): void {
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === v.id);
+    if (st) Object.assign(st, v);
+    else {
+      const copy = { ...v };
+      s.structures.push(copy);
+      this.addStructureCollider(copy);
+    }
+    this.refreshLitFires();
+    this.worldVersion++;
+  }
+
+  deleteStructure(id: number): void {
+    const st = this.state.structures.find((x) => x.id === id);
+    if (!st) return;
+    this.removeStructure(st);
+    this.refreshLitFires();
+  }
+
+  putDrop(v: DropState): void {
+    const s = this.state;
+    const d = s.drops.find((x) => x.id === v.id);
+    if (d) Object.assign(d, v);
+    else s.drops.push({ ...v });
+    this.worldVersion++;
+  }
+
+  deleteDrop(id: number): void {
+    const s = this.state;
+    const i = s.drops.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    s.drops.splice(i, 1);
+    this.worldVersion++;
+  }
+
+  putCarcass(v: CarcassState): void {
+    const s = this.state;
+    const c = s.carcasses.find((x) => x.id === v.id);
+    if (c) Object.assign(c, v);
+    else s.carcasses.push({ ...v, remaining: v.remaining.map((r) => ({ ...r })) });
+    this.worldVersion++;
+  }
+
+  deleteCarcass(id: number): void {
+    const s = this.state;
+    const i = s.carcasses.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    s.carcasses.splice(i, 1);
+    this.worldVersion++;
   }
 
   currentObjective(): { title: string; hint: string; progress: string | null } | null {
