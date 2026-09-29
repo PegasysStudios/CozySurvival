@@ -140,7 +140,7 @@ export class Game {
       this.mode = 'dead';
       this.deathT = 10;
       this.deathShown = true;
-      this.screens.showDeath(this.death, current.day);
+      this.screens.showDeath(this.death, this.run.snapshotDay() ?? current.day);
     } else {
       this.showTitle();
     }
@@ -427,7 +427,7 @@ export class Game {
       if (!this.deathShown && this.deathT > 1.8 && this.death) {
         this.deathShown = true;
         this.hud.setVisible(false);
-        this.screens.showDeath(this.death, sim.day);
+        this.screens.showDeath(this.death, this.run.snapshotDay() ?? sim.day);
       }
     }
     for (const [k, v] of this.cooldowns) {

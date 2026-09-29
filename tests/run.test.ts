@@ -204,6 +204,27 @@ describe('run manager', () => {
     expect(retry.state.runId).toBe(sim.state.runId);
   });
 
+  it('dying on the tick a new day begins keeps the previous morning, so Retry the day revives you', () => {
+    const store = new MemoryStorage();
+    const rm = new RunManager(store, seeds(5));
+    const sim = rm.newRun();
+    sim.state.animals.length = 0;
+    sim.state.totalHours = 24 - 1e-4;
+    Object.assign(sim.state.needs, { thirst: 0, health: 1e-4 });
+    sim.step(0.1, { moveX: 0, moveZ: 0, jumpPressed: false, sprint: false, yaw: 0, pitch: 0, primary: false, primaryPressed: false, primaryReleased: false });
+    const events = sim.takeEvents([]);
+    expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['dayStart', 'death']));
+    expect(rm.handleEvents(sim, events)?.cause).toBe('dehydration');
+    expect(rm.snapshotDay()).toBe(1);
+    expect(deserializeState(store.getItem(STORAGE_KEYS.snapshot))!.dead).toBe(false);
+
+    const retry = rm.retryDay();
+    expect(retry.day).toBe(1);
+    expect(retry.state.needs.health).toBeGreaterThan(50);
+    expect(play(rm, retry, 5)).toBeNull();
+    expect(retry.state.dead).toBe(false);
+  });
+
   it('Retry the day falls back to a fresh day-1 run if the snapshot is missing or corrupt', () => {
     const store = new MemoryStorage();
     const rm = new RunManager(store, seeds(5));

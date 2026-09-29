@@ -183,7 +183,8 @@ export class RunManager {
     let dirty = false;
     for (const e of events) {
       if (e.type === 'dayStart') {
-        this.writeSnapshot(sim);
+        // A run that ends on the tick a new day begins keeps the previous morning, so a retry never restores a corpse.
+        if (!sim.state.dead) this.writeSnapshot(sim);
         dirty = true;
       } else if (e.type === 'death') {
         death = this.recordDeath(sim);
