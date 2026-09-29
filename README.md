@@ -22,7 +22,7 @@ Click **Start surviving**, then click into the game to capture the mouse. Press 
 | `npm run preview` | Serve the production build on port **5288** |
 | `npm test` | Vitest suite for the simulation (no browser or WebGL needed) |
 | `npm run typecheck` | TypeScript only |
-| `npm run smoke` | Build, boot the game in headless Chrome, start a run, walk, craft, and fail on any console error |
+| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, craft, place a campfire (red/green ghost, rotate, click), reload and Continue, and use all three death-screen options. Fails on any console error |
 
 `npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one.
 
@@ -127,7 +127,7 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 167 tests covering:
+`npm test` runs 172 tests covering:
 
 - inventory stacking and carry limits
 - crafting, recipe unlocks, and ingredients consumed only on success
@@ -139,7 +139,7 @@ Rendering is built for 60 fps:
 - animal fear, flee and predator state machines
 - movement and collision physics
 
-`npm run smoke` boots the real build in headless Chrome as an end-to-end check.
+`npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, save/reload, and the death screen.
 
 ## Known gaps
 
