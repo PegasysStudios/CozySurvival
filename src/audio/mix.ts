@@ -11,6 +11,11 @@ export const MASTER_HEADROOM = 0.9;
 export const MUSIC_LEVEL = 0.45;
 export const MUSIC_FADE_SECONDS = 6;
 export const MUSIC_URL = `${import.meta.env.BASE_URL}audio/forest-ambience.mp3`;
+export const LAKE_URL = `${import.meta.env.BASE_URL}audio/lake-water-moving.mp3`;
+/** Lake ambience gain on the effects bus at the water's edge; it should stay a soft bed under the forest. */
+export const LAKE_EDGE_LEVEL = 0.5;
+/** Metres from the shore at which the lake fades to silence. */
+export const LAKE_HEAR_DIST = 36;
 
 /** A volume in [0, 1]; anything that isn't a finite number becomes `fallback`. */
 export function clampVolume(v: unknown, fallback = DEFAULT_MASTER_VOLUME): number {
@@ -48,4 +53,11 @@ export function musicFadeLevel(elapsed: number, fadeSeconds = MUSIC_FADE_SECONDS
 
 export function volumePercent(v: number): string {
   return `${Math.round(clampVolume(v) * 100)}%`;
+}
+
+/** Lake ambience level `waterDist` metres from the nearest shore (0 in or at the water): an ease-in fade out to LAKE_HEAR_DIST. */
+export function lakeAmbienceLevel(waterDist: number): number {
+  if (Number.isNaN(waterDist)) return 0;
+  const k = 1 - Math.min(1, Math.max(0, waterDist) / LAKE_HEAR_DIST);
+  return LAKE_EDGE_LEVEL * k * k;
 }
