@@ -58,7 +58,7 @@ export class GameView {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.autoClear = false;
     this.renderer.domElement.className = 'view';
     container.prepend(this.renderer.domElement);
