@@ -2,6 +2,7 @@ import { BALANCE } from '../data/balance';
 import { ITEMS, TOOLS, TOOL_ORDER, type ItemId } from '../data/items';
 import { FREEPLAY_OBJECTIVE, OBJECTIVES } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
+import { toolWears, wearFraction } from '../sim/durability';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
 import { usedSlots } from '../sim/inventory';
@@ -101,7 +102,7 @@ export class Hud {
     center.append(this.crosshair, this.charge, this.prompt, this.placeHelp);
 
     this.hint.innerHTML = `
-      <div><b>WASD</b> move · <b>Shift</b> run · <b>Space</b> jump</div>
+      <div><b>WASD</b> move and swim · <b>Shift</b> run · <b>Space</b> jump</div>
       <div><b>Left-click</b> gather, use and interact</div>
       <div><b>C</b> crafting · <b>Tab</b> pack · <b>1–5</b> tools · <b>F</b> quick eat</div>`;
 
@@ -226,7 +227,8 @@ export class Hud {
     if (sim.nearestStructure((id) => !!PREFABS[id].shelter, BALANCE.needs.shelterWarmRadius)) chips.push('<span class="chip">Sheltered</span>');
     if (s.player.sitting) chips.push('<span class="chip good">Resting</span>');
     if (n.regenBoost > 0) chips.push('<span class="chip good">Well fed</span>');
-    if (s.player.wading) chips.push('<span class="chip cold">Wading</span>');
+    if (s.player.swimming) chips.push('<span class="chip cold">Swimming</span>');
+    else if (s.player.wading) chips.push('<span class="chip cold">Wading</span>');
     if (n.exhausted) chips.push('<span class="chip warn">Exhausted</span>');
     if (sim.night && !sim.isNearLitFire(BALANCE.needs.fireWarmRadius) && s.activeTool !== 'torch') chips.push('<span class="chip cold">Dark and cold</span>');
     setHtml(this.chips, chips.join(''), this.chipKey);
@@ -252,7 +254,11 @@ export class Hud {
     const beltHtml = TOOL_ORDER.map((id) => {
       const owned = s.tools.includes(id);
       const active = s.activeTool === id;
-      return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${TOOLS[id].name}"><span class="key">${TOOLS[id].slot}</span>${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? TOOLS[id].name : '???'}</span></div>`;
+      const w = owned ? s.toolWear[id] : undefined;
+      const pct = w ? Math.round(wearFraction(w) * 100) : null;
+      const dur = pct === null && !(owned && toolWears(id)) ? '' : `<span class="dur ${pct !== null && pct <= BALANCE.durability.lowFraction * 100 ? 'low' : ''}"><i style="transform:scaleX(${(pct ?? 100) / 100})"></i></span>`;
+      const title = `${TOOLS[id].name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}`;
+      return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? TOOLS[id].name : '???'}</span>${dur}</div>`;
     }).join('');
     setHtml(this.belt, beltHtml, this.beltKey);
     const used = usedSlots(s.inventory);

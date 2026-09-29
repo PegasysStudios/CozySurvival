@@ -1,3 +1,4 @@
+import { BALANCE } from '../data/balance';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import { RECIPES } from '../data/recipes';
 import type { SpeciesId } from '../data/species';
@@ -35,7 +36,7 @@ export class DevPanel {
       return row;
     };
     const s = this.root.appendChild(el('div', 'dev-section'));
-    s.append(el('div', 'dev-label', 'Time scale (1 game day = 1 real hour at 1×)'), this.scaleRow);
+    s.append(el('div', 'dev-label', `Time scale (1 game day = ${BALANCE.time.realSecondsPerDay / 60} real minutes at 1×)`), this.scaleRow);
     this.renderScales();
 
     const give = (items: Partial<Record<ItemId, number>>, label: string) => () => {

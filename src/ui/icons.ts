@@ -23,6 +23,7 @@ const ITEM_ICONS: Record<ItemId, string> = {
   berryTea: svg('<path d="M7 12h16v10a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z" fill="#e0664d"/><path d="M23 15h2a3 3 0 0 1 0 6h-2" stroke="#b8503c" stroke-width="2" fill="none"/><path d="M11 9c0-2 2-2 2-4M17 9c0-2 2-2 2-4" stroke="#f4d8cf" stroke-width="1.8" fill="none" stroke-linecap="round"/>'),
   stew: svg('<path d="M4 15h24c0 7-5 12-12 12S4 22 4 15z" fill="#7a5a3e"/><ellipse cx="16" cy="15" rx="12" ry="3" fill="#a86d3b"/><circle cx="12" cy="15" r="1.6" fill="#f2b441"/><circle cx="19" cy="14.5" r="1.6" fill="#c8574f"/><path d="M11 10c0-2 2-2 2-4M18 10c0-2 2-2 2-4" stroke="#e8e2d8" stroke-width="1.8" fill="none" stroke-linecap="round"/>'),
   cedarTrout: svg('<path d="M5 20c4-8 18-8 22 0-4 6-18 6-22 0z" fill="#efe7da"/><path d="M8 18c4-5 12-5 16 0" fill="#c98b52"/><path d="M10 22h12" stroke="#3b342e" stroke-width="1.6" stroke-linecap="round"/>'),
+  charredMeal: svg('<path d="M6 17c0-6 6-10 12-10 5 0 9 3 9 8 0 7-7 11-13 11-5 0-8-4-8-9z" fill="#4a352a"/><path d="M11 14l3 2M17 12l4 3M13 20l5 1" stroke="#2a1d17" stroke-width="2" stroke-linecap="round"/><path d="M20 6c0-2 2-2 2-4" stroke="#b9b2a8" stroke-width="1.6" fill="none" stroke-linecap="round"/>'),
   arrow: svg('<path d="M6 26 24 8" stroke="#b08a5a" stroke-width="2.5" stroke-linecap="round"/><path d="M27 5l-7 2 5 5z" fill="#6f757b"/><path d="M5 21l2 6 6 2" stroke="#e9e2d4" stroke-width="2.5" fill="none" stroke-linecap="round"/>'),
 };
 

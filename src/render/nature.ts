@@ -5,10 +5,11 @@ import { PREFABS } from '../data/prefabs';
 import { RESOURCE_KINDS, type ResourceKind, type TreeSpecies } from '../data/resources';
 import type { GameState } from '../sim/state';
 import { PLAY_HALF, type Terrain } from '../sim/terrain';
+import { TRUNK_AXIS_LIFT, trunkSpan } from '../sim/trunks';
 import type { WorldGen } from '../sim/worldgen';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
-import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, stumpGeometry, treeGeometry } from './models';
+import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, stumpGeometry, treeGeometry, trunkGeometry } from './models';
 
 const SPECIES: TreeSpecies[] = ['fir', 'cedar', 'birch', 'maple'];
 const GRASS_VIEW = 85;
@@ -18,6 +19,7 @@ const RESOURCE_VIEW = 140;
 const TREE_LOD_DIST = 90;
 
 interface Falling {
+  index: number;
   mesh: THREE.Mesh;
   t: number;
   axis: THREE.Vector3;
@@ -66,6 +68,9 @@ export class NatureView {
   private readonly others: ChunkedInstances[] = [];
   private readonly ownedGeos: THREE.BufferGeometry[] = [];
   private readonly falling: Falling[] = [];
+  private readonly trunkGeos = {} as Record<TreeSpecies, THREE.BufferGeometry>;
+  /** Fallen trunks still waiting to be chopped up, keyed by tree index. */
+  private readonly trunks = new Map<number, { mesh: THREE.Mesh; logs: number }>();
   private readonly felled: Uint8Array;
   private readonly resourceUp: Int8Array;
   private readonly structuresSeen = new Set<number>();
@@ -116,7 +121,39 @@ export class NatureView {
       this.stumps[s] = new ChunkedInstances(stumpGeo, this.mats.solid, stumpSpecs, { chunkSize: 48, castShadow: true, name: 'stumps-' + s });
       for (let i = 0; i < stumpSpecs.length; i++) this.stumps[s].setHidden(i, true);
       this.group.add(this.stumps[s].group);
+      this.trunkGeos[s] = this.own(trunkGeometry(s));
     }
+  }
+
+  /** Create, shorten or remove the mesh for tree `i`'s fallen trunk. */
+  private syncTrunk(i: number, state: GameState): void {
+    const dyn = state.trees[i];
+    const logs = dyn.felled ? dyn.logs : 0;
+    const cur = this.trunks.get(i);
+    if (cur && cur.logs === logs) return;
+    const tr = this.gen.trees[i];
+    const span = trunkSpan(tr, dyn);
+    if (!span) {
+      if (cur) {
+        this.group.remove(cur.mesh);
+        this.trunks.delete(i);
+      }
+      return;
+    }
+    let mesh = cur?.mesh;
+    if (!mesh) {
+      mesh = new THREE.Mesh(this.trunkGeos[tr.species], this.mats.solid);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+    }
+    const lift = span.r * TRUNK_AXIS_LIFT;
+    const y0 = this.terrain.heightAt(span.x0, span.z0) + lift;
+    const y1 = this.terrain.heightAt(span.x1, span.z1) + lift;
+    mesh.position.set(span.x0, y0, span.z0);
+    mesh.rotation.set(0, span.rot, Math.atan2(y1 - y0, span.len), 'YXZ');
+    mesh.scale.set(Math.hypot(span.len, y1 - y0), span.r, span.r);
+    this.trunks.set(i, { mesh, logs });
   }
 
   private buildRocksAndLogs(): void {
@@ -222,13 +259,20 @@ export class NatureView {
   sync(state: GameState, animate: boolean): void {
     for (let i = 0; i < this.gen.trees.length; i++) {
       const felled = state.trees[i].felled ? 1 : 0;
-      if (felled === this.felled[i]) continue;
-      this.felled[i] = felled;
-      const sp = this.gen.trees[i].species;
-      this.trees[sp].setHidden(this.treeLocal[i], !!felled);
-      this.stumps[sp].setHidden(this.treeLocal[i], !felled);
-      if (!felled) continue;
-      if (animate) this.startFall(i, state);
+      if (felled !== this.felled[i]) {
+        this.felled[i] = felled;
+        const sp = this.gen.trees[i].species;
+        this.trees[sp].setHidden(this.treeLocal[i], !!felled);
+        this.stumps[sp].setHidden(this.treeLocal[i], !felled);
+        if (felled && animate) {
+          this.startFall(i, state);
+          this.syncTrunk(i, state);
+          const t = this.trunks.get(i);
+          if (t) t.mesh.visible = false;
+          continue;
+        }
+      }
+      if (felled || this.trunks.has(i)) this.syncTrunk(i, state);
     }
     for (let i = 0; i < this.gen.resources.length; i++) {
       const up = state.resources[i].charges > 0 ? 1 : 0;
@@ -262,14 +306,11 @@ export class NatureView {
     mesh.scale.setScalar(tr.scale);
     const baseRot = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), tr.rot);
     mesh.quaternion.copy(baseRot);
-    let dx = tr.x - state.player.x;
-    let dz = tr.z - state.player.z;
-    const d = Math.hypot(dx, dz) || 1;
-    dx /= d;
-    dz /= d;
+    const dx = Math.sin(state.trees[i].fall);
+    const dz = Math.cos(state.trees[i].fall);
     this.group.add(mesh);
     this.falling.push({
-      mesh, t: 0, baseRot, impacted: false, x: tr.x, y, z: tr.z, dirX: dx, dirZ: dz,
+      index: i, mesh, t: 0, baseRot, impacted: false, x: tr.x, y, z: tr.z, dirX: dx, dirZ: dz,
       axis: new THREE.Vector3(dz, 0, -dx).normalize(),
       height: (tr.species === 'fir' || tr.species === 'cedar' ? 11 : 7.5) * tr.scale,
       species: tr.species,
@@ -298,6 +339,8 @@ export class NatureView {
         ang = Math.PI / 2 - 0.1 - Math.sin(Math.min(bounce * 9, Math.PI)) * 0.05 * Math.exp(-bounce * 3);
         if (!f.impacted) {
           f.impacted = true;
+          const trunk = this.trunks.get(f.index);
+          if (trunk) trunk.mesh.visible = true;
           this.onImpact?.(f.x + f.dirX * f.height * 0.55, f.y + 0.4, f.z + f.dirZ * f.height * 0.55, f.dirX, f.dirZ, f.species);
         }
       }

@@ -1,9 +1,11 @@
 import { BALANCE } from '../data/balance';
-import { GEAR, ITEMS, TOOLS, TOOL_ORDER, itemName } from '../data/items';
+import { GEAR, ITEMS, TOOLS, TOOL_ORDER, itemName, type ToolId } from '../data/items';
 import { PREFABS } from '../data/prefabs';
 import { CATEGORY_LABELS, RECIPES, RECIPE_BY_ID, type Recipe, type RecipeCategory } from '../data/recipes';
 import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
+import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } from '../sim/durability';
 import { countItem, usedSlots } from '../sim/inventory';
+import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skillProgress } from '../sim/skills';
 import type { Simulation } from '../sim/simulation';
 import { button, el, escapeHtml } from './dom';
 import { effectSummary } from './hud';
@@ -115,10 +117,22 @@ export class Panels {
     if (upgrades.length) left.append(el('div', 'inv-upgrade', `Carry more with: ${upgrades.join(', ')}`));
 
     const belt = el('div', 'inv-section');
-    belt.innerHTML = `<h3>Tool belt</h3><div class="inv-tools">${TOOL_ORDER.map((t) => `<div class="inv-tool ${s.tools.includes(t) ? '' : 'locked'}" title="${escapeHtml(TOOLS[t].description)}">${s.tools.includes(t) ? toolIcon(t) : MISC_ICONS.lock}<span>${TOOLS[t].slot} · ${s.tools.includes(t) ? TOOLS[t].name : '???'}</span></div>`).join('')}</div>`;
+    const toolLabel = (t: ToolId) => {
+      if (!s.tools.includes(t)) return '???';
+      const w = s.toolWear[t];
+      return toolWears(t) ? `${TOOLS[t].name} · ${w ? Math.max(1, Math.round(wearFraction(w) * 100)) : 100}%` : TOOLS[t].name;
+    };
+    belt.innerHTML = `<h3>Tool belt</h3><div class="inv-tools">${TOOL_ORDER.map((t) => `<div class="inv-tool ${s.tools.includes(t) ? '' : 'locked'}" title="${escapeHtml(TOOLS[t].description)}">${s.tools.includes(t) ? toolIcon(t) : MISC_ICONS.lock}<span>${TOOLS[t].slot} · ${escapeHtml(toolLabel(t))}</span></div>`).join('')}</div>`;
     const gear = el('div', 'inv-section');
     gear.innerHTML = `<h3>Gear</h3><div class="inv-tools">${(['basket', 'backpack', 'canteen'] as const).map((g) => `<div class="inv-tool ${s.gear.includes(g) ? '' : 'locked'}" title="${escapeHtml(GEAR[g].description)}">${s.gear.includes(g) ? gearIcon(g) : MISC_ICONS.lock}<span>${s.gear.includes(g) ? GEAR[g].name : '???'}</span></div>`).join('')}</div>`;
-    left.append(belt, gear);
+    const skills = el('div', 'inv-section');
+    skills.innerHTML = `<h3>Skills</h3><div class="skills">${SKILL_IDS.map((id) => {
+      const xp = s.skills[id];
+      const level = skillLevel(xp);
+      const pct = Math.round(skillProgress(xp) * 100);
+      return `<div class="skill" title="${escapeHtml(SKILL_INFO[id].how)}"><div class="skill-head"><b>${SKILL_INFO[id].name}</b><span>Lv ${level}${level >= MAX_SKILL_LEVEL ? ' · max' : ''}</span></div><div class="skill-track"><i style="transform:scaleX(${pct / 100})"></i></div><div class="skill-effect">${escapeHtml(skillEffect(id, xp))}</div></div>`;
+    }).join('')}</div>`;
+    left.append(belt, gear, skills);
 
     const right = el('div', 'inv-detail');
     const slot = this.selectedSlot >= 0 ? s.inventory.slots[this.selectedSlot] : null;
@@ -226,7 +240,13 @@ export class Panels {
       const out = r.output;
       const outText = out.kind === 'item' ? `Makes ${out.count} ${itemName(out.item, out.count)}${ITEMS[out.item].food ? ` · ${effectSummary(out.item)}` : ''}` : out.kind === 'tool' ? `Tool · slot ${TOOLS[out.tool].slot}` : out.kind === 'gear' ? `Gear · ${GEAR[out.gear].description}` : `Structure · ${PREFABS[out.prefab].name}`;
       const station = r.station === 'fire' ? `<div class="station ${sim.isNearLitFire() ? 'ok' : 'missing'}">${MISC_ICONS.fire} ${sim.isNearLitFire() ? 'Lit campfire nearby' : 'Needs a lit campfire nearby'}</div>` : '';
-      detail.innerHTML = `<div class="detail-icon big">${recipeIcon(r)}</div><h3>${escapeHtml(r.name)}</h3><p>${escapeHtml(r.description)}</p><div class="effects">${escapeHtml(outText)}</div>${station}<div class="ingredients">${inputs}</div>`;
+      const lasts = out.kind === 'tool' && toolWears(out.tool)
+        ? `Durability ${newToolWear(out.tool, s.skills.crafting).max} uses (Crafting Lv ${skillLevel(s.skills.crafting)})`
+        : out.kind === 'place' && prefabWears(out.prefab)
+          ? `Condition ${newStructureWear(out.prefab, s.skills.crafting).max} (weathers over time; Crafting Lv ${skillLevel(s.skills.crafting)})`
+          : '';
+      const note = lasts ? `<div class="effects muted">${escapeHtml(lasts)}</div>` : '';
+      detail.innerHTML = `<div class="detail-icon big">${recipeIcon(r)}</div><h3>${escapeHtml(r.name)}</h3><p>${escapeHtml(r.description)}</p><div class="effects">${escapeHtml(outText)}</div>${note}${station}<div class="ingredients">${inputs}</div>`;
       const label = out.kind === 'place' ? 'Place' : r.station === 'fire' ? 'Cook' : 'Craft';
       const maxN = out.kind === 'item' ? craftableCount(s, r) : 0;
       const actions = el('div', 'detail-actions');
