@@ -68,6 +68,48 @@ export function surfaceAt(env: MoveEnv, x: number, z: number): number {
   return h;
 }
 
+const SLOPE_PROBE = 0.05;
+const flank = { x: 0, z: 0, slope: 0 };
+
+/** Whether `ground` at (x, z) is a boulder flank too steep to stand on. If so, `flank` holds the downhill direction and slope. */
+function onSteepFlank(env: MoveEnv, x: number, z: number, ground: number): boolean {
+  env.query(x, z, P.radius + 0.5, tmpTops);
+  let dome = false;
+  for (let i = 0; i < tmpTops.length && !dome; i++) {
+    const top = tmpTops[i].top;
+    dome = !!top && top.type === 'dome' && Math.abs(topHeight(top, x, z, P.radius, env.terrain) - ground) < 1e-9;
+  }
+  if (!dome) return false;
+  const e = SLOPE_PROBE;
+  const gx = (surfaceAt(env, x + e, z) - surfaceAt(env, x - e, z)) / (2 * e);
+  const gz = (surfaceAt(env, x, z + e) - surfaceAt(env, x, z - e)) / (2 * e);
+  const g = Math.hypot(gx, gz);
+  if (g <= P.maxSlope) return false;
+  flank.x = -gx / g;
+  flank.z = -gz / g;
+  flank.slope = g;
+  return true;
+}
+
+/**
+ * A falling player who meets a steep boulder flank is pushed out beside it and keeps falling, as if it were a wall.
+ * Without this you could land on the side of a boulder taller than a jump and hop your way up it.
+ */
+function slipOffFlank(env: MoveEnv, p: PlayerState): void {
+  for (let k = 0; k < 4; k++) {
+    const g = surfaceAt(env, p.x, p.z);
+    if (g <= p.y || !onSteepFlank(env, p.x, p.z, g)) break;
+    const d = (g - p.y) / flank.slope + 0.01;
+    p.x += flank.x * d;
+    p.z += flank.z * d;
+    const into = -(p.vx * flank.x + p.vz * flank.z);
+    if (into > 0) {
+      p.vx += flank.x * into;
+      p.vz += flank.z * into;
+    }
+  }
+}
+
 function blocked(env: MoveEnv, p: PlayerState, hFrom: number, fx: number, fz: number, tx: number, tz: number): boolean {
   if (Math.abs(tx) > PLAY_HALF || Math.abs(tz) > PLAY_HALF) return true;
   const hTo = surfaceAt(env, tx, tz);
@@ -223,6 +265,8 @@ export function stepPlayer(p: PlayerState, input: MoveInput, env: MoveEnv, dt: n
         p.swimming = true;
         p.y = SWIM_FLOAT_Y;
         p.vy = 0;
+      } else if (p.y <= ground && onSteepFlank(env, p.x, p.z, ground)) {
+        slipOffFlank(env, p);
       } else if (p.y <= ground) {
         result.landed = Math.max(result.landed, -p.vy);
         p.y = ground;
