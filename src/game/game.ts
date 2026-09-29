@@ -19,9 +19,10 @@ import { effectSummary, Hud } from '../ui/hud';
 import { itemIcon, toolIcon } from '../ui/icons';
 import { Panels } from '../ui/panels';
 import { Screens } from '../ui/screens';
+import { EscapeRouter, type UiMode } from './escape';
 import { Input } from './input';
 
-type Mode = 'title' | 'playing' | 'paused' | 'panel' | 'dead' | 'sleeping';
+type Mode = UiMode;
 
 const BASE_FOV = 72;
 const AUTOSAVE_SECONDS = 30;
@@ -66,6 +67,7 @@ export class Game {
   private readonly events: SimEvent[] = [];
   private readonly simInput: SimInput = { ...IDLE_INPUT };
   private readonly cooldowns = new Map<string, number>();
+  private readonly esc = new EscapeRouter();
   private readonly pose: CameraPose = { x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, fov: BASE_FOV };
   private readonly vmInput: ViewModelInput = { tool: 'hands', speed: 0, grounded: true, sprinting: false, lookDX: 0, lookDY: 0, draw: -1, sitting: false, hasArrows: false };
   private settings: Settings;
@@ -120,6 +122,9 @@ export class Game {
 
     this.input.onLockChange = (locked) => this.onLockChange(locked);
     this.input.onKey = (code, ev) => this.onKey(code, ev);
+    this.input.onKeyUp = (code) => {
+      if (code === 'Escape' && this.esc.up(performance.now()) && this.mode === 'playing') this.input.requestLock();
+    };
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
         this.saveNow();
@@ -246,12 +251,12 @@ export class Game {
     this.input.exitLock();
   }
 
-  private closePanel(): void {
+  private closePanel(relock = true): void {
     this.panels.close();
     if (this.dev?.open) this.dev.toggle();
     if (this.mode === 'panel') {
       this.mode = 'playing';
-      this.input.requestLock();
+      if (relock) this.input.requestLock();
     }
   }
 
@@ -264,10 +269,17 @@ export class Game {
       this.expectUnlock = false;
       return;
     }
-    if (this.mode === 'playing') this.pause();
+    if (this.mode === 'playing' && this.esc.pausesOnUnlock(performance.now())) this.pause();
   }
 
   private onKey(code: string, ev: KeyboardEvent): void {
+    if (code === 'Escape') {
+      const action = this.esc.down(this.mode, this.input.locked, performance.now());
+      if (action === 'closeMenu') this.closePanel(false);
+      else if (action === 'resume') this.resume();
+      else if (action === 'pause') this.pause();
+      return;
+    }
     if (code === 'KeyM') {
       this.applySettings({ ...this.settings, muted: !this.settings.muted });
       this.hud.toast(this.settings.muted ? 'Sound off (M)' : `Sound on · ${volumePercent(this.settings.masterVolume)}`);
@@ -287,13 +299,8 @@ export class Game {
       return;
     }
     if (this.mode === 'panel') {
-      if (code === 'Escape') this.closePanel();
-      else if (code === 'Tab') this.panels.mode === 'inventory' ? this.closePanel() : this.openPanel('inventory');
+      if (code === 'Tab') this.panels.mode === 'inventory' ? this.closePanel() : this.openPanel('inventory');
       else if (code === 'KeyC') this.panels.mode === 'crafting' ? this.closePanel() : this.openPanel('crafting');
-      return;
-    }
-    if (this.mode === 'paused' && code === 'Escape') {
-      this.resume();
       return;
     }
     if (this.mode !== 'playing') return;

@@ -12,6 +12,7 @@ export class Input {
   locked = false;
   onLockChange: ((locked: boolean) => void) | null = null;
   onKey: ((code: string, ev: KeyboardEvent) => void) | null = null;
+  onKeyUp: ((code: string) => void) | null = null;
   private readonly target: HTMLElement;
 
   constructor(target: HTMLElement) {
@@ -24,7 +25,10 @@ export class Input {
         this.onKey?.(e.code, e);
       }
     });
-    window.addEventListener('keyup', (e) => this.held.delete(e.code));
+    window.addEventListener('keyup', (e) => {
+      this.held.delete(e.code);
+      this.onKeyUp?.(e.code);
+    });
     window.addEventListener('blur', () => this.releaseAll());
     document.addEventListener('mousemove', (e) => {
       if (!this.locked) return;
