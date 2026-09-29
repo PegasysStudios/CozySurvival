@@ -1,3 +1,11 @@
+const NON_TEXT_INPUTS = ['range', 'checkbox', 'radio', 'button', 'submit'];
+
+function isTyping(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  if (t.isContentEditable || t.tagName === 'TEXTAREA') return true;
+  return t instanceof HTMLInputElement && !NON_TEXT_INPUTS.includes(t.type);
+}
+
 /** Keyboard/mouse state with per-frame edge detection and pointer-lock management. */
 export class Input {
   readonly held = new Set<string>();
@@ -18,6 +26,7 @@ export class Input {
   constructor(target: HTMLElement) {
     this.target = target;
     window.addEventListener('keydown', (e) => {
+      if (isTyping(e.target)) return;
       if (e.code === 'Tab' || e.code === 'Space' || (e.code.startsWith('Arrow') && this.locked)) e.preventDefault();
       if (!e.repeat) {
         this.held.add(e.code);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { smoothstep } from '../core/math';
 import type { Simulation } from '../sim/simulation';
+import { AvatarLayer } from './avatars';
 import { EntityView } from './entities';
 import { windUniforms } from './geo';
 import { GhostView } from './ghost';
@@ -32,6 +33,7 @@ export class GameView {
   readonly dayNight = new DayNight();
   readonly effects = new Effects();
   readonly viewModel = new ViewModel();
+  readonly avatars = new AvatarLayer();
   private readonly sun = new THREE.DirectionalLight('#ffffff', 2);
   private readonly hemi = new THREE.HemisphereLight('#ffffff', '#444444', 1);
   private readonly torchLight = new THREE.PointLight('#ffa050', 0, 16, 1.5);
@@ -77,7 +79,7 @@ export class GameView {
     s.bias = -0.0006;
     s.normalBias = 0.035;
     this.sun.castShadow = true;
-    this.scene.add(this.sun, this.sun.target, this.hemi, this.torchLight, this.effects.group, this.camera);
+    this.scene.add(this.sun, this.sun.target, this.hemi, this.torchLight, this.effects.group, this.camera, this.avatars.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }

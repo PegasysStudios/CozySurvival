@@ -19,7 +19,15 @@ export interface ScreenHost {
   onRestartDay1(): void;
   onStartFromScratch(): void;
   onSettings(s: Settings): void;
+  onLeaveServer(): void;
+  onRespawn(): void;
   sfx(): void;
+}
+
+/** In multiplayer the "pause" menu is only a settings overlay: the shared world keeps running. */
+export interface MpPauseInfo {
+  host: boolean;
+  players: number;
 }
 
 const CAUSES: Record<string, string> = {
@@ -68,6 +76,8 @@ export class Screens {
   private confirmNewRun = false;
   private lastTitle: TitleInfo | null = null;
   private lastDeath: DeathSummary | null = null;
+  private titleExtra: HTMLElement | null = null;
+  private confirmClose = false;
 
   constructor(parent: HTMLElement, host: ScreenHost, settings: Settings) {
     this.host = host;
@@ -125,21 +135,30 @@ export class Screens {
     const meta = el('div', 'title-meta', `${escapeHtml(bestLine(info.best))}${info.deaths ? ` · ${info.deaths} run${info.deaths === 1 ? '' : 's'} ended` : ''}`);
     const help = el('details', 'title-help');
     help.innerHTML = `<summary>Controls</summary>${CONTROLS}`;
-    card.append(actions, meta, help);
+    card.append(actions, meta);
+    if (this.titleExtra) card.append(this.titleExtra);
+    card.append(help);
     t.append(card);
+  }
+
+  /** Extra block on the title card (the multiplayer section); kept across re-renders. */
+  setTitleExtra(e: HTMLElement): void {
+    this.titleExtra = e;
+    if (this.lastTitle) this.renderTitle();
   }
 
   hideTitle(): void {
     this.title.classList.remove('show');
   }
 
-  showPause(): void {
+  showPause(mp: MpPauseInfo | null = null): void {
     const p = this.pause;
     p.innerHTML = '';
+    this.confirmClose = false;
     const card = el('div', 'pause-card');
-    card.innerHTML = '<h2>Paused</h2>';
+    card.innerHTML = mp ? '<h2>Settings</h2><p class="pause-note">The world keeps running while this is open.</p>' : '<h2>Paused</h2>';
     const actions = el('div', 'title-actions');
-    actions.append(button('Resume', 'btn primary big', () => {
+    actions.append(button(mp ? 'Back to the game' : 'Resume', 'btn primary big', () => {
       this.host.sfx();
       this.host.onResume();
     }));
@@ -162,10 +181,28 @@ export class Screens {
     });
     const help = el('details', 'title-help');
     help.innerHTML = `<summary>Controls</summary>${CONTROLS}`;
-    actions.append(button('Save and return to title', 'btn subtle', () => {
-      this.host.sfx();
-      this.host.onQuitToTitle();
-    }));
+    if (mp) {
+      const others = mp.players - 1;
+      const closeLabel = () => this.confirmClose
+        ? `Close the server for ${others === 1 ? 'the other player' : `all ${others} other players`}? Click again`
+        : 'Close server <span class="btn-sub">Ends the world for everyone · not saved</span>';
+      const leave = button(mp.host ? closeLabel() : 'Leave server <span class="btn-sub">Back to your own single-player world</span>', 'btn subtle', () => {
+        this.host.sfx();
+        if (mp.host && others > 0 && !this.confirmClose) {
+          this.confirmClose = true;
+          leave.innerHTML = closeLabel();
+          leave.classList.add('danger');
+          return;
+        }
+        this.host.onLeaveServer();
+      });
+      actions.append(leave);
+    } else {
+      actions.append(button('Save and return to title', 'btn subtle', () => {
+        this.host.sfx();
+        this.host.onQuitToTitle();
+      }));
+    }
     card.append(actions, settings, help);
     p.append(card);
     p.classList.add('show');
@@ -230,6 +267,29 @@ export class Screens {
     }));
     card.append(actions);
     p.append(card);
+  }
+
+  /** Multiplayer death: the pack stays behind as a pile and the player can jump straight back in. */
+  showMpDeath(cause: string, host: boolean): void {
+    const p = this.death;
+    p.innerHTML = '';
+    const card = el('div', 'death-card');
+    card.innerHTML = `
+      <div class="death-kicker">You died</div>
+      <h2>${escapeHtml(CAUSES[cause] ?? CAUSES.unknown)}</h2>
+      <p class="death-note">Your pack spilled where you fell. Anyone can loot the pile, you included.</p>`;
+    const actions = el('div', 'death-actions');
+    actions.append(button('Respawn <span class="btn-sub">Fresh start: empty pack, full needs, new skills</span>', 'btn primary big', () => {
+      this.host.sfx();
+      this.host.onRespawn();
+    }));
+    actions.append(button(host ? 'Close server <span class="btn-sub">Ends the world for everyone</span>' : 'Leave server', 'btn subtle', () => {
+      this.host.sfx();
+      this.host.onLeaveServer();
+    }));
+    card.append(actions);
+    p.append(card);
+    p.classList.add('show');
   }
 
   hideDeath(): void {
