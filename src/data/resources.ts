@@ -39,14 +39,16 @@ export interface TreeDef {
   logs: number;
   sticks: number;
   trunkRadius: number;
+  /** Length of the fallen trunk at scale 1. */
+  fallLength: number;
   /** Birch trees can be peeled by hand. */
   bark: number;
   barkRespawnHours: number;
 }
 
 export const TREES: Record<TreeSpecies, TreeDef> = {
-  fir: { species: 'fir', name: 'Douglas Fir', hp: 6, logs: 3, sticks: 2, trunkRadius: 0.38, bark: 0, barkRespawnHours: 0 },
-  cedar: { species: 'cedar', name: 'Western Red Cedar', hp: 7, logs: 3, sticks: 1, trunkRadius: 0.45, bark: 0, barkRespawnHours: 0 },
-  birch: { species: 'birch', name: 'Paper Birch', hp: 4, logs: 2, sticks: 2, trunkRadius: 0.22, bark: 2, barkRespawnHours: 24 },
-  maple: { species: 'maple', name: 'Bigleaf Maple', hp: 5, logs: 2, sticks: 3, trunkRadius: 0.3, bark: 0, barkRespawnHours: 0 },
+  fir: { species: 'fir', name: 'Douglas Fir', hp: 6, logs: 3, sticks: 2, trunkRadius: 0.38, fallLength: 7.5, bark: 0, barkRespawnHours: 0 },
+  cedar: { species: 'cedar', name: 'Western Red Cedar', hp: 7, logs: 3, sticks: 1, trunkRadius: 0.45, fallLength: 7.5, bark: 0, barkRespawnHours: 0 },
+  birch: { species: 'birch', name: 'Paper Birch', hp: 4, logs: 2, sticks: 2, trunkRadius: 0.22, fallLength: 5, bark: 2, barkRespawnHours: 24 },
+  maple: { species: 'maple', name: 'Bigleaf Maple', hp: 5, logs: 2, sticks: 3, trunkRadius: 0.3, fallLength: 5, bark: 0, barkRespawnHours: 0 },
 };

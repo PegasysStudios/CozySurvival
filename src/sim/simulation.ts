@@ -11,14 +11,17 @@ import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, predatorTargets,
 import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, canteenRoom, checkUnlocks, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
+import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearResult } from './durability';
 import type { SimEvent } from './events';
 import { addItem, countItem, createInventory, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, type MoveEnv } from './movement';
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
 import { checkPlacement, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
-import { STATE_VERSION, type AnimalState, type DamageSource, type GameState, type StructureState } from './state';
+import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, huntDamageMultiplier, SKILL_INFO } from './skills';
+import { STATE_VERSION, type AnimalState, type DamageSource, type GameState, type SkillId, type StructureState, type Wear } from './state';
 import { getTerrain, WATER_LEVEL, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
+import { freshTree, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
 import { getWorldGen, type WorldGen } from './worldgen';
 
 export interface SimInput {
@@ -105,11 +108,13 @@ export function createNewState(seed: number): GameState {
     inventory: createInventory(BALANCE.carry.baseSlots),
     tools: ['hands'],
     activeTool: 'hands',
+    toolWear: {},
     gear: [],
     known: [],
+    skills: createSkills(),
     stats: { gathered: {}, crafted: {}, events: {}, kills: {} },
     objective: 0,
-    trees: gen.trees.map((t) => ({ hp: TREES[t.species].hp, felled: false, bark: TREES[t.species].bark, barkAt: 0 })),
+    trees: gen.trees.map((t) => freshTree(t.species)),
     resources: gen.resources.map((r) => ({ charges: RESOURCES[r.kind].charges, respawnAt: 0 })),
     structures: [],
     drops: [],
@@ -164,6 +169,7 @@ export class Simulation {
   private readonly events: SimEvent[] = [];
   private readonly rng: Rng;
   private readonly treeColliders: Collider[] = [];
+  private readonly trunkColliders = new Map<number, Collider>();
   private readonly structureColliders = new Map<number, Collider>();
   private wasNight: boolean;
   private respawnTimer = 0;
@@ -247,10 +253,12 @@ export class Simulation {
     const { gen, state } = this;
     gen.trees.forEach((t, i) => {
       this.treeColliders[i] = this.colliders.add(this.makeTreeCollider(i, state.trees[i].felled));
+      this.syncTrunkCollider(i);
       void t;
     });
     gen.rocks.forEach((r, i) => {
-      this.colliders.add(makeCollider('rock', i, circle(r.x, r.z, r.r * 0.85), circle(r.x, r.z, r.r * 0.9)));
+      const top = rockTop(r, this.terrain.heightAt(r.x, r.z));
+      this.colliders.add(makeCollider('rock', i, circle(r.x, r.z, r.r * 0.85), circle(r.x, r.z, r.r * 0.9), top));
     });
     gen.logs.forEach((l, i) => {
       this.colliders.add(makeCollider('log', i, box(l.x, l.z, l.length / 2, l.r, l.rot), box(l.x, l.z, l.length / 2 + 0.1, l.r + 0.1, l.rot)));
@@ -265,6 +273,24 @@ export class Simulation {
     const t = this.gen.trees[i];
     if (felled) return makeCollider('stump', i, circle(t.x, t.z, t.trunkR * 1.15), circle(t.x, t.z, t.trunkR + 0.2));
     return makeCollider('tree', i, circle(t.x, t.z, t.trunkR), circle(t.x, t.z, t.trunkR + 0.35));
+  }
+
+  /** The uncut part of tree `i`'s fallen trunk, or null. */
+  trunk(i: number): TrunkSpan | null {
+    return trunkSpan(this.gen.trees[i], this.state.trees[i]);
+  }
+
+  /** Rebuild the collider for a fallen trunk after it falls or a log is cut off (removed once fully cut). */
+  private syncTrunkCollider(i: number): void {
+    const old = this.trunkColliders.get(i);
+    if (old) {
+      this.colliders.remove(old);
+      this.trunkColliders.delete(i);
+    }
+    const span = this.trunk(i);
+    if (!span) return;
+    const c = makeCollider('trunk', i, trunkBox(span), trunkBox(span, 0.1), trunkTop(span));
+    this.trunkColliders.set(i, this.colliders.add(c));
   }
 
   private addStructureCollider(s: StructureState): void {
@@ -307,10 +333,11 @@ export class Simulation {
       this.emit({ type: 'jump' });
     }
     if (move.landed > 5) this.emit({ type: 'land', impact: move.landed });
+    if (move.splash > 0) this.emit({ type: 'splash', impact: move.splash });
     this.lastLanding = move.landed;
     this.distanceWalked += move.distance;
     const speed = horizontalSpeed(p);
-    this.activity = speed < 0.5 ? 'idle' : p.sprinting ? 'sprint' : 'walk';
+    this.activity = p.swimming ? 'swim' : speed < 0.5 ? 'idle' : p.sprinting ? 'sprint' : 'walk';
     const targetNoise = this.activity === 'idle' ? 0.5 : this.activity === 'sprint' ? 1.6 : 0.6 + 0.4 * Math.min(1, speed / BALANCE.player.walkSpeed);
     this.noise = damp(this.noise, targetNoise, 4, dt);
 
@@ -327,6 +354,7 @@ export class Simulation {
     this.updateProjectiles(dt);
     this.updateAnimals(dt);
     this.updateFires(gameHours);
+    this.updateWear(gameHours, true);
     this.updateRespawns(dt);
 
     // needs
@@ -457,6 +485,21 @@ export class Simulation {
           bestT = hitT;
           best = { kind: 'tree', index: c.ref, dist: hitT };
         }
+      } else if (c.kind === 'trunk') {
+        const span = this.trunk(c.ref);
+        if (!span) continue;
+        const n = Math.max(1, Math.ceil(span.len / Math.max(0.3, span.r * 1.5)));
+        for (let k = 0; k <= n; k++) {
+          const f = k / n;
+          const x = lerp(span.x0, span.x1, f);
+          const z = lerp(span.z0, span.z1, f);
+          const y = this.terrain.heightAt(x, z) + span.r * TRUNK_AXIS_LIFT;
+          const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, x, y, z, span.r + 0.2);
+          if (hitT >= 0 && hitT < bestT) {
+            bestT = hitT;
+            best = { kind: 'tree', index: c.ref, dist: hitT };
+          }
+        }
       } else if (c.kind === 'resource') {
         if (!this.resourcePresent(c.ref)) continue;
         const r = this.gen.resources[c.ref];
@@ -530,9 +573,14 @@ export class Simulation {
       case 'tree': {
         const g = this.gen.trees[t.index];
         const def = TREES[g.species];
-        if (s.activeTool === 'axe') return { name: def.name, action: 'Chop', enabled: true };
+        const dyn = s.trees[t.index];
+        if (dyn.felled) {
+          const name = `Fallen ${def.name}`;
+          if (s.activeTool === 'axe') return { name, action: `Chop up (${dyn.logs} ${dyn.logs === 1 ? 'log' : 'logs'} left)`, enabled: true };
+          return { name, action: s.tools.includes('axe') ? 'Equip axe [2] to chop up' : 'Needs an axe', enabled: false };
+        }
+        if (s.activeTool === 'axe') return { name: def.name, action: 'Chop down', enabled: true };
         if (def.bark > 0 && s.activeTool === 'hands') {
-          const dyn = s.trees[t.index];
           return dyn.bark > 0 ? { name: def.name, action: 'Peel bark', enabled: true } : { name: def.name, action: 'Bark regrowing', enabled: false };
         }
         return { name: def.name, action: s.tools.includes('axe') ? 'Equip axe [2] to chop' : 'Needs an axe', enabled: false };
@@ -557,11 +605,12 @@ export class Simulation {
         if (!st) return null;
         const def = PREFABS[st.prefab];
         if (def.fire) return st.fuel > 0 ? { name: 'Campfire', action: 'Cook & add fuel', enabled: true } : { name: 'Campfire (out)', action: 'Add fuel to relight', enabled: true };
+        const name = st.wear ? `${def.name} · ${conditionText(st.wear)}` : def.name;
         if (def.shelter) {
           const ok = canSleepAt(this.hour);
-          return { name: def.name, action: ok ? 'Sleep until dawn' : 'Sleep (after 7 PM)', enabled: ok };
+          return { name, action: ok ? 'Sleep until dawn' : 'Sleep (after 7 PM)', enabled: ok };
         }
-        if (def.seat) return { name: def.name, action: 'Sit and rest', enabled: true };
+        if (def.seat) return { name, action: 'Sit and rest', enabled: true };
         return { name: def.name, action: '', enabled: false };
       }
       case 'animal': {
@@ -676,7 +725,10 @@ export class Simulation {
     const g = this.gen.trees[index];
     const def = TREES[g.species];
     const dyn = s.trees[index];
-    if (dyn.felled) return;
+    if (dyn.felled) {
+      if (dyn.logs > 0) this.chopTrunk(index);
+      return;
+    }
     const gy = this.terrain.heightAt(g.x, g.z);
     if (s.activeTool === 'axe') {
       this.actionCooldown = BALANCE.combat.axe.cooldown;
@@ -685,6 +737,7 @@ export class Simulation {
       this.emit({ type: 'swing', tool: 'axe', hit: true });
       this.emit({ type: 'chop', tree: index, x: g.x, y: gy + 1.2, z: g.z });
       if (dyn.hp <= 0) this.fellTree(index);
+      this.wearTool('axe', 1);
       return;
     }
     if (def.bark > 0 && s.activeTool === 'hands') {
@@ -696,6 +749,7 @@ export class Simulation {
         if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
         spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
         this.emit({ type: 'swing', tool: 'hands', hit: true });
+        this.gainXp('gathering', BALANCE.skills.xp.gather);
         this.worldVersion++;
       }
       return;
@@ -704,6 +758,7 @@ export class Simulation {
     this.emit({ type: 'needTool', message: s.tools.includes('axe') ? 'Equip your Stone Axe [2] to chop trees.' : 'You need an axe to chop trees.' });
   }
 
+  /** The tree comes down as a whole trunk; its wood comes from chopping the trunk up afterwards. */
   private fellTree(index: number): void {
     const s = this.state;
     const g = this.gen.trees[index];
@@ -717,13 +772,54 @@ export class Simulation {
     const dx = g.x - p.x;
     const dz = g.z - p.z;
     const d = Math.hypot(dx, dz) || 1;
+    dyn.fall = Math.atan2(dx / d, dz / d);
+    dyn.logs = def.logs;
+    dyn.cuts = 0;
+    this.syncTrunkCollider(index);
     this.emit({ type: 'treeFell', tree: index, dirX: dx / d, dirZ: dz / d });
-    const gy = this.terrain.heightAt(g.x, g.z);
-    const logs = this.give('log', def.logs, g.x, gy + 1, g.z, 'tree');
-    this.dropAt('log', def.logs - logs, g.x + (dx / d) * 1.5, g.z + (dz / d) * 1.5);
-    const sticks = this.give('stick', def.sticks, g.x, gy + 1, g.z, 'tree');
-    this.dropAt('stick', def.sticks - sticks, g.x + (dx / d) * 2.5, g.z + (dz / d) * 2.5);
+    this.gainXp('gathering', BALANCE.skills.xp.fell);
     this.worldVersion++;
+  }
+
+  /** One axe hit on a fallen trunk. Every `cutsPerLog` hits frees a log; the last log also yields the branches as sticks. */
+  private chopTrunk(index: number): void {
+    const s = this.state;
+    const g = this.gen.trees[index];
+    const def = TREES[g.species];
+    const dyn = s.trees[index];
+    const span = this.trunk(index);
+    if (!span) return;
+    if (s.activeTool !== 'axe') {
+      this.actionCooldown = 0.6;
+      this.emit({ type: 'needTool', message: s.tools.includes('axe') ? 'Equip your Stone Axe [2] to cut up the trunk.' : 'You need an axe to cut up the trunk.' });
+      return;
+    }
+    this.actionCooldown = BALANCE.combat.axe.cooldown;
+    spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
+    const p = s.player;
+    const along = clamp((p.x - span.x0) * span.dx + (p.z - span.z0) * span.dz, 0, span.len);
+    const hx = span.x0 + span.dx * along;
+    const hz = span.z0 + span.dz * along;
+    const hy = this.terrain.heightAt(hx, hz) + span.r * 1.4;
+    this.emit({ type: 'swing', tool: 'axe', hit: true });
+    this.emit({ type: 'chop', tree: index, x: hx, y: hy, z: hz, trunk: true });
+    dyn.cuts += 1;
+    if (dyn.cuts >= BALANCE.trees.cutsPerLog) {
+      dyn.cuts = 0;
+      dyn.logs -= 1;
+      const cx = span.x0 + span.dx * Math.min(0.6, span.len / 2);
+      const cz = span.z0 + span.dz * Math.min(0.6, span.len / 2);
+      const cy = this.terrain.heightAt(cx, cz) + span.r;
+      this.dropAt('log', 1 - this.give('log', 1, cx, cy, cz, 'tree'), cx, cz);
+      if (dyn.logs <= 0) {
+        this.dropAt('stick', def.sticks - this.give('stick', def.sticks, span.x1, cy, span.z1, 'tree'), span.x1, span.z1);
+        this.message(`The ${def.name.toLowerCase()} is all cut up.`, 'good');
+      }
+      this.gainXp('gathering', BALANCE.skills.xp.log);
+      this.syncTrunkCollider(index);
+      this.worldVersion++;
+    }
+    this.wearTool('axe', 1);
   }
 
   private gatherResource(index: number): void {
@@ -742,9 +838,94 @@ export class Simulation {
     dyn.charges -= 1;
     if (dyn.charges <= 0) dyn.respawnAt = s.totalHours + def.respawnHours;
     if (added < def.yield) this.dropAt(def.item, def.yield - added, g.x + 0.4, g.z + 0.4);
+    else if (this.roll(gatherBonusChance(s.skills.gathering)) && roomFor(s.inventory, def.item) > 0) {
+      this.give(def.item, 1, g.x, gy + def.hitHeight, g.z, g.kind);
+    }
     spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
     this.emit({ type: 'swing', tool: 'hands', hit: true });
+    this.gainXp('gathering', BALANCE.skills.xp.gather);
     this.worldVersion++;
+  }
+
+  /** Chance roll that leaves the RNG untouched when the chance is zero, so level-1 play stays on the same random sequence. */
+  private roll(chance: number): boolean {
+    return chance > 0 && this.rng.chance(chance);
+  }
+
+  private gainXp(skill: SkillId, amount: number): void {
+    const level = addSkillXp(this.state, skill, amount);
+    if (level !== null) {
+      this.emit({ type: 'skillUp', skill, level });
+      this.message(`${SKILL_INFO[skill].name} is now level ${level}.`, 'good');
+    }
+  }
+
+  /** Wears an owned tool; at zero it breaks and is removed. */
+  wearTool(tool: ToolId, amount: number): WearResult {
+    const w = toolWear(this.state, tool);
+    if (!w) return 'ok';
+    const res = applyWear(w, amount);
+    if (res === 'low') {
+      this.emit({ type: 'wornLow', name: TOOLS[tool].name });
+      this.message(`Your ${TOOLS[tool].name} is wearing out.`, 'warn');
+    } else if (res === 'broken') {
+      this.breakTool(tool);
+    }
+    return res;
+  }
+
+  private breakTool(tool: ToolId): void {
+    const s = this.state;
+    s.tools = s.tools.filter((t) => t !== tool);
+    delete s.toolWear[tool];
+    if (s.activeTool === tool) {
+      s.activeTool = 'hands';
+      this.bowDraw = -1;
+    }
+    this.emit({ type: 'broke', name: TOOLS[tool].name, tool });
+    this.message(`Your ${TOOLS[tool].name} broke. You can craft a new one.`, 'warn');
+  }
+
+  private wearStructure(st: StructureState, amount: number): WearResult {
+    if (!st.wear) return 'ok';
+    const res = applyWear(st.wear, amount);
+    const name = PREFABS[st.prefab].name;
+    if (res === 'low') {
+      this.emit({ type: 'wornLow', name });
+      this.message(`Your ${name} is getting rickety.`, 'warn');
+    } else if (res === 'broken') {
+      this.removeStructure(st);
+      this.emit({ type: 'broke', name, structure: st.id });
+      this.message(`Your ${name} fell apart. You can build a new one.`, 'warn');
+    }
+    return res;
+  }
+
+  private removeStructure(st: StructureState): void {
+    const s = this.state;
+    const i = s.structures.indexOf(st);
+    if (i >= 0) s.structures.splice(i, 1);
+    const c = this.structureColliders.get(st.id);
+    if (c) this.colliders.remove(c);
+    this.structureColliders.delete(st.id);
+    if (s.player.sitting && PREFABS[st.prefab].seat) s.player.sitting = false;
+    this.worldVersion++;
+  }
+
+  /** Slow decay over `hours`: every owned tool, the lit torch (only while held and awake), and shelters and benches. */
+  private updateWear(hours: number, awake: boolean): void {
+    if (hours <= 0) return;
+    const s = this.state;
+    const D = BALANCE.durability;
+    for (const tool of [...s.tools]) {
+      if (!toolWears(tool)) continue;
+      let amount = D.tools[tool].perHour * hours;
+      if (tool === 'torch' && awake && s.activeTool === 'torch') amount += D.tools.torch.burnPerHour * hours;
+      this.wearTool(tool, amount);
+    }
+    for (const st of [...s.structures]) {
+      if (st.wear && prefabWears(st.prefab)) this.wearStructure(st, D.structures[st.prefab].perHour * hours);
+    }
   }
 
   private pickUpDrop(id: number): void {
@@ -789,6 +970,7 @@ export class Simulation {
       if (added > 0) any = true;
     }
     if (!any) this.message('Your pack is full.', 'warn');
+    else this.gainXp('hunting', BALANCE.skills.xp.butcher);
     if (c.remaining.every((r) => r.count <= 0)) s.carcasses.splice(i, 1);
     this.emit({ type: 'swing', tool: this.state.activeTool, hit: true });
     this.worldVersion++;
@@ -809,6 +991,7 @@ export class Simulation {
       this.state.player.vx = 0;
       this.state.player.vz = 0;
       this.emit({ type: 'sat' });
+      if (prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     }
   }
 
@@ -852,13 +1035,17 @@ export class Simulation {
       return;
     }
     this.emit({ type: 'swing', tool: s.activeTool, hit: true });
+    const tool = s.activeTool;
     this.hitAnimal(a, stats.damage);
+    this.wearTool(tool, 1);
   }
 
+  /** The player's hit on an animal; the hunting skill adds damage. */
   hitAnimal(a: AnimalState, damage: number): void {
-    const killed = damageAnimal(a, damage, this.animalEnv);
+    const killed = damageAnimal(a, damage * huntDamageMultiplier(this.state.skills.hunting), this.animalEnv);
     const def = SPECIES[a.species];
     this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + def.hitHeight, z: a.z, killed });
+    this.gainXp('hunting', BALANCE.skills.xp.hit);
     if (killed) this.killAnimal(a);
   }
 
@@ -867,8 +1054,11 @@ export class Simulation {
     const i = s.animals.indexOf(a);
     if (i >= 0) s.animals.splice(i, 1);
     s.stats.kills[a.species] = (s.stats.kills[a.species] ?? 0) + 1;
+    this.gainXp('hunting', BALANCE.skills.xp.kill);
     const def = SPECIES[a.species];
     const remaining = def.drops.map((d) => ({ item: d.item, count: d.count }));
+    const meat = remaining.find((r) => r.item === 'rawMeat');
+    if (meat && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
     if (a.species === 'fish') {
       const added = this.give('rawFish', 1, a.x, WATER_LEVEL + 0.2, a.z, 'carcass');
       if (added > 0) {
@@ -898,6 +1088,7 @@ export class Simulation {
     this.actionCooldown = b.cooldown;
     spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
     this.emit({ type: 'arrowFired', power });
+    this.wearTool('bow', 1);
   }
 
   private updateProjectiles(dt: number): void {
@@ -1088,15 +1279,40 @@ export class Simulation {
       if (check.ok) this.beginPlacement(recipeId);
       return check;
     }
-    const res = craftRecipe(this.state, recipeId, { nearFire: this.isNearLitFire() });
+    const s = this.state;
+    const cooking = recipe.station === 'fire';
+    const firstTime = (s.stats.crafted[recipeId] ?? 0) === 0;
+    const res = craftRecipe(s, recipeId, { nearFire: this.isNearLitFire() });
     if (res.ok) {
-      this.emit({ type: 'crafted', recipe: recipeId });
       const out = recipe.output;
+      let item = out.kind === 'item' ? out.item : null;
+      const count = out.kind === 'item' ? out.count : 0;
+      // Beginner's luck: the first time you cook a dish it always comes out right.
+      if (item && cooking && canBurn(item) && !firstTime && this.roll(burnChance(s.skills.cooking))) {
+        item = this.charMeal(item, count);
+      }
+      spendEnergy(s.needs, BALANCE.needs.energy.craftCost);
+      if (out.kind === 'tool' && toolWears(out.tool)) s.toolWear[out.tool] = newToolWear(out.tool, s.skills.crafting);
+      this.emit({ type: 'crafted', recipe: recipeId, burnt: item === 'charredMeal' || undefined });
       if (out.kind === 'tool') this.selectTool(out.tool);
-      if (out.kind === 'item') this.emit({ type: 'gathered', item: out.item, count: out.count, x: this.state.player.x, y: this.state.player.y + 1.2, z: this.state.player.z, source: 'craft' });
+      if (item) this.emit({ type: 'gathered', item, count, x: s.player.x, y: s.player.y + 1.2, z: s.player.z, source: 'craft' });
+      this.gainXp(cooking ? 'cooking' : 'crafting', cooking ? BALANCE.skills.xp.cook : BALANCE.skills.xp.craft);
       this.progress();
     }
     return res;
+  }
+
+  /** Swap a freshly cooked dish for a charred meal (dropped at your feet if it doesn't fit). */
+  private charMeal(item: ItemId, count: number): ItemId {
+    const s = this.state;
+    removeItem(s.inventory, item, count);
+    s.stats.gathered[item] = Math.max(0, (s.stats.gathered[item] ?? 0) - count);
+    const added = addItem(s.inventory, 'charredMeal', count);
+    s.stats.gathered.charredMeal = (s.stats.gathered.charredMeal ?? 0) + count;
+    const p = s.player;
+    const d = lookDir(p.yaw, 0, this.look);
+    this.dropAt('charredMeal', count - added, p.x + d.x * 0.8, p.z + d.z * 0.8);
+    return 'charredMeal';
   }
 
   beginPlacement(recipeId: string): boolean {
@@ -1206,14 +1422,17 @@ export class Simulation {
     const s = this.state;
     const def = PREFABS[pl.prefab];
     const st: StructureState = { id: s.nextId++, prefab: pl.prefab, x: pl.x, y: res.y, z: pl.z, rot: pl.rot, fuel: def.fire ? BALANCE.fire.initialFuelHours : 0 };
+    if (prefabWears(st.prefab)) st.wear = newStructureWear(st.prefab, s.skills.crafting);
     s.structures.push(st);
     this.addStructureCollider(st);
     s.stats.crafted[recipe.id] = (s.stats.crafted[recipe.id] ?? 0) + 1;
     this.placement = null;
     this.actionCooldown = 0.4;
+    spendEnergy(s.needs, BALANCE.needs.energy.buildCost);
     this.refreshLitFires();
     this.worldVersion++;
     this.emit({ type: 'placed', structure: st.id, prefab: st.prefab });
+    this.gainXp('crafting', BALANCE.skills.xp.build);
     this.progress();
     return true;
   }
@@ -1313,6 +1532,8 @@ export class Simulation {
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
     applySleep(s.needs, PREFABS[st.prefab].shelter!);
+    this.updateWear(elapsed, false);
+    if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     p.sitting = false;
     p.vx = 0;
     p.vz = 0;
@@ -1387,6 +1608,16 @@ export class Simulation {
     s.player.hurtTimer = 0;
     this.hurtPlayer(amount, 'dev', s.player.x + 1, s.player.z);
   }
+}
+
+function conditionText(w: Wear): string {
+  return `${Math.max(1, Math.round(wearFraction(w) * 100))}% condition`;
+}
+
+/** Hearty campfire dishes can char; drinks (boiled water, tea) can't. */
+function canBurn(item: ItemId): boolean {
+  const def = ITEMS[item];
+  return !!def.meal && !def.water;
 }
 
 function removeAllDryRun(state: GameState, inputs: readonly { item: ItemId; count: number }[]): boolean {

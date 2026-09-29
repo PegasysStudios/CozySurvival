@@ -3,17 +3,21 @@ import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 import type { ResourceKind } from '../data/resources';
 import type { PlacementReason } from './placement';
-import type { DamageSource } from './state';
+import type { DamageSource, SkillId } from './state';
 
 export type SimEvent =
   | { type: 'gathered'; item: ItemId; count: number; x: number; y: number; z: number; source: ResourceKind | 'tree' | 'drop' | 'carcass' | 'water' | 'craft' | 'bark' }
   | { type: 'packFull'; item: ItemId }
   | { type: 'swing'; tool: ToolId; hit: boolean }
-  | { type: 'chop'; tree: number; x: number; y: number; z: number }
+  | { type: 'chop'; tree: number; x: number; y: number; z: number; trunk?: boolean }
   | { type: 'treeFell'; tree: number; dirX: number; dirZ: number }
   | { type: 'needTool'; message: string }
   | { type: 'learned'; recipe: string }
-  | { type: 'crafted'; recipe: string }
+  | { type: 'crafted'; recipe: string; burnt?: boolean }
+  | { type: 'skillUp'; skill: SkillId; level: number }
+  | { type: 'wornLow'; name: string }
+  | { type: 'broke'; name: string; tool?: ToolId; structure?: number }
+  | { type: 'splash'; impact: number }
   | { type: 'placed'; structure: number; prefab: PrefabId }
   | { type: 'placeFailed'; reason: PlacementReason }
   | { type: 'objective'; index: number }

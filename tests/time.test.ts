@@ -4,10 +4,12 @@ import { advanceHours, canSleepAt, dayOf, daylight, formatClock, hourOf, hoursSu
 import { quietSim, run } from './helpers';
 
 describe('day cycle math', () => {
-  it('one in-game day lasts one real hour at 1x', () => {
-    expect(realSecondsForHours(24)).toBeCloseTo(3600);
-    expect(advanceHours(0, 3600, 1)).toBeCloseTo(24);
-    expect(advanceHours(0, 60, 24)).toBeCloseTo(24 / 60 * 24);
+  it('one in-game day lasts 24 real minutes at 1x (one real minute per game hour)', () => {
+    expect(realSecondsForHours(24)).toBeCloseTo(1440);
+    expect(realSecondsForHours(1)).toBeCloseTo(60);
+    expect(advanceHours(0, 1440, 1)).toBeCloseTo(24);
+    expect(advanceHours(0, 60, 1)).toBeCloseTo(1);
+    expect(advanceHours(0, 60, 24)).toBeCloseTo(24);
   });
 
   it('a day starts at dawn (06:00)', () => {
@@ -55,7 +57,7 @@ describe('day cycle in the simulation', () => {
 
   it('dev time scale speeds the day and emits dayStart/nightfall exactly once', () => {
     const sim = quietSim();
-    sim.timeScale = 240; // 1 day in 15 real seconds
+    sim.timeScale = 96; // 1 day in 15 real seconds
     const events = [];
     for (let i = 0; i < 31; i++) {
       Object.assign(sim.state.needs, { hunger: 100, thirst: 100, warmth: 100, health: 100 });
@@ -67,9 +69,9 @@ describe('day cycle in the simulation', () => {
     expect(sim.state.stats.events.nightfall).toBe(1);
   });
 
-  it('at 1x, ten real minutes advance four game hours', () => {
+  it('at 1x, ten real minutes advance ten game hours', () => {
     const sim = quietSim();
     run(sim, 600, {}, 0.1);
-    expect(sim.hour).toBeCloseTo(11, 1);
+    expect(sim.hour).toBeCloseTo(17, 1);
   });
 });

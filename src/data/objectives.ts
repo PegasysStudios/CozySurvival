@@ -64,8 +64,8 @@ export const OBJECTIVES: Objective[] = [
     done: (s) => Object.values(s.stats.kills).some((n) => (n ?? 0) > 0),
   },
   {
-    id: 'chop', title: 'Chop down a tree',
-    hint: 'Equip the Stone Axe (2) and hold left-click on a trunk.',
+    id: 'chop', title: 'Chop down a tree and cut it up',
+    hint: 'Equip the Stone Axe (2) and hold left-click on a trunk to fell it, then keep chopping the fallen trunk for logs.',
     done: (s) => got(s, 'log') >= 1,
   },
   {

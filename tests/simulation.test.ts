@@ -134,7 +134,7 @@ describe('trees', () => {
     expect(sim.state.known).toContain('canteen');
   });
 
-  it('with an axe, several swings fell the tree for logs and leave a stump', () => {
+  it('with an axe, several swings fell the tree, then chopping up the trunk gives logs and leaves a stump', () => {
     const sim = quietSim();
     sim.state.tools.push('axe');
     sim.selectTool('axe');
@@ -147,7 +147,12 @@ describe('trees', () => {
     expect(events.filter((e) => e.type === 'chop')).toHaveLength(TREES.fir.hp);
     expect(events.some((e) => e.type === 'treeFell')).toBe(true);
     expect(sim.state.trees[i].felled).toBe(true);
+    expect(countItem(sim.state.inventory, 'log')).toBe(0);
+    expect(sim.state.trees[i].logs).toBe(TREES.fir.logs);
+    for (let k = 0; k < TREES.fir.logs * BALANCE.trees.cutsPerLog; k++) sim.perform({ kind: 'tree', index: i, dist: 1 });
     expect(countItem(sim.state.inventory, 'log')).toBe(TREES.fir.logs);
+    expect(countItem(sim.state.inventory, 'stick')).toBe(TREES.fir.sticks);
+    expect(sim.state.trees[i].logs).toBe(0);
     expect(sim.state.known).toContain('leanTo');
     const t = sim.gen.trees[i];
     teleport(sim, t.x + 3, t.z);
@@ -501,7 +506,7 @@ describe('onboarding objectives', () => {
     collect();
     sim.selectTool('axe');
     const tree = nearestTree(sim, 'fir');
-    for (let k = 0; k < TREES.fir.hp; k++) sim.perform({ kind: 'tree', index: tree, dist: 1 });
+    for (let k = 0; k < TREES.fir.hp + TREES.fir.logs * BALANCE.trees.cutsPerLog; k++) sim.perform({ kind: 'tree', index: tree, dist: 1 });
     collect();
     give(sim, { log: 3, stick: 4, fiber: 4, cordage: 1 });
     sim.beginPlacement('leanTo');

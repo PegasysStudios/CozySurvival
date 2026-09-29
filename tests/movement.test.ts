@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { box, circle } from '../src/core/geom2d';
 import { BALANCE } from '../src/data/balance';
 import { makeCollider, type Collider } from '../src/sim/colliders';
-import { createPlayer, horizontalSpeed, lookDir, stepPlayer, type MoveInput } from '../src/sim/movement';
+import { createPlayer, horizontalSpeed, lookDir, stepPlayer, SWIM_FLOAT_Y, type MoveInput } from '../src/sim/movement';
 import type { PlayerState } from '../src/sim/state';
 import type { Terrain } from '../src/sim/terrain';
 import { colliderQuery, fakeTerrain } from './helpers';
@@ -160,13 +160,14 @@ describe('terrain following and blocking', () => {
     expect(q.x).toBeGreaterThan(8);
   });
 
-  it('wades slowly in shallows and cannot walk into deep water', () => {
-    const lake = fakeTerrain((x) => 2 - x * 0.5); // water starts at x=4, deep past ~6
+  it('wades slowly in shallows and swims once the water is deep', () => {
+    const lake = fakeTerrain((x) => 2 - x * 0.5); // water starts at x=4, swimming depth past ~6.7
     const p = createPlayer(0, 2, 0, 0);
     sim(p, lake, 6, mv({ moveZ: 1 }));
-    expect(p.x).toBeLessThan(4 + (P.maxWadeDepth + 0.05) * 2);
-    expect(p.x).toBeGreaterThan(4.5);
+    expect(p.x).toBeGreaterThan(4 + P.swimDepth * 2);
     expect(p.wading).toBe(true);
+    expect(p.swimming).toBe(true);
+    expect(p.y).toBeCloseTo(SWIM_FLOAT_Y, 1);
     const shallow = fakeTerrain(() => -0.6);
     const q = createPlayer(0, -0.6, 0, 0);
     sim(q, shallow, 1, mv({ moveZ: 1 }));
