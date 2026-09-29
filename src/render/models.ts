@@ -53,8 +53,14 @@ function roots(b: GeoBuilder, color: string, r: number, n: number, seed: number)
   }
 }
 
-/** `lod` 1 is the distant variant: same silhouette and colours, far fewer faces, no roots or limbs. */
-export function treeGeometry(species: TreeSpecies, lod = 0): THREE.BufferGeometry {
+/** Where a peeled birch's bare wood gives way to the bark still out of reach. */
+const STRIP_TOP = 3.6;
+
+/**
+ * `lod` 1 is the distant variant: same silhouette and colours, far fewer faces, no roots or limbs.
+ * `stripped` shows a birch with the lower half of its trunk peeled to bare wood.
+ */
+export function treeGeometry(species: TreeSpecies, lod = 0, stripped = false): THREE.BufferGeometry {
   const b = new GeoBuilder(species.length * 31);
   const near = lod === 0;
   if (species === 'fir') {
@@ -72,7 +78,11 @@ export function treeGeometry(species: TreeSpecies, lod = 0): THREE.BufferGeometr
     b.add(new ConeGeometry(0.22, 1.8, near ? 6 : 4), { matrix: tf(0.3, 12.6, 0.1, 0, 0, -0.35), color: '#56813f', sway: 0.16 });
   } else if (species === 'birch') {
     const bark = (x: number, y: number, z: number) => {
-      const band = hash2(Math.floor(y * 2.7), Math.floor(Math.atan2(z, x) * 1.3), 7);
+      const a = Math.atan2(z, x);
+      if (stripped && y < STRIP_TOP + (hash2(Math.floor(a * 3), 5, 11) - 0.5) * 0.5) {
+        return mix('#b98a5c', '#d8b184', hash2(Math.floor(y * 3.1), Math.floor(a * 2), 13));
+      }
+      const band = hash2(Math.floor(y * 2.7), Math.floor(a * 1.3), 7);
       return col(band < 0.2 ? '#3b342e' : band < 0.3 ? '#bdb5a6' : '#ece7dc');
     };
     b.add(new CylinderGeometry(0.1, 0.22, 7.2, near ? 7 : 5, near ? 9 : 4), { matrix: tf(0, 3.6, 0), color: bark, jitter: 0.03, vary: 0.05 });

@@ -190,6 +190,12 @@ export function toolGeometry(tool: ToolId): THREE.BufferGeometry {
       }
       break;
     }
+    case 'rod':
+      sleeveAndHand(b);
+      b.add(new CylinderGeometry(0.008, 0.022, 1.9, 6), { matrix: tf(0, 0.72, -0.5, -0.55, 0, 0), color: (_x, y) => (y < 0.12 ? col('#c9b27a') : col('#9a7048')) });
+      b.add(new CylinderGeometry(0.04, 0.04, 0.035, 8), { matrix: tf(0.035, 0.08, -0.06, 0, 0, Math.PI / 2), color: '#6f757b' });
+      b.add(new CylinderGeometry(0.03, 0.03, 0.02, 8), { matrix: tf(0.04, 0.08, -0.06, 0, 0, Math.PI / 2), color: '#e6ddcc' });
+      break;
     case 'torch':
       sleeveAndHand(b);
       b.add(new CylinderGeometry(0.02, 0.024, 0.5, 6), { matrix: tf(0, 0.2, -0.02), color: '#7a5534' });

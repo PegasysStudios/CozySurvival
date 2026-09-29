@@ -3,6 +3,7 @@ import { smoothstep } from '../core/math';
 import type { Simulation } from '../sim/simulation';
 import { AvatarLayer } from './avatars';
 import { EntityView } from './entities';
+import { FishingView } from './fishing';
 import { windUniforms } from './geo';
 import { GhostView } from './ghost';
 import { makeNatureMaterials, NatureView } from './nature';
@@ -34,6 +35,7 @@ export class GameView {
   readonly effects = new Effects();
   readonly viewModel = new ViewModel();
   readonly avatars = new AvatarLayer();
+  readonly fishing = new FishingView();
   private readonly sun = new THREE.DirectionalLight('#ffffff', 2);
   private readonly hemi = new THREE.HemisphereLight('#ffffff', '#444444', 1);
   private readonly torchLight = new THREE.PointLight('#ffa050', 0, 16, 1.5);
@@ -79,7 +81,7 @@ export class GameView {
     s.bias = -0.0006;
     s.normalBias = 0.035;
     this.sun.castShadow = true;
-    this.scene.add(this.sun, this.sun.target, this.hemi, this.torchLight, this.effects.group, this.camera, this.avatars.group);
+    this.scene.add(this.sun, this.sun.target, this.hemi, this.torchLight, this.effects.group, this.camera, this.avatars.group, this.fishing.group);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -226,6 +228,7 @@ export class GameView {
         this.effects.torch(this.tmpV.x, this.tmpV.y, this.tmpV.z);
       }
     }
+    this.fishing.update(sim.state.dead ? null : sim.fishing, cam, time);
     this.effects.update(dt);
     this.water?.update(time, dn.horizon, dn.sunDir, dn.sun, (1 - dn.night) * smoothstep(0.02, 0.2, dn.sunDir.y) + dn.night * 0.25, dn.night);
     this.sky?.update(dn, cam, time);

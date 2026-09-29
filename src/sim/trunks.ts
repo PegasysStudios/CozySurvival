@@ -15,6 +15,11 @@ export function freshTree(species: TreeSpecies): TreeDyn {
   return { hp: def.hp, felled: false, bark: def.bark, barkAt: 0, logs: 0, cuts: 0, fall: 0 };
 }
 
+/** A standing birch peeled bare: its lower trunk shows pale wood until the bark regrows. */
+export function barkStripped(species: TreeSpecies, dyn: TreeDyn): boolean {
+  return TREES[species].bark > 0 && !dyn.felled && dyn.bark <= 0;
+}
+
 export interface TrunkSpan {
   /** Stump-side end of the uncut trunk. */
   x0: number;
