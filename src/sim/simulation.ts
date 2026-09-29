@@ -573,7 +573,7 @@ export class Simulation {
         return { name: SPECIES[a.species].name, action: armed ? 'Attack' : s.activeTool === 'bow' ? 'Shoot' : 'Punch', enabled: true };
       }
       case 'water': {
-        if (canteenRoom(s) > 0) return { name: 'Lake', action: 'Fill canteen', enabled: true };
+        if (this.canteenFillAmount() > 0) return { name: 'Lake', action: 'Fill canteen', enabled: true };
         return { name: 'Lake', action: 'Drink', enabled: s.needs.thirst < 99.5 };
       }
     }
@@ -755,11 +755,19 @@ export class Simulation {
     if (i < 0) return;
     const dr = s.drops[i];
     this.actionCooldown = BALANCE.gather.cooldown;
-    if (ITEMS[dr.item].water && !s.gear.includes('canteen')) {
-      this.message('You need a canteen to carry water.', 'warn');
-      return;
+    let count = dr.count;
+    if (ITEMS[dr.item].water) {
+      if (!s.gear.includes('canteen')) {
+        this.message('You need a canteen to carry water.', 'warn');
+        return;
+      }
+      count = Math.min(count, canteenRoom(s));
+      if (count <= 0) {
+        this.message('Your canteen is full.', 'warn');
+        return;
+      }
     }
-    const added = this.give(dr.item, dr.count, dr.x, dr.y + 0.2, dr.z, 'drop');
+    const added = this.give(dr.item, count, dr.x, dr.y + 0.2, dr.z, 'drop');
     if (added === 0) {
       this.message('Your pack is full.', 'warn');
       return;
@@ -806,16 +814,16 @@ export class Simulation {
     }
   }
 
+  /** Servings a lake click would put in the canteen (limited by canteen and pack space). */
+  private canteenFillAmount(): number {
+    return Math.min(canteenRoom(this.state), roomFor(this.state.inventory, 'lakeWater'));
+  }
+
   private useWater(): void {
     const s = this.state;
-    const room = canteenRoom(s);
-    if (room > 0) {
-      const n = Math.min(room, roomFor(s.inventory, 'lakeWater'));
+    const n = this.canteenFillAmount();
+    if (n > 0) {
       this.actionCooldown = 0.5;
-      if (n <= 0) {
-        this.message('No room in your pack for water.', 'warn');
-        return;
-      }
       const t = this.target;
       const added = this.give('lakeWater', n, t && t.kind === 'water' ? t.x : s.player.x, WATER_LEVEL, t && t.kind === 'water' ? t.z : s.player.z, 'water');
       if (added > 0) this.emit({ type: 'filled', count: added });
@@ -823,7 +831,8 @@ export class Simulation {
     }
     this.actionCooldown = BALANCE.needs.handDrink.cooldown;
     if (s.needs.thirst >= 99.5) {
-      this.message("You're not thirsty.");
+      if (canteenRoom(s) > 0) this.message('No room in your pack for water.', 'warn');
+      else this.message("You're not thirsty.");
       return;
     }
     applyFood(s.needs, { thirst: BALANCE.needs.handDrink.thirst, warmth: BALANCE.needs.handDrink.warmth });
