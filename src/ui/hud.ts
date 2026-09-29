@@ -1,11 +1,12 @@
 import { BALANCE } from '../data/balance';
-import { ITEMS, TOOLS, TOOL_ORDER, type ItemId } from '../data/items';
+import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
 import { FREEPLAY_OBJECTIVE, OBJECTIVES } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
 import { toolWears, wearFraction } from '../sim/durability';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
-import { usedSlots } from '../sim/inventory';
+import { countItem, usedSlots } from '../sim/inventory';
+import type { GameState } from '../sim/state';
 import { formatClock } from '../sim/time';
 import { el, escapeHtml, setHtml, setText, toggle } from './dom';
 import { itemIcon, MISC_ICONS, NEED_ICONS, toolIcon } from './icons';
@@ -18,6 +19,26 @@ const NEEDS: { key: NeedKey; label: string }[] = [
   { key: 'warmth', label: 'Warmth' },
   { key: 'energy', label: 'Energy' },
 ];
+
+/** Ammo carried for a tool that uses it (arrows for the bow), or null for tools without ammo. */
+export function toolAmmo(s: GameState, tool: ToolId): number | null {
+  return tool === 'bow' ? countItem(s.inventory, 'arrow') : null;
+}
+
+/** The hotbar: one slot per tool with its key, icon, name, durability and (for the bow) arrow count. */
+export function toolBeltHtml(s: GameState): string {
+  return TOOL_ORDER.map((id) => {
+    const owned = s.tools.includes(id);
+    const active = s.activeTool === id;
+    const w = owned ? s.toolWear[id] : undefined;
+    const pct = w ? Math.round(wearFraction(w) * 100) : null;
+    const dur = pct === null && !(owned && toolWears(id)) ? '' : `<span class="dur ${pct !== null && pct <= BALANCE.durability.lowFraction * 100 ? 'low' : ''}"><i style="transform:scaleX(${(pct ?? 100) / 100})"></i></span>`;
+    const ammo = owned ? toolAmmo(s, id) : null;
+    const ammoHtml = ammo === null ? '' : `<span class="ammo ${ammo === 0 ? 'empty' : ''}">${ammo}</span>`;
+    const title = `${TOOLS[id].name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}${ammo === null ? '' : ` · ${ammo} ${itemName('arrow', ammo).toLowerCase()}`}`;
+    return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? TOOLS[id].name : '???'}</span>${dur}</div>`;
+  }).join('');
+}
 
 interface Toast {
   el: HTMLElement;
@@ -251,16 +272,7 @@ export class Hud {
     setText(this.objProgress, o?.progress ?? '');
     setText(this.objStep, o ? `${s.objective + 1}/${OBJECTIVES.length}` : '');
 
-    const beltHtml = TOOL_ORDER.map((id) => {
-      const owned = s.tools.includes(id);
-      const active = s.activeTool === id;
-      const w = owned ? s.toolWear[id] : undefined;
-      const pct = w ? Math.round(wearFraction(w) * 100) : null;
-      const dur = pct === null && !(owned && toolWears(id)) ? '' : `<span class="dur ${pct !== null && pct <= BALANCE.durability.lowFraction * 100 ? 'low' : ''}"><i style="transform:scaleX(${(pct ?? 100) / 100})"></i></span>`;
-      const title = `${TOOLS[id].name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}`;
-      return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? TOOLS[id].name : '???'}</span>${dur}</div>`;
-    }).join('');
-    setHtml(this.belt, beltHtml, this.beltKey);
+    setHtml(this.belt, toolBeltHtml(s), this.beltKey);
     const used = usedSlots(s.inventory);
     const cap = s.inventory.slots.length;
     setText(this.pack, `Pack ${used}/${cap} · Tab`);
