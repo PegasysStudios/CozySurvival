@@ -17,6 +17,8 @@ export interface NeedsContext {
   warmthTarget: number;
   warmthRatePerHour: number;
   sitting: boolean;
+  /** False during the grace nights: freezing still hurts but stops at 1 health. Defaults to true. */
+  coldLethal?: boolean;
 }
 
 export function createNeeds(): NeedsState {
@@ -51,7 +53,11 @@ export function updateNeeds(n: NeedsState, ctx: NeedsContext): DamageSource | nu
   };
   if (n.hunger <= 0) hurt(N.starvingDamagePerHour * h, 'starvation');
   if (n.thirst <= 0) hurt(N.dehydrationDamagePerHour * h, 'dehydration');
-  if (n.warmth <= 0) hurt(N.freezingDamagePerHour * h, 'cold');
+  if (n.warmth <= 0) {
+    let cold = N.freezingDamagePerHour * h;
+    if (ctx.coldLethal === false) cold = Math.min(cold, Math.max(0, n.health - damage - 1));
+    if (cold > 0) hurt(cold, 'cold');
+  }
 
   if (damage > 0) {
     n.health = clamp(n.health - damage, 0, 100);
@@ -92,15 +98,19 @@ export function applyFood(n: NeedsState, f: FoodEffect): void {
   n.regenBoost = E.boostSeconds;
 }
 
-/** Sleeping through the night: full energy, some hunger/thirst cost (never lethal), shelter-dependent warmth and healing. */
-export function applySleep(n: NeedsState, shelter: { warmthBonus: number; healthBonus: number }): void {
+/**
+ * Sleeping through the night: full energy, some hunger/thirst cost (never lethal) and shelter-dependent healing.
+ * By a burning campfire you wake at least as warm as you lay down (the shelter can warm you further); away from one
+ * the night costs `coldWarmthCost` warmth.
+ */
+export function applySleep(n: NeedsState, shelter: { warmthBonus: number; healthBonus: number }, byFire = false): void {
   const s = N.sleep;
   const wasFed = n.hunger > 25 && n.thirst > 25;
   n.hunger = Math.max(Math.min(n.hunger, s.floor), n.hunger - s.hungerCost);
   n.thirst = Math.max(Math.min(n.thirst, s.floor), n.thirst - s.thirstCost);
   n.energy = 100;
   n.exhausted = false;
-  n.warmth = clamp(45 + shelter.warmthBonus, 0, 100);
+  n.warmth = byFire ? Math.max(n.warmth, clamp(45 + shelter.warmthBonus, 0, 100)) : clamp(n.warmth - s.coldWarmthCost, 0, 100);
   if (wasFed) n.health = clamp(n.health + s.healthGain + shelter.healthBonus, 0, 100);
 }
 

@@ -366,6 +366,7 @@ export class Simulation {
       warmthTarget: warm.target,
       warmthRatePerHour: warm.rate,
       sitting: p.sitting,
+      coldLethal: this.coldLethal,
     });
     if (cause) this.die(cause);
 
@@ -439,13 +440,23 @@ export class Simulation {
     return this.nearestStructure((id) => !!PREFABS[id].fire, radius, true) !== null;
   }
 
+  /** Cold can kill only after the first `coldGraceNights` nights (each night belongs to the day it starts on). */
+  get coldLethal(): boolean {
+    return this.day > BALANCE.needs.coldGraceNights;
+  }
+
+  /** A burning campfire close enough to feel its warmth. */
+  private warmingFire(): StructureState | null {
+    return this.nearestStructure((id) => !!PREFABS[id].fire, BALANCE.needs.fireWarmRadius, true);
+  }
+
   warmthTarget(): { target: number; rate: number } {
     const w = BALANCE.needs.warmth;
     const N = BALANCE.needs;
     let target = ambientWarmth(this.hour);
     let rate: number = N.warmthRatePerHour;
     const p = this.state.player;
-    const fire = this.nearestStructure((id) => !!PREFABS[id].fire, N.fireWarmRadius, true);
+    const fire = this.warmingFire();
     if (fire) {
       const d = Math.hypot(fire.x - p.x, fire.z - p.z);
       const k = 1 - clamp((d - 1.5) / (N.fireWarmRadius - 1.5), 0, 1);
@@ -459,6 +470,8 @@ export class Simulation {
       target -= w.wadingPenalty;
       rate *= 2;
     }
+    // Within a burning campfire's range the cold never takes warmth away.
+    if (fire) target = Math.max(target, this.state.needs.warmth);
     return { target: clamp(target, 0, 100), rate };
   }
 
@@ -1529,12 +1542,13 @@ export class Simulation {
       this.emit({ type: 'sleepDenied', reason: "You can't sleep with a predator nearby!" });
       return false;
     }
+    const byFire = this.warmingFire() !== null;
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
-    applySleep(s.needs, PREFABS[st.prefab].shelter!);
+    applySleep(s.needs, PREFABS[st.prefab].shelter!, byFire);
     this.updateWear(elapsed, false);
     if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     p.sitting = false;
@@ -1555,7 +1569,7 @@ export class Simulation {
     this.wasNight = this.night;
     s.stats.events.slept = (s.stats.events.slept ?? 0) + 1;
     this.worldVersion++;
-    this.emit({ type: 'slept', day: this.day });
+    this.emit({ type: 'slept', day: this.day, byFire });
     this.emit({ type: 'dayStart', day: this.day });
     this.progress();
     return true;

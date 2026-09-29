@@ -688,7 +688,7 @@ export class Game {
         this.sfx('nightfall');
         break;
       case 'slept':
-        this.sleepTransition(e.day);
+        this.sleepTransition(e.day, e.byFire);
         break;
       case 'sleepDenied':
         this.throttledToast('sleep', e.reason, 'warn', 2);
@@ -740,14 +740,17 @@ export class Game {
     }
   }
 
-  private sleepTransition(day: number): void {
+  private sleepTransition(day: number, byFire: boolean): void {
     this.sfx('sleep');
     this.mode = 'sleeping';
     this.sim.cancelPlacement();
-    void this.screens.playSleep(day, 'You drift off to the crackle of the fire and wake at first light, fully rested.').then(() => {
+    const text = byFire
+      ? 'You drift off to the crackle of the fire and wake at first light, fully rested.'
+      : 'You sleep without a fire and wake at first light, rested but chilled to the bone.';
+    void this.screens.playSleep(day, text).then(() => {
       if (this.mode === 'sleeping') {
         this.mode = 'playing';
-        this.hud.showBanner(`Day ${day}`, 'Rested and ready. The forest is waking up.');
+        this.hud.showBanner(`Day ${day}`, byFire ? 'Rested and ready. The forest is waking up.' : 'Rested, but cold. Sleep beside a burning campfire to keep your warmth.');
         this.sfx('dawn');
       }
     });

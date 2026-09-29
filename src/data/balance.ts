@@ -19,6 +19,8 @@ export const BALANCE = {
     starvingDamagePerHour: 15,
     dehydrationDamagePerHour: 22,
     freezingDamagePerHour: 18,
+    /** Cold can wear health down but can't kill during the first this-many nights (days 1..N); from the next night on it can. */
+    coldGraceNights: 2,
     healthRegenPerHour: 5,
     regenMinHunger: 35,
     regenMinThirst: 35,
@@ -45,7 +47,8 @@ export const BALANCE = {
       exhaustedSpeedMul: 0.8,
       sittingMultiplier: 1.8,
     },
-    sleep: { hungerCost: 18, thirstCost: 22, floor: 8, healthGain: 12 },
+    /** `coldWarmthCost`: warmth points (of 100) lost sleeping through the night with no burning campfire in range. */
+    sleep: { hungerCost: 18, thirstCost: 22, floor: 8, healthGain: 12, coldWarmthCost: 30 },
     handDrink: { thirst: 9, warmth: -1, cooldown: 0.8 },
   },
   player: {
