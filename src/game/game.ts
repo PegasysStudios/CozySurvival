@@ -239,7 +239,7 @@ export class Game {
     this.showTitle();
   }
 
-  private openPanel(kind: 'inventory' | 'crafting', fireId?: number): void {
+  private openPanel(kind: 'inventory' | 'crafting' | 'campfire', fireId?: number): void {
     if (this.mode !== 'playing' && this.mode !== 'panel') return;
     this.sim.cancelPlacement();
     this.sim.bowDraw = -1;
@@ -657,7 +657,7 @@ export class Game {
         break;
       }
       case 'openCooking':
-        this.openPanel('crafting', e.structure);
+        this.openPanel('campfire', e.structure);
         break;
       case 'sat':
         this.hud.toast('You sit and rest. Energy recovers faster here.', 'good');

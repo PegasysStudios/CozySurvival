@@ -1488,7 +1488,8 @@ export class Simulation {
     return true;
   }
 
-  addFuel(structureId: number): boolean {
+  /** Feed a fire one log or stick: the chosen `fuel`, or a log when there is one. */
+  addFuel(structureId: number, fuel?: 'stick' | 'log'): boolean {
     const s = this.state;
     const st = s.structures.find((x) => x.id === structureId);
     if (!st || !PREFABS[st.prefab].fire) return false;
@@ -1497,9 +1498,11 @@ export class Simulation {
       this.message('The fire is roaring already.');
       return false;
     }
-    const item: ItemId | null = countItem(s.inventory, 'log') > 0 ? 'log' : countItem(s.inventory, 'stick') > 0 ? 'stick' : null;
+    const item: ItemId | null = fuel
+      ? (countItem(s.inventory, fuel) > 0 ? fuel : null)
+      : countItem(s.inventory, 'log') > 0 ? 'log' : countItem(s.inventory, 'stick') > 0 ? 'stick' : null;
     if (!item) {
-      this.message('You need sticks or logs to fuel the fire.', 'warn');
+      this.message(fuel ? `You have no ${fuel === 'log' ? 'logs' : 'sticks'} to add.` : 'You need sticks or logs to fuel the fire.', 'warn');
       return false;
     }
     removeItem(s.inventory, item, 1);

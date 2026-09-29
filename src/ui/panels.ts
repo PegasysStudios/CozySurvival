@@ -7,11 +7,12 @@ import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } f
 import { countItem, usedSlots } from '../sim/inventory';
 import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skillProgress } from '../sim/skills';
 import type { Simulation } from '../sim/simulation';
+import { campfireMenu, isCampfireRecipe } from './campfire';
 import { button, el, escapeHtml } from './dom';
 import { effectSummary } from './hud';
 import { gearIcon, itemIcon, MISC_ICONS, toolIcon } from './icons';
 
-export type PanelMode = 'none' | 'inventory' | 'crafting';
+export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire';
 
 export interface PanelHost {
   sim(): Simulation;
@@ -54,7 +55,6 @@ export class Panels {
     this.mode = mode;
     this.fireId = opts.fireId ?? null;
     if (opts.tab) this.tab = opts.tab;
-    if (mode === 'crafting' && this.fireId !== null) this.tab = 'cooking';
     this.selectedSlot = -1;
     this.root.classList.add('show');
     this.render();
@@ -75,6 +75,7 @@ export class Panels {
     this.card.className = `panel panel-${this.mode}`;
     if (this.mode === 'inventory') this.renderInventory();
     else if (this.mode === 'crafting') this.renderCrafting();
+    else if (this.mode === 'campfire') this.renderCampfire();
   }
 
   // ------------------------------------------------------------------ inventory
@@ -175,22 +176,7 @@ export class Panels {
     const sim = this.host.sim();
     const s = sim.state;
     const head = el('div', 'panel-head');
-    const atFire = this.fireId !== null ? s.structures.find((x) => x.id === this.fireId) : null;
-    if (atFire) {
-      const pct = Math.min(1, atFire.fuel / BALANCE.fire.maxFuelHours);
-      head.innerHTML = `<h2>${MISC_ICONS.fire} Campfire</h2><div class="panel-sub">${atFire.fuel > 0 ? `Burning · about ${atFire.fuel.toFixed(1)} h of fuel left` : 'The fire is out'}</div><div class="fuel-track"><div class="fuel-fill" style="transform:scaleX(${pct.toFixed(3)})"></div></div>`;
-      const sticks = countItem(s.inventory, 'stick');
-      const logs = countItem(s.inventory, 'log');
-      const fuel = button(logs > 0 ? `Add a log (+${BALANCE.fire.logFuelHours} h)` : sticks > 0 ? `Add a stick (+${BALANCE.fire.stickFuelHours} h)` : 'No fuel in pack', 'btn fuel-btn', () => {
-        if (sim.addFuel(atFire.id)) this.host.sfx('fuel');
-        else this.host.sfx('deny');
-        this.render();
-      });
-      fuel.disabled = sticks + logs === 0;
-      head.append(fuel);
-    } else {
-      head.innerHTML = `<h2>Crafting</h2><div class="panel-sub">You learn new recipes by gathering, hunting and exploring.</div>`;
-    }
+    head.innerHTML = `<h2>Crafting</h2><div class="panel-sub">You learn new recipes by gathering, hunting and exploring.</div>`;
     head.append(button('×', 'panel-close', () => this.host.close()));
 
     const tabs = el('div', 'tabs');
@@ -206,9 +192,48 @@ export class Panels {
       tabs.append(b);
     }
 
+    const inTab = (r: Recipe) => this.tab === 'all' || r.category === this.tab;
+    const empty = this.tab === 'cooking' ? 'Gather ingredients like chanterelles, onions and berries to learn meals.' : 'Nothing here yet. Keep gathering.';
+    this.card.append(head, tabs, this.recipeBody(inTab, empty));
+  }
+
+  /** The campfire's own menu: fuel meter, adding fuel, and only the recipes cooked over a fire. */
+  private renderCampfire(): void {
+    const sim = this.host.sim();
+    const fireId = this.fireId;
+    const m = fireId !== null ? campfireMenu(sim, fireId) : null;
+    const head = el('div', 'panel-head');
+    head.innerHTML = `<h2>${MISC_ICONS.fire} Campfire</h2><div class="panel-sub">${m ? m.status : 'This fire is gone.'}</div>`;
+    head.append(button('×', 'panel-close', () => this.host.close()));
+    if (!m || fireId === null) {
+      this.card.append(head);
+      return;
+    }
+
+    const fuelRow = el('div', 'fire-fuel');
+    fuelRow.innerHTML = `<div class="fuel-meter"><span>Fuel</span><div class="fuel-track"><div class="fuel-fill" style="transform:scaleX(${m.fraction.toFixed(3)})"></div></div><b>${m.fuel.toFixed(1)} / ${m.maxFuel} h</b></div>`;
+    const actions = el('div', 'fuel-actions');
+    for (const o of m.fuelOptions) {
+      const b = button(`${itemIcon(o.item)} Add ${o.item === 'log' ? 'a log' : 'a stick'} <span class="muted">+${o.hours} h · ${o.have} in pack</span>`, 'btn fuel-btn', () => {
+        this.host.sfx(sim.addFuel(fireId, o.item) ? 'fuel' : 'deny');
+        this.render();
+      });
+      b.disabled = !o.enabled;
+      actions.append(b);
+    }
+    fuelRow.append(actions);
+    if (m.full) fuelRow.append(el('div', 'effects muted', 'The fire is roaring. Add more once it burns down a little.'));
+
+    this.card.append(head, fuelRow, this.recipeBody(isCampfireRecipe, 'Gather ingredients like chanterelles, onions and berries, or fill a canteen at the lake, to learn campfire recipes.'));
+  }
+
+  /** Known recipes matching `filter` as a list with a detail pane, ready-to-make first. */
+  private recipeBody(filter: (r: Recipe) => boolean, emptyText: string): HTMLElement {
+    const sim = this.host.sim();
+    const s = sim.state;
     const body = el('div', 'panel-body craft-body');
     const list = el('div', 'recipe-list');
-    const known = RECIPES.filter((r) => s.known.includes(r.id) && (this.tab === 'all' || r.category === this.tab));
+    const known = RECIPES.filter((r) => s.known.includes(r.id) && filter(r));
     const sorted = [...known].sort((a, b) => Number(sim.canCraft(b.id).ok) - Number(sim.canCraft(a.id).ok));
     if (!this.selectedRecipe || !known.some((r) => r.id === this.selectedRecipe)) this.selectedRecipe = sorted[0]?.id ?? null;
     for (const r of sorted) {
@@ -225,9 +250,9 @@ export class Panels {
       row.addEventListener('dblclick', () => this.craft(r.id));
       list.append(row);
     }
-    const unknownCount = RECIPES.filter((r) => !s.known.includes(r.id) && (this.tab === 'all' || r.category === this.tab)).length;
+    const unknownCount = RECIPES.filter((r) => !s.known.includes(r.id) && filter(r)).length;
     if (unknownCount > 0) list.append(el('div', 'recipe-unknown', `${unknownCount} more recipe${unknownCount === 1 ? '' : 's'} to discover`));
-    if (!known.length) list.prepend(el('div', 'recipe-empty', this.tab === 'cooking' ? 'Gather ingredients like chanterelles, onions and berries to learn meals.' : 'Nothing here yet. Keep gathering.'));
+    if (!known.length) list.prepend(el('div', 'recipe-empty', emptyText));
 
     const detail = el('div', 'recipe-detail');
     const r = this.selectedRecipe ? RECIPE_BY_ID[this.selectedRecipe] : null;
@@ -260,7 +285,7 @@ export class Panels {
       detail.innerHTML = '<div class="detail-empty"><p>Pick a recipe.</p></div>';
     }
     body.append(list, detail);
-    this.card.append(head, tabs, body);
+    return body;
   }
 
   private craft(id: string, times = 1): void {

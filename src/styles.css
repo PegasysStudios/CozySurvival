@@ -1129,6 +1129,57 @@ b {
   margin-top: 4px;
 }
 
+.fire-fuel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 22px 14px;
+  flex: none;
+}
+
+.fuel-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 220px;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--ink-soft);
+}
+
+.fuel-meter .fuel-track {
+  flex: 1 1 auto;
+  height: 10px;
+}
+
+.fuel-meter b {
+  white-space: nowrap;
+  color: var(--amber-hi);
+}
+
+.fuel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.fuel-actions .fuel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.fuel-actions .fuel-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.fire-fuel > .effects {
+  flex-basis: 100%;
+}
+
 .tabs {
   display: flex;
   gap: 6px;
