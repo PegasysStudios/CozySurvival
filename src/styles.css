@@ -536,6 +536,28 @@ b {
   opacity: 0.45;
 }
 
+.tool .dur {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 4px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.tool .dur i {
+  display: block;
+  height: 100%;
+  background: #8fc46a;
+  transform-origin: left center;
+}
+
+.tool .dur.low i {
+  background: #e0664d;
+}
+
 .tool .lock {
   color: var(--ink-mute);
 }
@@ -1241,6 +1263,52 @@ b {
   gap: 6px;
 }
 
+.skills {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 8px;
+}
+
+.skill {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.skill-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12.5px;
+}
+
+.skill-head span {
+  color: var(--amber-hi);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.skill-track {
+  margin: 6px 0 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.skill-track i {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #8fc46a, var(--amber));
+  transform-origin: left center;
+}
+
+.skill-effect {
+  font-size: 11px;
+  color: var(--ink-mute);
+  line-height: 1.35;
+}
+
 .inv-tool {
   display: flex;
   align-items: center;
@@ -1634,6 +1702,14 @@ b {
   justify-content: flex-start;
   gap: 10px;
   cursor: pointer;
+}
+
+.settings .vol-pct {
+  margin-left: auto;
+  min-width: 3.6em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
 }
 
 .settings input[type='range'] {

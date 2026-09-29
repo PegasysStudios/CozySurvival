@@ -6,7 +6,7 @@ import type { DamageSource, NeedsState } from './state';
 const N = BALANCE.needs;
 const E = N.energy;
 
-export type Activity = 'idle' | 'walk' | 'sprint';
+export type Activity = 'idle' | 'walk' | 'sprint' | 'swim';
 
 export interface NeedsContext {
   /** Game hours elapsed this step (already time-scaled). */
@@ -64,6 +64,7 @@ export function updateNeeds(n: NeedsState, ctx: NeedsContext): DamageSource | nu
 
 export function updateEnergy(n: NeedsState, activity: Activity, dt: number, sitting = false): void {
   if (activity === 'sprint') n.energy -= E.sprintDrainPerSec * dt;
+  else if (activity === 'swim') n.energy -= E.swimDrainPerSec * dt;
   else if (activity === 'walk') n.energy -= E.walkDrainPerSec * dt;
   else {
     let rate = E.idleRegenPerSec;

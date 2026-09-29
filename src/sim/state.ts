@@ -2,7 +2,14 @@ import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
+
+export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting';
+
+export interface Wear {
+  dur: number;
+  max: number;
+}
 
 export interface PlayerState {
   x: number;
@@ -18,6 +25,7 @@ export interface PlayerState {
   jumpBuffer: number;
   sprinting: boolean;
   wading: boolean;
+  swimming: boolean;
   sitting: boolean;
   /** Seconds since the last hit (brief invulnerability window). */
   hurtTimer: number;
@@ -56,6 +64,12 @@ export interface TreeDyn {
   felled: boolean;
   bark: number;
   barkAt: number;
+  /** Logs still to cut from the fallen trunk (0 once chopped up, or while standing). */
+  logs: number;
+  /** Axe hits into the current log. */
+  cuts: number;
+  /** Fall direction as an angle: the trunk lies along (sin, cos). */
+  fall: number;
 }
 
 export interface ResourceDyn {
@@ -72,6 +86,8 @@ export interface StructureState {
   rot: number;
   /** Campfire fuel remaining in game hours. */
   fuel: number;
+  /** Shelters and benches only: they weather over time and wear with use. */
+  wear?: Wear;
 }
 
 export interface DropState {
@@ -146,8 +162,12 @@ export interface GameState {
   inventory: InventoryState;
   tools: ToolId[];
   activeTool: ToolId;
+  /** Durability of each owned tool (hands never wear). */
+  toolWear: Partial<Record<ToolId, Wear>>;
   gear: GearId[];
   known: string[];
+  /** Experience per skill; levels derive from it. */
+  skills: Record<SkillId, number>;
   stats: StatsState;
   objective: number;
   trees: TreeDyn[];

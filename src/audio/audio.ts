@@ -1,9 +1,15 @@
-/** Procedural Web Audio: layered ambience (wind, water, fire, birds, crickets, owls) and synthesized SFX. */
+import { DEFAULT_MASTER_VOLUME, masterGain, MUSIC_FADE_SECONDS, MUSIC_URL, musicFadeLevel } from './mix';
+
+/**
+ * Web Audio: a looping background music track plus procedural layered ambience (wind, water, fire, birds,
+ * crickets, owls) and synthesized SFX. Everything runs through one master gain, so volume and mute apply to all of it.
+ */
 
 export type Sfx =
   | 'gatherPlant' | 'gatherWood' | 'gatherStone' | 'chop' | 'treeFall' | 'craft' | 'learned' | 'objective'
   | 'place' | 'placeFail' | 'eat' | 'drink' | 'fill' | 'hurt' | 'death' | 'sleep' | 'dawn' | 'nightfall'
-  | 'arrow' | 'hit' | 'growl' | 'howl' | 'jump' | 'land' | 'click' | 'fuel' | 'swing' | 'deny' | 'packFull';
+  | 'arrow' | 'hit' | 'growl' | 'howl' | 'jump' | 'land' | 'click' | 'fuel' | 'swing' | 'deny' | 'packFull'
+  | 'splash' | 'skillUp' | 'broke';
 
 export interface AmbienceInput {
   hour: number;
@@ -24,7 +30,10 @@ export class AudioSystem {
   private windFilter!: BiquadFilterNode;
   private waterGain!: GainNode;
   private fireGain!: GainNode;
-  private volume = 0.8;
+  private musicGain!: GainNode;
+  private music: HTMLAudioElement | null = null;
+  private musicFaded = false;
+  private volume = DEFAULT_MASTER_VOLUME;
   private muted = false;
   private nextBird = 2;
   private nextCricket = 0;
@@ -37,10 +46,11 @@ export class AudioSystem {
     return !!this.ctx;
   }
 
-  /** Must be called from a user gesture. */
+  /** Must be called from a user gesture (browsers only allow audio to begin after one). */
   start(): void {
     if (this.ctx) {
       void this.ctx.resume();
+      this.playMusic();
       return;
     }
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -86,6 +96,50 @@ export class AudioSystem {
     this.windFilter = wind.f;
     this.waterGain = loop('bandpass', 420, 0.7).g;
     this.fireGain = loop('lowpass', 900, 0.4).g;
+    this.startMusic(ctx);
+  }
+
+  private startMusic(ctx: AudioContext): void {
+    if (typeof Audio === 'undefined') return;
+    const el = new Audio(MUSIC_URL);
+    el.loop = true;
+    el.preload = 'auto';
+    this.musicGain = ctx.createGain();
+    this.musicGain.gain.value = 0;
+    this.musicGain.connect(this.master);
+    try {
+      ctx.createMediaElementSource(el).connect(this.musicGain);
+    } catch {
+      return;
+    }
+    this.music = el;
+    this.playMusic();
+  }
+
+  /** Starts (or retries) the music; a rejected play() just waits for the next user gesture. */
+  private playMusic(): void {
+    const el = this.music;
+    if (!el || !el.paused) return;
+    el.play().then(
+      () => this.fadeInMusic(),
+      () => undefined,
+    );
+  }
+
+  private fadeInMusic(): void {
+    const ctx = this.ctx;
+    if (!ctx || this.musicFaded) return;
+    this.musicFaded = true;
+    const steps = 32;
+    const curve = new Float32Array(steps + 1);
+    for (let i = 0; i <= steps; i++) curve[i] = musicFadeLevel((i / steps) * MUSIC_FADE_SECONDS);
+    const g = this.musicGain.gain;
+    g.cancelScheduledValues(ctx.currentTime);
+    g.setValueCurveAtTime(curve, ctx.currentTime, MUSIC_FADE_SECONDS);
+  }
+
+  get musicPlaying(): boolean {
+    return !!this.music && !this.music.paused;
   }
 
   setVolume(volume: number, muted: boolean): void {
@@ -96,7 +150,7 @@ export class AudioSystem {
 
   private applyVolume(): void {
     if (!this.ctx) return;
-    this.master.gain.setTargetAtTime(this.muted ? 0 : this.volume * 0.9, this.ctx.currentTime, 0.05);
+    this.master.gain.setTargetAtTime(masterGain(this.volume, this.muted), this.ctx.currentTime, 0.05);
   }
 
   suspend(): void {
@@ -299,7 +353,25 @@ export class AudioSystem {
       case 'swing':
         this.burst(0.18, { freq: 700, to: 1700, q: 0.8, gain: 0.09 });
         break;
+      case 'splash':
+        this.burst(0.5, { type: 'lowpass', freq: 900, to: 250, gain: 0.35 * Math.min(1, strength) + 0.1 });
+        this.burst(0.35, { type: 'highpass', freq: 1800, gain: 0.12, delay: 0.03 });
+        break;
+      case 'skillUp':
+        [659, 880, 1175].forEach((f, i) => this.tone(f, 0.8, { type: 'triangle', gain: 0.06, delay: i * 0.08, attack: 0.02 }));
+        break;
+      case 'broke':
+        this.burst(0.12, { freq: 1300, q: 2, gain: 0.3 });
+        this.tone(200, 0.25, { type: 'triangle', gain: 0.12, to: 110, delay: 0.05 });
+        break;
     }
+  }
+
+  /** A gentle swimming stroke. */
+  stroke(): void {
+    if (!this.ctx || this.muted) return;
+    this.burst(0.4, { type: 'lowpass', freq: 700, to: 300, gain: 0.1, attack: 0.08 });
+    this.burst(0.25, { type: 'highpass', freq: 1400 + Math.random() * 400, gain: 0.05, delay: 0.1 });
   }
 
   footstep(water: boolean, sprint: boolean): void {

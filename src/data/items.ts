@@ -19,6 +19,7 @@ export type ItemId =
   | 'berryTea'
   | 'stew'
   | 'cedarTrout'
+  | 'charredMeal'
   | 'arrow';
 
 export interface FoodEffect {
@@ -66,6 +67,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   berryTea: { id: 'berryTea', name: 'Salmonberry Tea', plural: 'Salmonberry Tea', stack: 4, color: '#e0664d', water: true, meal: true, description: 'A warm mug that tastes like summer.', food: { hunger: 4, thirst: 30, warmth: 16, health: 2, energy: 12 } },
   stew: { id: 'stew', name: 'Forest Stew', plural: 'Forest Stew', stack: 4, color: '#a86d3b', meal: true, description: 'Meat, chanterelles, and onion simmered in boiled water. Deeply cozy.', food: { hunger: 42, thirst: 16, warmth: 20, health: 12, energy: 18 } },
   cedarTrout: { id: 'cedarTrout', name: 'Bark-Baked Trout', plural: 'Bark-Baked Trout', stack: 4, color: '#c98b52', meal: true, description: 'Trout and onion baked in a birch-bark parcel.', food: { hunger: 34, thirst: 4, warmth: 8, health: 8, energy: 12 } },
+  charredMeal: { id: 'charredMeal', name: 'Charred Meal', plural: 'Charred Meals', stack: 6, color: '#5a4032', description: 'A little burnt around the edges, but still filling. Practice makes perfect.', food: { hunger: 8, warmth: 2 } },
   arrow: { id: 'arrow', name: 'Arrow', plural: 'Arrows', stack: 16, color: '#b08a5a', description: 'Stone-tipped. Sometimes you can find them again.' },
 };
 

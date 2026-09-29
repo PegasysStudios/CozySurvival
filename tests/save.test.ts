@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { BALANCE } from '../src/data/balance';
 import { countItem } from '../src/sim/inventory';
 import { checkPlacement } from '../src/sim/placement';
 import { deserializeState, serializeState, SAVE_FORMAT } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
-import { findValidSpot, give, quietSim, run } from './helpers';
+import { STATE_VERSION } from '../src/sim/state';
+import { findValidSpot, give, placeStructure, quietSim, run } from './helpers';
 
 function playedSim(): Simulation {
   const sim = Simulation.newGame(42);
@@ -75,6 +77,66 @@ describe('save / load', () => {
     run(a, 5);
     run(b, 5);
     expect(b.state.animals.map((x) => [x.x, x.z])).toEqual(a.state.animals.map((x) => [x.x, x.z]));
+  });
+
+  it('keeps skills, tool durability, structure condition and swimming', () => {
+    const sim = playedSim();
+    sim.state.skills.cooking = 33;
+    sim.state.toolWear.axe!.dur = 12.5;
+    placeStructure(sim, 'leanTo').wear!.dur = 40;
+    sim.state.player.swimming = true;
+    const loaded = deserializeState(serializeState(sim.state))!;
+    expect(loaded.version).toBe(STATE_VERSION);
+    expect(loaded.skills.cooking).toBe(33);
+    expect(loaded.toolWear.axe).toEqual({ dur: 12.5, max: BALANCE.durability.tools.axe.uses });
+    expect(loaded.structures.find((s) => s.prefab === 'leanTo')!.wear).toEqual({ dur: 40, max: BALANCE.durability.structures.leanTo.max });
+    expect(loaded.player.swimming).toBe(true);
+  });
+
+  it('sanitizes bad durability and skill values', () => {
+    const obj = JSON.parse(serializeState(playedSim().state));
+    obj.toolWear = { axe: { dur: 999, max: 40 }, spear: { max: 0 }, bow: 'broken' };
+    obj.skills = { gathering: -5, hunting: 'lots', cooking: 12 };
+    const loaded = deserializeState(JSON.stringify(obj))!;
+    expect(loaded.toolWear).toEqual({ axe: { dur: 40, max: 40 } });
+    expect(loaded.skills).toEqual({ gathering: 0, hunting: 0, cooking: 12, crafting: 0 });
+  });
+
+  it('migrates version-1 saves from before skills, durability, trunks and swimming', () => {
+    const sim = playedSim();
+    placeStructure(sim, 'leanTo');
+    const felled = sim.state.trees.findIndex((t) => t.felled);
+    const v1 = JSON.parse(serializeState(sim.state));
+    v1.version = 1;
+    delete v1.skills;
+    delete v1.toolWear;
+    delete v1.player.swimming;
+    v1.structures = v1.structures.map(({ wear: _wear, ...rest }: { wear?: unknown }) => rest);
+    v1.trees = v1.trees.map((e: number[]) => e.slice(0, 5));
+
+    const state = deserializeState(JSON.stringify(v1))!;
+    expect(state).not.toBeNull();
+    expect(state.version).toBe(STATE_VERSION);
+    expect(state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0 });
+    expect(state.toolWear).toEqual({});
+    expect(state.player.swimming).toBe(false);
+    expect(state.structures.find((s) => s.prefab === 'campfire')!.wear).toBeUndefined();
+    expect(state.structures.find((s) => s.prefab === 'leanTo')!.wear).toEqual({ dur: BALANCE.durability.structures.leanTo.max, max: BALANCE.durability.structures.leanTo.max });
+    // a tree felled back then already paid out its logs, so it leaves just a stump
+    expect(state.trees[felled]).toMatchObject({ felled: true, logs: 0, cuts: 0 });
+
+    const loaded = new Simulation(state);
+    expect(loaded.trunk(felled)).toBeNull();
+    expect(countItem(loaded.state.inventory, 'log')).toBe(countItem(sim.state.inventory, 'log'));
+    loaded.selectTool('axe');
+    let standing = -1;
+    loaded.state.trees.forEach((t, i) => {
+      if (standing < 0 && !t.felled) standing = i;
+    });
+    loaded.perform({ kind: 'tree', index: standing, dist: 1 });
+    expect(loaded.state.toolWear.axe).toEqual({ dur: BALANCE.durability.tools.axe.uses - 1, max: BALANCE.durability.tools.axe.uses });
+    // and it saves forward as version 2
+    expect(JSON.parse(serializeState(loaded.state)).version).toBe(STATE_VERSION);
   });
 
   it('rejects corrupt or incompatible saves', () => {

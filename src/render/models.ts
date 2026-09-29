@@ -132,6 +132,22 @@ export function stumpGeometry(species: TreeSpecies): THREE.BufferGeometry {
   return b.build();
 }
 
+/** A felled trunk: unit radius, running from x=0 (stump end) to x=1 (tip), scaled per instance. */
+export function trunkGeometry(species: TreeSpecies): THREE.BufferGeometry {
+  const b = new GeoBuilder(31);
+  b.add(new CylinderGeometry(1, 1, 1, 8, 4), {
+    matrix: tf(0.5, 0, 0, 0, 0, Math.PI / 2),
+    jitter: 0.04,
+    color: (x, _y, _z, n) => {
+      if (Math.abs(n.x) > 0.9) return col('#d9bb8e');
+      if (species === 'birch' && Math.sin(x * 47) > 0.8) return col('#3b3631');
+      return col(BARK[species]);
+    },
+    vary: 0.06,
+  });
+  return b.build();
+}
+
 export function rockGeometry(variant: number): THREE.BufferGeometry {
   const b = new GeoBuilder(100 + variant);
   const src = variant === 2 ? new DodecahedronGeometry(1, 1) : new IcosahedronGeometry(1, 1);

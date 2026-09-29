@@ -6,6 +6,7 @@ import { PLACE_ROTATE_BIG_STEP, PLACE_ROTATE_STEP, PREFABS } from '../data/prefa
 import { RECIPE_BY_ID } from '../data/recipes';
 import { SPECIES } from '../data/species';
 import { AudioSystem, type Sfx } from '../audio/audio';
+import { volumePercent } from '../audio/mix';
 import type { SimEvent } from '../sim/events';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import { browserStorage, RunManager, type DeathSummary, type Settings } from '../sim/run';
@@ -46,6 +47,7 @@ export class Game {
   private camY = 0;
   private bobPhase = 0;
   private bobK = 0;
+  private swimK = 0;
   private landDip = 0;
   private shake = 0;
   private fov = BASE_FOV;
@@ -131,7 +133,7 @@ export class Game {
     this.isPreview = !current;
     this.view.setWorld(this.sim);
     this.syncCameraToPlayer();
-    this.audio.setVolume(this.settings.volume, this.settings.muted);
+    this.audio.setVolume(this.settings.masterVolume, this.settings.muted);
     this.hud.setVisible(false);
     if (current && current.state.dead) {
       this.isPreview = false;
@@ -268,7 +270,7 @@ export class Game {
   private onKey(code: string, ev: KeyboardEvent): void {
     if (code === 'KeyM') {
       this.applySettings({ ...this.settings, muted: !this.settings.muted });
-      this.hud.toast(this.settings.muted ? 'Sound off' : 'Sound on');
+      this.hud.toast(this.settings.muted ? 'Sound off (M)' : `Sound on · ${volumePercent(this.settings.masterVolume)}`);
       return;
     }
     if (code === 'Backquote' && this.dev && (this.mode === 'playing' || this.mode === 'panel')) {
@@ -324,7 +326,7 @@ export class Game {
     this.settings = s;
     this.run.meta.settings = { ...s };
     this.run.saveMeta();
-    this.audio.setVolume(s.volume, s.muted);
+    this.audio.setVolume(s.masterVolume, s.muted);
     this.screens.syncSettings(s);
   }
 
@@ -392,10 +394,11 @@ export class Game {
       this.lastWalked = sim.distanceWalked;
       this.stepAcc += walked;
       const p = sim.state.player;
-      const stride = p.sprinting ? 2.5 : 1.95;
-      if (this.stepAcc >= stride && p.grounded) {
+      const stride = p.swimming ? 2.3 : p.sprinting ? 2.5 : 1.95;
+      if (this.stepAcc >= stride && (p.grounded || p.swimming)) {
         this.stepAcc = 0;
-        this.audio.footstep(p.wading, p.sprinting);
+        if (p.swimming) this.audio.stroke();
+        else this.audio.footstep(p.wading, p.sprinting);
       }
       this.saveTimer -= dt;
       if (this.saveTimer <= 0) {
@@ -464,7 +467,8 @@ export class Game {
     if (sim.lastLanding > 5) this.landDip = Math.min(0.28, this.landDip + sim.lastLanding * 0.018);
     this.landDip = damp(this.landDip, 0, 7, dt);
     this.shake = Math.max(0, this.shake - dt * 2.4);
-    const bobY = Math.sin(this.bobPhase * 2) * 0.038 * this.bobK;
+    this.swimK = damp(this.swimK, p.swimming && !dead ? 1 : 0, 4, dt);
+    const bobY = Math.sin(this.bobPhase * 2) * 0.038 * this.bobK + Math.sin(this.time * 1.7) * 0.06 * this.swimK;
     const bobX = Math.cos(this.bobPhase) * 0.024 * this.bobK;
     const cr = Math.cos(this.yaw);
     const sr = Math.sin(this.yaw);
@@ -558,10 +562,25 @@ export class Game {
         const dz = p.z - e.z;
         const d = Math.hypot(dx, dz) || 1;
         fx.chips(e.x + (dx / d) * 0.4, e.y, e.z + (dz / d) * 0.4);
-        fx.leaves(e.x, e.y + 4, e.z, '#4f7a3c', 5, 2.5);
+        if (!e.trunk) fx.leaves(e.x, e.y + 4, e.z, '#4f7a3c', 5, 2.5);
         this.shake = Math.max(this.shake, 0.25);
         break;
       }
+      case 'skillUp':
+        this.sfx('skillUp');
+        this.panels.refresh();
+        break;
+      case 'wornLow':
+        this.sfx('deny');
+        break;
+      case 'broke':
+        this.sfx('broke');
+        this.panels.refresh();
+        break;
+      case 'splash':
+        this.sfx('splash', e.impact / 10);
+        fx.splash(p.x, 0, p.z, 18);
+        break;
       case 'treeFell':
         this.sfx('treeFall');
         setTimeout(() => (this.shake = Math.max(this.shake, 0.7)), 1700);
@@ -585,7 +604,8 @@ export class Game {
         const r = RECIPE_BY_ID[e.recipe];
         this.sfx('craft');
         const o = r.output;
-        if (o.kind === 'tool') this.hud.toast(`Crafted ${r.name}. Press ${TOOLS[o.tool].slot} to equip.`, 'good', toolIcon(o.tool));
+        if (e.burnt) this.hud.toast(`Oops, the ${r.name.toLowerCase()} charred. Still edible, and your cooking is improving.`, 'warn', itemIcon('charredMeal'));
+        else if (o.kind === 'tool') this.hud.toast(`Crafted ${r.name}. Press ${TOOLS[o.tool].slot} to equip.`, 'good', toolIcon(o.tool));
         else if (o.kind === 'gear') this.hud.toast(`Made ${r.name}!`, 'good');
         else if (o.kind === 'item') this.hud.toast(`${r.station === 'fire' ? 'Cooked' : 'Made'} ${o.count > 1 ? o.count + ' ' : ''}${itemName(o.item, o.count)}`, 'good', itemIcon(o.item));
         this.panels.refresh();

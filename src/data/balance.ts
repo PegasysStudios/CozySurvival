@@ -1,8 +1,8 @@
 /** Central tuning knobs. Rates marked "per game hour" scale with the dev time-scale. */
 export const BALANCE = {
   time: {
-    /** One in-game day lasts one real hour. */
-    realSecondsPerDay: 3600,
+    /** One in-game day lasts 24 real minutes (one real minute per game hour). */
+    realSecondsPerDay: 1440,
     /** Game day boundary: a new day starts at dawn. */
     dayStartHour: 6,
     /** Run starts on day 1 at this hour. */
@@ -36,8 +36,11 @@ export const BALANCE = {
       boostMultiplier: 2.5,
       boostSeconds: 120,
       jumpCost: 1.2,
-      swingCost: 0.5,
-      gatherCost: 0.25,
+      swingCost: 0.35,
+      gatherCost: 0.18,
+      craftCost: 1.5,
+      buildCost: 3,
+      swimDrainPerSec: 0.12,
       exhaustedRecoverAt: 20,
       exhaustedSpeedMul: 0.8,
       sittingMultiplier: 1.8,
@@ -61,9 +64,45 @@ export const BALANCE = {
     stepDown: 0.45,
     maxSlope: 0.95,
     wadeDepth: 0.3,
-    maxWadeDepth: 1.05,
+    /** Water deeper than this lifts you off the bottom: you float with your feet this far below the surface. */
+    swimDepth: 1.25,
+    swimSpeed: 2.6,
+    swimAccel: 6,
     maxSubstep: 1 / 120,
     reach: 3.1,
+  },
+  trees: {
+    /** Axe hits needed to cut each log from a fallen trunk. */
+    cutsPerLog: 2,
+    /** Gap between the stump's edge and the base of the fallen trunk. */
+    trunkOffset: 0.4,
+  },
+  skills: {
+    /** Total XP needed to reach level 2, 3, ... 10. */
+    thresholds: [10, 25, 45, 70, 100, 140, 190, 250, 320],
+    xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5 },
+    /** Values at level 1 -> level 10 (linear in between). */
+    gatherBonusChance: [0, 0.4],
+    huntDamageBonus: [0, 0.25],
+    butcherBonusChance: [0, 0.5],
+    burnChance: [0.2, 0],
+    durabilityMultiplier: [1, 4],
+  },
+  durability: {
+    /** Durability at crafting level 1 (scaled by the crafting skill). Tools lose 1 per use plus `perHour` of slow decay. */
+    tools: {
+      axe: { uses: 40, perHour: 0.1 },
+      spear: { uses: 25, perHour: 0.05 },
+      bow: { uses: 30, perHour: 0.05 },
+      torch: { uses: 60, perHour: 0.05, burnPerHour: 6 },
+    },
+    /** Shelters and benches weather `perHour` and wear `useCost` per sleep/sit. */
+    structures: {
+      leanTo: { max: 96, perHour: 0.5, useCost: 8 },
+      hideTent: { max: 144, perHour: 0.5, useCost: 8 },
+      bench: { max: 120, perHour: 0.5, useCost: 1 },
+    },
+    lowFraction: 0.25,
   },
   carry: { baseSlots: 6, basketSlots: 4, backpackSlots: 6, canteenCapacity: 4 },
   fire: { initialFuelHours: 8, maxFuelHours: 16, stickFuelHours: 1.5, logFuelHours: 4, predatorSafeRadius: 9 },

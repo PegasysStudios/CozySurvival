@@ -22,6 +22,7 @@ export const PLACEMENT_REASON_TEXT: Record<PlacementReason, string> = {
   stump: 'A stump is in the way',
   rock: 'A boulder is in the way',
   log: 'A fallen log is in the way',
+  trunk: 'A felled trunk is in the way. Chop it up first',
   structure: 'Overlaps another structure',
   resource: 'Plants or items are in the way',
 };
