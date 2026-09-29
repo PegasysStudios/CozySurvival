@@ -190,7 +190,177 @@ async function main() {
     );
     console.log(`  one frame incl. shadows: ${info.calls} draw calls, ${info.triangles.toLocaleString()} triangles, ${info.geometries} geometries, ${info.programs} shader programs`);
 
-    const runtimeErrors = await page.evaluate(() => window.__cozy.errors);
+    const runtimeErrors = [];
+    const collectRuntimeErrors = async () => runtimeErrors.push(...(await page.evaluate(() => window.__cozy?.errors ?? [])));
+    const waitFrames = (n) =>
+      page.evaluate(
+        (k) =>
+          new Promise((resolve) => {
+            let i = 0;
+            const f = () => (++i >= k ? resolve() : requestAnimationFrame(f));
+            requestAnimationFrame(f);
+          }),
+        n,
+      );
+    const state = () =>
+      page.evaluate(() => {
+        const g = window.__cozy.game;
+        const s = g.sim.state;
+        const count = (id) => s.inventory.slots.reduce((n, x) => n + (x && x.item === id ? x.count : 0), 0);
+        return {
+          mode: g.mode, dead: s.dead, day: g.sim.day, hours: s.totalHours, runId: s.runId, seed: s.seed,
+          structures: s.structures.length, stone: count('stone'), stick: count('stick'), fiber: count('fiber'),
+          slots: JSON.stringify(s.inventory.slots), x: s.player.x, z: s.player.z,
+          placing: g.sim.placement ? { valid: g.sim.placement.valid, reason: g.sim.placement.reason, rot: g.sim.placement.rot } : null,
+          best: g.run.meta.best, deaths: g.run.meta.deaths,
+        };
+      });
+    const lock = () => page.evaluate(() => (window.__cozy.game.input.locked = true));
+
+    // Placement through real input: crafting menu -> ghost -> red/green -> rotate -> click to place.
+    await page.evaluate(() => {
+      const sim = window.__cozy.game.sim;
+      if (!sim.state.known.includes('campfire')) sim.state.known.push('campfire');
+      sim.devGive('stone', 5);
+      sim.devGive('stick', 4);
+      sim.devGive('fiber', 1);
+    });
+    await lock();
+    await page.keyboard.press('KeyC');
+    await sleep(250);
+    await page.evaluate(() => [...document.querySelectorAll('.recipe')].find((r) => r.textContent.includes('Campfire'))?.click());
+    await sleep(200);
+    await page.click('.recipe-detail .btn.primary');
+    await sleep(250);
+    await lock();
+    const ghostColor = () => page.evaluate(() => window.__cozy.game.view.ghost.bodyMat.color.getHexString());
+    const placeStart = await state();
+    check('crafting menu enters placement mode', placeStart.mode === 'playing' && !!placeStart.placing, JSON.stringify(placeStart.placing));
+
+    // Re-centre the cursor while unlocked so the placement clicks below don't register as mouse-look.
+    await page.evaluate(() => (window.__cozy.game.input.locked = false));
+    await page.mouse.move(640, 360);
+    await lock();
+    await page.evaluate(() => (window.__cozy.game.pitch = -1.5));
+    await waitFrames(3);
+    const bad = await state();
+    const badColor = await ghostColor();
+    check('ghost shows red where placement is blocked', bad.placing && !bad.placing.valid && badColor === 'ff6b5e', `${JSON.stringify(bad.placing)} #${badColor}`);
+    await page.mouse.click(640, 360);
+    await waitFrames(3);
+    const afterBad = await state();
+    check('clicking an invalid spot places nothing and spends nothing', afterBad.structures === bad.structures && afterBad.stone === bad.stone && !!afterBad.placing);
+
+    await page.keyboard.press('KeyR');
+    await waitFrames(2);
+    const rotated = await state();
+    check('R rotates the ghost', rotated.placing && Math.abs(rotated.placing.rot - bad.placing.rot - Math.PI / 4) < 1e-6);
+
+    const baseYaw = await page.evaluate(() => window.__cozy.game.sim.state.player.yaw);
+    let good = null;
+    for (let k = 0; k < 16 && !good; k++) {
+      await page.evaluate(([y, p]) => Object.assign(window.__cozy.game, { yaw: y, pitch: p }), [baseYaw + (k * Math.PI) / 8, -0.55]);
+      await waitFrames(3);
+      const st = await state();
+      if (st.placing?.valid) good = st;
+    }
+    const goodColor = await ghostColor();
+    check('ghost shows green on open flat ground', !!good && goodColor === '7be38a', `#${goodColor}`);
+    if (good) {
+      await page.mouse.click(640, 360);
+      await waitFrames(3);
+      const placed = await state();
+      check(
+        'clicking a valid spot builds it and spends the ingredients',
+        placed.structures === good.structures + 1 && placed.stone === good.stone - 5 && placed.stick === good.stick - 4 && placed.fiber === good.fiber - 1 && !placed.placing,
+        JSON.stringify({ before: [good.structures, good.stone, good.stick, good.fiber], after: [placed.structures, placed.stone, placed.stick, placed.fiber] }),
+      );
+    }
+
+    // Save survives a reload and Continue resumes the same run.
+    await page.evaluate(() => {
+      const g = window.__cozy.game;
+      g.input.locked = false;
+      g.saveNow();
+    });
+    await waitFrames(2);
+    const saved = await state();
+    await collectRuntimeErrors();
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.__cozy?.ready, { timeout: 90_000 });
+    await sleep(600);
+    const continueText = await page.$eval('.title-screen .btn.primary', (e) => e.textContent ?? '');
+    check('reload offers Continue', /Continue/.test(continueText), continueText);
+    await page.click('.title-screen .btn.primary');
+    await sleep(300);
+    const resumed = await state();
+    check(
+      'save survives a reload',
+      resumed.mode === 'playing' && resumed.runId === saved.runId && Math.abs(resumed.hours - saved.hours) < 0.01 && resumed.slots === saved.slots && resumed.structures === saved.structures && Math.hypot(resumed.x - saved.x, resumed.z - saved.z) < 1e-6,
+      JSON.stringify({ saved: [saved.runId, saved.hours, saved.structures], resumed: [resumed.runId, resumed.hours, resumed.structures] }),
+    );
+
+    // Death screen and its three options.
+    const die = async () => {
+      await lock();
+      await page.evaluate(() => window.__cozy.game.sim.devDamage(1000));
+      await page.waitForFunction(() => document.querySelector('.death-screen')?.classList.contains('show'), { timeout: 60_000 });
+      await sleep(150);
+      return page.evaluate(() => ({
+        buttons: [...document.querySelectorAll('.death-screen .death-actions .btn')].map((b) => b.textContent ?? ''),
+        text: document.querySelector('.death-screen')?.textContent ?? '',
+      }));
+    };
+    const snapHours = await page.evaluate(() => JSON.parse(localStorage.getItem('cozysurvival.v1.daySnapshot')).totalHours);
+    await page.evaluate(() => (window.__cozy.game.sim.state.totalHours += 3));
+    const firstDeath = await die();
+    check(
+      'death screen shows days survived, best record and three options',
+      firstDeath.buttons.length === 3 && /Retry the day/.test(firstDeath.buttons[0]) && /Restart from day 1/.test(firstDeath.buttons[1]) && /Start from scratch/.test(firstDeath.buttons[2]) && /Survived/.test(firstDeath.text) && /Day 1/.test(firstDeath.text) && /best/i.test(firstDeath.text),
+      JSON.stringify(firstDeath.buttons),
+    );
+    const beforeRetry = await state();
+    await page.click('.death-screen .death-actions .btn:nth-child(1)');
+    await sleep(300);
+    const retried = await state();
+    check(
+      'Retry the day restores the morning snapshot of the same run',
+      retried.mode === 'playing' && !retried.dead && retried.runId === beforeRetry.runId && beforeRetry.hours - snapHours > 2.9 && Math.abs(retried.hours - snapHours) < 0.01 && retried.structures === 0 && !!retried.best,
+      JSON.stringify({ diedAt: beforeRetry.hours, hours: retried.hours, snapHours, structures: retried.structures }),
+    );
+
+    await die();
+    const beforeRestart = await state();
+    await page.click('.death-screen .death-actions .btn:nth-child(2)');
+    await sleep(300);
+    const restarted = await state();
+    check(
+      'Restart from day 1 starts a new run in the same world and keeps the record',
+      restarted.mode === 'playing' && !restarted.dead && restarted.day === 1 && restarted.seed === beforeRestart.seed && restarted.runId !== beforeRestart.runId && !!restarted.best && restarted.deaths === 2,
+      JSON.stringify({ seed: [beforeRestart.seed, restarted.seed], deaths: restarted.deaths, best: restarted.best }),
+    );
+
+    await die();
+    const beforeScratch = await state();
+    await collectRuntimeErrors();
+    await page.reload({ waitUntil: 'load' });
+    await page.waitForFunction(() => window.__cozy?.ready, { timeout: 90_000 });
+    await sleep(400);
+    check('a reload on the death screen returns to the death screen', await page.$eval('.death-screen', (e) => e.classList.contains('show')));
+    await page.click('.death-screen .death-actions .btn:nth-child(3)');
+    await sleep(150);
+    const confirmText = await page.$eval('.death-screen .death-actions .btn:nth-child(3)', (e) => e.textContent ?? '');
+    await page.click('.death-screen .death-actions .btn:nth-child(3)');
+    await sleep(300);
+    const scratch = await state();
+    const stored = await page.evaluate(() => JSON.parse(localStorage.getItem('cozysurvival.v1.meta')));
+    check(
+      'Start from scratch asks to confirm, then wipes records and makes a new world',
+      /click again/i.test(confirmText) && scratch.mode === 'playing' && scratch.day === 1 && scratch.seed !== beforeScratch.seed && scratch.best === null && scratch.deaths === 0 && stored.best === null && stored.worldSeed === scratch.seed,
+      JSON.stringify({ confirmText, seed: [beforeScratch.seed, scratch.seed], best: scratch.best, deaths: scratch.deaths }),
+    );
+
+    await collectRuntimeErrors();
     check('no runtime errors', runtimeErrors.length === 0, runtimeErrors.join(' | '));
   } finally {
     check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 8).join(' | '));
