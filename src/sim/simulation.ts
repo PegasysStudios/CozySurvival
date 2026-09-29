@@ -1,4 +1,4 @@
-import { box, circle, raySphere, rayCylinder } from '../core/geom2d';
+import { box, circle, overlaps, raySphere, rayCylinder } from '../core/geom2d';
 import { clamp, damp, lerp } from '../core/math';
 import { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
@@ -458,11 +458,9 @@ export class Simulation {
           best = { kind: 'tree', index: c.ref, dist: hitT };
         }
       } else if (c.kind === 'resource') {
+        if (!this.resourcePresent(c.ref)) continue;
         const r = this.gen.resources[c.ref];
-        const dyn = s.resources[c.ref];
         const def = RESOURCES[r.kind];
-        const persistent = r.kind === 'berryBush' || r.kind === 'fern';
-        if (dyn.charges <= 0 && !persistent) continue;
         const gy = this.terrain.heightAt(r.x, r.z);
         const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, r.x, gy + def.hitHeight * r.scale, r.z, def.hitRadius * r.scale);
         if (hitT >= 0 && hitT < bestT) {
@@ -1009,7 +1007,12 @@ export class Simulation {
     let changed = false;
     s.resources.forEach((r, i) => {
       if (r.charges <= 0 && now >= r.respawnAt) {
-        r.charges = RESOURCES[this.gen.resources[i].kind].charges;
+        const def = RESOURCES[this.gen.resources[i].kind];
+        if (this.resourceCovered(i)) {
+          r.respawnAt = now + def.respawnHours;
+          return;
+        }
+        r.charges = def.charges;
         changed = true;
       }
     });
@@ -1121,7 +1124,25 @@ export class Simulation {
   }
 
   placementEnv(): PlacementEnv {
-    return { terrain: this.terrain, query: (x, z, r, out) => this.colliders.query(x, z, r, out), playerX: this.state.player.x, playerZ: this.state.player.z };
+    return {
+      terrain: this.terrain,
+      query: (x, z, r, out) => this.colliders.query(x, z, r, out),
+      playerX: this.state.player.x,
+      playerZ: this.state.player.z,
+      ignore: (c) => c.kind === 'resource' && !this.resourcePresent(c.ref),
+    };
+  }
+
+  /** Whether a gatherable is physically in the world (not gathered out and hidden while it regrows). */
+  resourcePresent(index: number): boolean {
+    return this.state.resources[index].charges > 0 || !!RESOURCES[this.gen.resources[index].kind].persistent;
+  }
+
+  private resourceCovered(index: number): boolean {
+    const g = this.gen.resources[index];
+    const spot = circle(g.x, g.z, RESOURCES[g.kind].blockRadius);
+    this.colliders.query(g.x, g.z, spot.r + 3, this.tmpColliders);
+    return this.tmpColliders.some((c) => c.kind === 'structure' && !!c.footprint && overlaps(spot, c.footprint));
   }
 
   /** Aim the ghost where the camera ray meets the ground (clamped to build reach). */

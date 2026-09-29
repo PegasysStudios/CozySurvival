@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { circle } from '../src/core/geom2d';
-import { makeCollider } from '../src/sim/colliders';
+import { RESOURCES } from '../src/data/resources';
+import { makeCollider, type Collider } from '../src/sim/colliders';
 import { countItem } from '../src/sim/inventory';
 import { checkPlacement, type PlacementEnv } from '../src/sim/placement';
-import { fakeTerrain, colliderQuery, findValidSpot, give, quietSim, teleport } from './helpers';
+import { fakeTerrain, colliderQuery, findValidSpot, give, quietSim, run, teleport } from './helpers';
 
 /** A dry point on the spawn-side shore and a water point ~3m out into the lake. */
 function shoreline(sim: ReturnType<typeof quietSim>) {
@@ -116,6 +117,52 @@ describe('placement in the real world', () => {
     sim.beginPlacement('campfire');
     sim.setPlacementAt(spot.x, spot.z);
     expect(sim.placement!.reason).toBe('structure');
+  });
+
+  it('gathered-out (hidden) plants and piles stop blocking, and do not regrow under a structure', () => {
+    const sim = quietSim();
+    const i = sim.gen.resources.findIndex((r, k) => {
+      if (r.kind !== 'stickPile' || Math.hypot(r.x, r.z) > 30) return false;
+      const env = { ...sim.placementEnv(), playerX: r.x + 3, playerZ: r.z };
+      sim.state.resources[k].charges = 0;
+      const clear = checkPlacement(env, 'campfire', r.x, r.z, 0).valid;
+      sim.state.resources[k].charges = RESOURCES.stickPile.charges;
+      return clear;
+    });
+    expect(i).toBeGreaterThanOrEqual(0);
+    const r = sim.gen.resources[i];
+    teleport(sim, r.x + 3, r.z);
+    const env = sim.placementEnv();
+    expect(checkPlacement(env, 'campfire', r.x, r.z, 0).reason).toBe('resource');
+    for (let k = 0; k < RESOURCES.stickPile.charges; k++) sim.perform({ kind: 'resource', index: i, dist: 1 });
+    expect(sim.state.resources[i].charges).toBe(0);
+    expect(checkPlacement(env, 'campfire', r.x, r.z, 0).valid).toBe(true);
+
+    sim.state.known.push('campfire');
+    give(sim, { stone: 5, stick: 4, fiber: 1 });
+    sim.beginPlacement('campfire');
+    sim.setPlacementAt(r.x, r.z);
+    expect(sim.confirmPlacement()).toBe(true);
+    sim.state.totalHours += RESOURCES.stickPile.respawnHours + 1;
+    run(sim, 1.1);
+    expect(sim.state.resources[i].charges).toBe(0);
+    expect(sim.state.resources[i].respawnAt).toBeGreaterThan(sim.state.totalHours);
+  });
+
+  it('berry bushes and ferns stay put when picked clean and keep blocking', () => {
+    const sim = quietSim();
+    for (const kind of ['berryBush', 'fern'] as const) {
+      const i = sim.gen.resources.findIndex((r) => {
+        if (r.kind !== kind) return false;
+        const env = { ...sim.placementEnv(), playerX: r.x + 3, playerZ: r.z, ignore: (c: Collider) => c.kind === 'resource' };
+        return checkPlacement(env, 'campfire', r.x, r.z, 0).valid;
+      });
+      expect(i).toBeGreaterThanOrEqual(0);
+      const r = sim.gen.resources[i];
+      sim.state.resources[i].charges = 0;
+      const env = { ...sim.placementEnv(), playerX: r.x + 3, playerZ: r.z };
+      expect(checkPlacement(env, 'campfire', r.x, r.z, 0).reason).toBe('resource');
+    }
   });
 
   it('cancelling placement keeps every ingredient', () => {

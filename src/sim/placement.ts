@@ -31,6 +31,8 @@ export interface PlacementEnv {
   query(x: number, z: number, r: number, out: Collider[]): Collider[];
   playerX: number;
   playerZ: number;
+  /** Colliders that should not block building right now (e.g. gathered-out plants that are hidden). */
+  ignore?(c: Collider): boolean;
 }
 
 export interface PlacementResult {
@@ -86,7 +88,7 @@ export function checkPlacement(env: PlacementEnv, prefab: PrefabId, x: number, z
   env.query(x, z, boundingRadius(shape) + 3, nearby);
   let found: PlacementReason | null = null;
   for (const c of nearby) {
-    if (!c.footprint) continue;
+    if (!c.footprint || env.ignore?.(c)) continue;
     if (overlaps(shape, c.footprint)) {
       found = c.kind;
       if (c.kind === 'tree' || c.kind === 'structure') break;
