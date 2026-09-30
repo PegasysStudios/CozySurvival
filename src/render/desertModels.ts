@@ -458,22 +458,19 @@ export function creosoteGeometry(variant: number, lod = 0): THREE.BufferGeometry
   return b.build(true);
 }
 
-/** Low grey-green mounds: white bursage on the flats, big sagebrush in the high country. */
-export function shrubGeometry(kind: 'bursage' | 'sage', variant: number): THREE.BufferGeometry {
-  const rng = new Rng((kind === 'sage' ? 1300 : 1200) + variant);
-  const b = new GeoBuilder((kind === 'sage' ? 1300 : 1200) + variant);
-  const sage = kind === 'sage';
-  const n = sage ? 5 : 3;
-  const r0 = sage ? 0.28 : 0.2;
-  if (sage) for (let i = 0; i < 3; i++) limb(b, [0, 0, 0], [rng.range(-0.2, 0.2), 0.45, rng.range(-0.2, 0.2)], 0.02, 0.035, '#6a5e50', 4);
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + rng.range(-0.4, 0.4);
+/** Big sagebrush: a grey-green crown on a few woody stems, in the high country. */
+export function sagebrushGeometry(variant: number): THREE.BufferGeometry {
+  const rng = new Rng(1300 + variant);
+  const b = new GeoBuilder(1300 + variant);
+  for (let i = 0; i < 3; i++) limb(b, [0, 0, 0], [rng.range(-0.2, 0.2), 0.45, rng.range(-0.2, 0.2)], 0.02, 0.035, '#6a5e50', 4);
+  for (let i = 0; i < 5; i++) {
+    const a = (i / 5) * Math.PI * 2 + rng.range(-0.4, 0.4);
     const d = i === 0 ? 0 : rng.range(0.15, 0.28);
-    const r = r0 * rng.range(0.8, 1.15);
-    b.add(new IcosahedronGeometry(r, sage ? 1 : 0), {
-      matrix: tf(Math.cos(a) * d, (sage ? 0.42 : 0.16) + rng.range(-0.05, 0.08), Math.sin(a) * d, rng.range(0, 3), rng.range(0, 3), 0, 1, sage ? 0.8 : 0.65, 1),
-      color: sage ? foliage('#7c8a78', '#b8c4ae', '#5e6a5a') : foliage('#8a8a70', '#c0bc9e', '#6a6a54'),
-      jitter: sage ? 0.12 : 0.08, vary: 0.1, sway: 0.04,
+    const r = 0.28 * rng.range(0.8, 1.15);
+    b.add(new IcosahedronGeometry(r, 1), {
+      matrix: tf(Math.cos(a) * d, 0.42 + rng.range(-0.05, 0.08), Math.sin(a) * d, rng.range(0, 3), rng.range(0, 3), 0, 1, 0.8, 1),
+      color: foliage('#7c8a78', '#b8c4ae', '#5e6a5a'),
+      jitter: 0.12, vary: 0.1, sway: 0.04,
     });
   }
   return b.build(true);

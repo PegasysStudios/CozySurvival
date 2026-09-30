@@ -164,6 +164,52 @@ export function fallenLogGeometry(weathered = false): THREE.BufferGeometry {
   return b.build();
 }
 
+export const STONE_VARIANTS = 3;
+const STONE_COLORS = {
+  pnw: ['#a3a8ac', '#8a8f94', '#b3aea4', '#9a9890'],
+  desert: ['#c08a62', '#b06f4a', '#d7b48c', '#9a8676', '#5e5652'],
+};
+
+/**
+ * How one pile of loose stones looks: which of the shapes, how big, and a slight shift in colour. It is hashed from
+ * the world seed and the pile's spot, so a world always looks the same and no two worlds match.
+ */
+export function stoneLook(seed: number, spot: number): { variant: number; size: number; tint: number; warm: number } {
+  const h = (k: number) => hash2(spot, k, seed);
+  return { variant: Math.floor(h(1) * STONE_VARIANTS) % STONE_VARIANTS, size: 0.8 + h(2) * 0.42, tint: 0.86 + h(3) * 0.26, warm: (h(4) - 0.5) * 0.12 };
+}
+
+/** A pile of loose stones in one of `STONE_VARIANTS` low-poly shapes: grey granite in the woods, sandstone and basalt in the desert. */
+export function stonePileGeometry(variant: number, desert: boolean): THREE.BufferGeometry {
+  const rng = new Rng(9 * 1013 + variant * 71 + (desert ? 5 : 0));
+  const b = new GeoBuilder(63 + variant);
+  const colors = desert ? STONE_COLORS.desert : STONE_COLORS.pnw;
+  const stone = (geo: THREE.BufferGeometry, x: number, z: number, r: number, squash: number) =>
+    b.add(geo, { matrix: tf(x, r * squash * 0.7, z, rng.range(0, 3), rng.range(0, 3), 0, 1, squash, 1), color: rng.pick(colors), vary: 0.08, jitter: 0.1 });
+  if (variant === 0) {
+    // A scatter of small pebbles.
+    for (let i = 0; i < 5; i++) {
+      const r = rng.range(0.1, 0.19);
+      stone(new IcosahedronGeometry(r, 0), rng.range(-0.22, 0.22), rng.range(-0.22, 0.22), r, 0.65);
+    }
+  } else if (variant === 1) {
+    // One flat slab with a couple of chips beside it.
+    stone(new DodecahedronGeometry(0.24, 0), 0, 0, 0.24, 0.42);
+    for (let i = 0; i < 2; i++) {
+      const a = rng.range(0, Math.PI * 2);
+      stone(new IcosahedronGeometry(0.08, 0), Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0.08, 0.7);
+    }
+  } else {
+    // Three rounded cobbles.
+    for (let i = 0; i < 3; i++) {
+      const a = (i / 3) * Math.PI * 2 + rng.range(-0.4, 0.4);
+      const r = rng.range(0.12, 0.17);
+      stone(new DodecahedronGeometry(r, 0), Math.cos(a) * 0.16, Math.sin(a) * 0.16, r, 0.8);
+    }
+  }
+  return b.build();
+}
+
 export interface ResourceModel {
   main: THREE.BufferGeometry;
   /** Optional detachable part hidden when depleted (berries). */
@@ -187,13 +233,8 @@ export function resourceGeometry(kind: ResourceKind): ResourceModel {
       b.add(new CylinderGeometry(0.02, 0.025, 0.25, 4), { matrix: tf(0.1, 0.12, 0.05, 0.6, 0.3, 0.8), color: '#7a5534' });
       return { main: b.build() };
     }
-    case 'stonePile': {
-      for (let i = 0; i < 5; i++) {
-        const r = rng.range(0.1, 0.19);
-        b.add(new IcosahedronGeometry(r, 0), { matrix: tf(rng.range(-0.22, 0.22), r * 0.45, rng.range(-0.22, 0.22), rng.range(0, 3), rng.range(0, 3), 0, 1, 0.65, 1), color: rng.pick(['#a3a8ac', '#8a8f94', '#b3aea4']), vary: 0.08 });
-      }
-      return { main: b.build() };
-    }
+    case 'stonePile':
+      return { main: stonePileGeometry(0, false) };
     case 'berryBush': {
       const blobs: [number, number, number, number][] = [[0, 0.55, 0, 0.55], [0.35, 0.4, 0.2, 0.42], [-0.3, 0.42, -0.2, 0.44], [0.1, 0.35, -0.38, 0.38], [-0.15, 0.78, 0.15, 0.36]];
       for (const [x, y, z, r] of blobs) b.add(new IcosahedronGeometry(r, 1), { matrix: tf(x, y, z, rng.range(0, 3), rng.range(0, 3), 0, 1, 0.85, 1), color: foliage('#355f2c', '#5f8f40', '#28451f'), jitter: 0.12, sway: (yy) => yy * 0.05 });
