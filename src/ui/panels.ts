@@ -5,6 +5,7 @@ import { PREFABS, type PrefabId } from '../data/prefabs';
 import { CATEGORY_LABELS, RECIPE_BY_ID, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { isUpgradable, LEVEL_NUMERALS, MAX_TOOL_LEVEL, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier, TOOL_UPGRADES, UPGRADABLE_TOOLS, type Cost, type UpgradableTool } from '../data/upgrades';
 import { CANTEEN_ITEMS, canteenFill, canteenServings, nextServing } from '../sim/canteen';
+import { isPinned, MAX_PINS } from '../sim/checklist';
 import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
 import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } from '../sim/durability';
 import { usedSlots } from '../sim/inventory';
@@ -448,7 +449,7 @@ export class Panels {
     const sim = this.host.sim();
     const head = this.head('Crafting', this.tab === 'upgrades'
       ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have.'
-      : 'Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name.');
+      : `Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist to your screen (up to ${MAX_PINS}).`);
 
     const recipes = recipesFor(sim.biome);
     const shown = CRAFT_TABS.filter((t) => t.id === 'upgrades' || recipes.some((r) => r.category === t.id));
@@ -694,14 +695,24 @@ export class Panels {
     const body = el('div', `panel-body craft-body ${tabs ? 'craft-tabbed' : ''}`);
     const grid = el('div', 'tile-grid');
     if (!this.selected || !tiles.some((t) => t.key === this.selected)) this.selected = (tiles.find((t) => t.ready) ?? tiles[0])?.key ?? null;
+    const s = this.host.sim().state;
     for (const t of tiles) {
       const b = tileButton(t, t.key === this.selected);
-      b.addEventListener('click', () => {
+      b.addEventListener('click', (e) => {
         this.selected = t.key;
+        if (e.shiftKey && t.kind === 'recipe') return this.togglePin(t.id);
         this.host.sfx('click');
         this.render();
       });
-      if (t.kind === 'recipe') b.addEventListener('dblclick', () => this.craft(t.id));
+      if (t.kind === 'recipe') {
+        b.addEventListener('dblclick', (e) => {
+          if (!e.shiftKey) this.craft(t.id);
+        });
+        if (isPinned(s, t.id)) {
+          b.classList.add('pinned');
+          b.insertAdjacentHTML('beforeend', `<span class="tile-pin">${MISC_ICONS.pin}</span>`);
+        }
+      }
       grid.append(b);
     }
     const sel = tiles.find((t) => t.key === this.selected);
@@ -744,9 +755,23 @@ export class Panels {
     go.disabled = !check.ok;
     actions.append(go);
     if (check.ok && maxN > 1) actions.append(button(`${label} ×${Math.min(maxN, 5)}`, 'btn', () => this.craft(r.id, Math.min(maxN, 5))));
+    const pin = button(`${MISC_ICONS.pin} ${isPinned(s, r.id) ? 'Unpin' : 'Pin'}`, 'btn subtle pin-btn', () => this.togglePin(r.id));
+    pin.title = `Shift-click a recipe to pin its ingredients to your screen (up to ${MAX_PINS})`;
+    actions.append(pin);
     detail.append(actions);
     if (!check.ok && check.reason) detail.append(el('div', 'craft-reason', escapeHtml(CRAFT_FAILURE_TEXT[check.reason])));
     return detail;
+  }
+
+  private togglePin(id: string): void {
+    const res = this.host.sim().togglePin(id);
+    if (!res) return;
+    const name = RECIPE_BY_ID[id].name;
+    this.host.sfx('click');
+    this.host.toast(res.pinned
+      ? `Pinned ${name} to your checklist${res.dropped ? `, in place of ${RECIPE_BY_ID[res.dropped].name}` : ''}`
+      : `Unpinned ${name}`);
+    this.render();
   }
 
   private craft(id: string, times = 1): void {

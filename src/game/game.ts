@@ -27,7 +27,7 @@ import { GameView, type CameraPose } from '../render/view';
 import type { ViewModelInput } from '../render/viewmodel';
 import { DevPanel, TIME_SCALES } from '../ui/dev';
 import { effectSummary, Hud } from '../ui/hud';
-import { itemIcon, prefabIcon, toolIcon } from '../ui/icons';
+import { itemIcon, MISC_ICONS, prefabIcon, toolIcon } from '../ui/icons';
 import { MpHud, MpMenu } from '../ui/multiplayer';
 import { Panels } from '../ui/panels';
 import { Screens } from '../ui/screens';
@@ -799,6 +799,10 @@ export class Game {
         this.panels.refresh();
         break;
       }
+      case 'checklistDone':
+        this.hud.toast(`${RECIPE_BY_ID[e.recipe].name} made: it's off your checklist`, 'good', MISC_ICONS.pin);
+        this.panels.refresh();
+        break;
       case 'placed': {
         const st = sim.state.structures.find((s) => s.id === e.structure);
         this.sfx('place');

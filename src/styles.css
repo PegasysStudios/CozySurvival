@@ -184,6 +184,7 @@ b {
 
 .hud-clock,
 .hud-objective,
+.hud-checklist,
 .hud-needs,
 .tool,
 .pack-count,
@@ -267,13 +268,46 @@ b {
   display: block;
 }
 
-.hud-objective {
+.hud-left {
   position: absolute;
   top: calc(90px + var(--safe-t));
   left: 16px;
   width: 290px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hud-objective,
+.hud-checklist {
   padding: 11px 14px 12px;
   border-left: 3px solid var(--amber);
+}
+
+.hud-checklist {
+  display: none;
+}
+
+.hud-checklist.show {
+  display: block;
+}
+
+.hud-checklist .obj-title {
+  font-size: 14px;
+}
+
+.hud-checklist.ready {
+  border-left-color: var(--moss);
+}
+
+.hud-checklist.ready .obj-step {
+  color: var(--moss);
+}
+
+@media (max-height: 820px) {
+  .hud-left:has(.hud-checklist.show) .hud-objective .obj-hint {
+    display: none;
+  }
 }
 
 .obj-label {
@@ -2625,10 +2659,14 @@ b {
   .clock-day {
     font-size: 16px;
   }
-  .hud-objective {
+  .hud-left {
     top: calc(72px + var(--safe-t));
     left: 10px;
     width: min(260px, calc(100vw - 20px));
+    gap: 6px;
+  }
+  .hud-objective,
+  .hud-checklist {
     padding: 8px 11px;
   }
   .obj-hint {
@@ -3274,7 +3312,7 @@ b {
 }
 
 @media (max-height: 560px) {
-  .hud-objective {
+  .hud-left {
     display: none;
   }
   .controls-hint {
@@ -3425,6 +3463,34 @@ b {
   bottom: 5px;
   left: 50%;
   transform: translateX(-50%);
+}
+
+.tile-pin {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: rgba(20, 15, 11, 0.75);
+  color: var(--amber-hi);
+}
+
+.tile-pin svg {
+  width: 11px;
+  height: 11px;
+}
+
+.tile.pinned {
+  border-style: dashed;
+}
+
+.pin-btn :is(svg) {
+  width: 14px;
+  height: 14px;
+  vertical-align: -2px;
 }
 
 .tile-key {

@@ -15,6 +15,7 @@ import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEn
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
+import { togglePin, unpin, unpinsWhenMade } from './checklist';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearingTool, type WearResult } from './durability';
 import type { SimEvent } from './events';
 import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor, usedSlots } from './inventory';
@@ -1783,6 +1784,7 @@ export class Simulation {
       spendEnergy(s.needs, BALANCE.needs.energy.craftCost);
       if (out.kind === 'tool' && toolWears(out.tool)) s.toolWear[out.tool] = newToolWear(out.tool, s.skills.crafting);
       this.emit({ type: 'crafted', recipe: recipeId, burnt: item === 'charredMeal' || undefined });
+      this.checkOff(recipeId);
       if (out.kind === 'tool') this.selectTool(out.tool);
       if (item) this.emit({ type: 'gathered', item, count, x: s.player.x, y: s.player.y + 1.2, z: s.player.z, source: 'craft' });
       this.gainXp(cooking ? 'cooking' : 'crafting', cooking ? BALANCE.skills.xp.cook : BALANCE.skills.xp.craft);
@@ -1923,9 +1925,21 @@ export class Simulation {
     this.refreshLitFires();
     this.worldVersion++;
     this.emit({ type: 'placed', structure: st.id, prefab: st.prefab });
+    this.checkOff(recipe.id);
     this.gainXp('crafting', BALANCE.skills.xp.build);
     this.progress();
     return true;
+  }
+
+  /** Shift-click in the crafting menu: pin a recipe to the HUD checklist, or unpin it. Null for a recipe not on this map. */
+  togglePin(recipeId: string): { pinned: boolean; dropped: string | null } | null {
+    const recipe = RECIPE_BY_ID[recipeId];
+    if (!recipe || !recipeOnMap(recipe, this.biome)) return null;
+    return togglePin(this.state, recipeId);
+  }
+
+  private checkOff(recipeId: string): void {
+    if (unpinsWhenMade(RECIPE_BY_ID[recipeId]) && unpin(this.state, recipeId)) this.emit({ type: 'checklistDone', recipe: recipeId });
   }
 
   useSlot(index: number): boolean {

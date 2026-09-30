@@ -14,6 +14,8 @@ export type SimEvent =
   | { type: 'treeFell'; tree: number; dirX: number; dirZ: number }
   | { type: 'needTool'; message: string }
   | { type: 'crafted'; recipe: string; burnt?: boolean }
+  /** A pinned tool, piece of gear or building was made, so it came off the crafting checklist. */
+  | { type: 'checklistDone'; recipe: string }
   | { type: 'skillUp'; skill: SkillId; level: number }
   | { type: 'wornLow'; name: string }
   | { type: 'broke'; name: string; tool?: ToolId; structure?: number }

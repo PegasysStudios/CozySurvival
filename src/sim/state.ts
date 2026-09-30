@@ -215,4 +215,6 @@ export interface GameState {
   snapshotDay: number;
   /** Set while standing at a workbench mending a tool: you can look around but not move. */
   repair?: RepairState;
+  /** Recipe ids pinned to the HUD's crafting checklist, oldest first (absent means none). */
+  pinned?: string[];
 }

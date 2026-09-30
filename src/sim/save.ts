@@ -7,6 +7,7 @@ import { RESOURCES, TREES } from '../data/resources';
 import { isUpgradable, MAX_TOOL_LEVEL } from '../data/upgrades';
 import { BALANCE } from '../data/balance';
 import { canteenServings, emptyCanteen, migratePackWater } from './canteen';
+import { parsePins } from './checklist';
 import { newStructureWear, prefabWears, toolWears } from './durability';
 import { addItem } from './inventory';
 import { parseStore } from './storage';
@@ -165,6 +166,9 @@ export function deserializeState(json: string | null): GameState | null {
   const repair = parseRepair(raw.repair, state);
   if (repair) state.repair = repair;
   else delete state.repair;
+  const pinned = parsePins(raw.pinned, biome);
+  if (pinned.length) state.pinned = pinned;
+  else delete state.pinned;
   return state;
 }
 

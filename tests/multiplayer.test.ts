@@ -632,3 +632,20 @@ describe('multiplayer: round 8', () => {
     expect(after.state.toolWear.axe!.dur).toBeGreaterThan(after.state.toolWear.axe!.max - 0.5);
   });
 });
+
+describe('multiplayer: round 9', () => {
+  it("a guest's crafting checklist is their own and survives a resync", async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    expect(b.togglePin('axe')).toEqual({ pinned: true, dropped: null });
+    w.pump(0.6);
+    expect(w.host.sim.state.pinned).toBeUndefined();
+    (ben as unknown as { rev: number }).rev -= 3;
+    w.pump(1);
+    expect(w.of(ben).some((e) => e.type === 'ready' && e.resync)).toBe(true);
+    const after = guestSim(ben);
+    expect(after).not.toBe(b);
+    expect(after.state.pinned).toEqual(['axe']);
+  });
+});

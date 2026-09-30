@@ -104,7 +104,7 @@ export class GuestSession extends Session {
     const old = this.sim?.state;
     if (old) {
       // Keep this player's own character across a resync; only the world is replaced.
-      for (const k of ['player', 'needs', 'inventory', 'canteen', 'tools', 'activeTool', 'toolWear', 'toolLevels', 'gear', 'skills', 'forage', 'stats', 'objective', 'dead', 'deathCause', 'lastDamage', 'repair', 'nextId', 'runId'] as const) {
+      for (const k of ['player', 'needs', 'inventory', 'canteen', 'tools', 'activeTool', 'toolWear', 'toolLevels', 'gear', 'skills', 'forage', 'stats', 'objective', 'dead', 'deathCause', 'lastDamage', 'repair', 'pinned', 'nextId', 'runId'] as const) {
         (state as unknown as Record<string, unknown>)[k] = old[k];
       }
       state.animals = old.animals;
