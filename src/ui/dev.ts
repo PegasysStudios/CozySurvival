@@ -67,14 +67,14 @@ export class DevPanel {
     const spawnFor = (biome: BiomeId): SpeciesId[] => {
       if (biome === 'pnw') return ['wolf', 'bear', 'deer', 'rabbit'];
       const def = biomeDef(biome);
-      return [...def.predators.map((p) => p.species), ...def.prey.map((p) => p.species).filter((sp) => sp !== 'fish')];
+      return [...def.predators.map((p) => p.species), ...def.prey.map((p) => p.species).filter((sp) => sp !== 'fish'), 'scorpion'];
     };
     const renderSpawns = () => {
       const biome = host.sim().biome;
       if (spawnRow.dataset.biome === biome) return;
       spawnRow.dataset.biome = biome;
       spawnRow.replaceChildren(...spawnFor(biome).map((sp) => button(sp, 'dev-btn', () => {
-        const a = host.sim().devSpawn(sp, sp === 'bear' ? 20 : 24);
+        const a = host.sim().devSpawn(sp, sp === 'bear' ? 20 : sp === 'scorpion' ? 3 : 24);
         host.toast(a ? `Dev: spawned a ${sp}` : 'Dev: no spot found');
       })));
     };

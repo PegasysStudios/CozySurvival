@@ -31,12 +31,14 @@ interface StructureView {
 
 const STRIDE: Record<SpeciesId, number> = {
   rabbit: 3.4, deer: 2.3, fish: 0, wolf: 2.7, bear: 2.1,
-  jackrabbit: 3.0, javelina: 3.6, quail: 7.5, roadrunner: 5.2, lizard: 9, snake: 3.2, cougar: 2.5,
+  jackrabbit: 3.0, javelina: 3.6, quail: 7.5, roadrunner: 5.2, lizard: 9, snake: 3.2, cougar: 2.5, scorpion: 10,
 };
 const PIVOT_Y: Record<SpeciesId, number> = {
   rabbit: 0.15, deer: 0.95, fish: 0, wolf: 0.6, bear: 0.62,
-  jackrabbit: 0.2, javelina: 0.3, quail: 0.07, roadrunner: 0.2, lizard: 0.05, snake: 0.045, cougar: 0.58,
+  jackrabbit: 0.2, javelina: 0.3, quail: 0.07, roadrunner: 0.2, lizard: 0.05, snake: 0.045, cougar: 0.58, scorpion: 0.05,
 };
+/** How far a burrowing scorpion sinks, below its own height. */
+const BURROW_DEPTH = 0.14;
 const HOPPERS = new Set<SpeciesId>(['rabbit', 'jackrabbit']);
 const VIEW_DIST = 110;
 const FISH_VIEW = 45;
@@ -290,6 +292,8 @@ export class EntityView {
     } else if ((a.mode === 'idle') && def.kind === 'prey' && Math.sin(time * 0.35 + a.id * 1.3) > 0.1) headTarget = 0.85;
     if (a.species === 'bear' && a.mode === 'warn') rearTarget = 1;
     if (a.mode === 'attack') rearTarget = a.species === 'bear' ? 0.5 : 0.25;
+    const pest = def.kind === 'pest';
+    if (pest && a.mode === 'retreat') crouchTarget = BURROW_DEPTH / 0.1;
     v.headPitch = damp(v.headPitch, headTarget, 5, dt);
     v.rear = damp(v.rear, rearTarget, 6, dt);
     v.crouch = damp(v.crouch, crouchTarget, 4, dt);
@@ -297,7 +301,7 @@ export class EntityView {
     const rearAngle = a.species === 'bear' ? -0.95 : -0.35;
     v.rig.pivot.rotation.x = v.rear * rearAngle;
     if (!HOPPERS.has(a.species)) v.rig.pivot.position.y = PIVOT_Y[a.species] - v.crouch * 0.1;
-    if (v.rig.tail) v.rig.tail.rotation.x = 0.3 + Math.sin(time * 3 + a.id) * 0.08 + (a.mode === 'flee' ? -0.8 : 0);
+    if (v.rig.tail) v.rig.tail.rotation.x = 0.3 + Math.sin(time * (pest && a.mode !== 'retreat' ? 11 : 3) + a.id) * 0.08 + (a.mode === 'flee' ? -0.8 : 0);
     const hurt = a.hurt > 0 ? Math.sin((0.35 - a.hurt) * 30) * a.hurt * 0.4 : 0;
     root.scale.set(1 + hurt, 1 - hurt, 1 + hurt);
   }

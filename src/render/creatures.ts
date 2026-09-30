@@ -376,7 +376,64 @@ function cougar(): RigParts {
   };
 }
 
-const BUILDERS: Partial<Record<SpeciesId, () => RigParts>> = { rabbit, wolf, bear, jackrabbit, javelina, quail, roadrunner, lizard, snake, cougar };
+/** Scorpion tail segments: how far each one curls from pointing straight back (0) through up to forward (π). */
+const SCORPION_CURL = [0.05, 0.55, 1.05, 1.55, 2.05];
+const SCORPION_SEG = 0.048;
+
+/** Drawn about twice life size so it reads at arm's length; the pincers are the head, so an alert pitch raises them. */
+function scorpion(): RigParts {
+  const shell = (_x: number, _y: number, _z: number, n: THREE.Vector3) => (n.y > 0.35 ? mix('#5e4526', '#7a5c34', 0.5 + n.x * 0.4) : col('#c9a45c'));
+  const limb = '#c9a45c';
+  const body = new GeoBuilder(50);
+  body.add(new IcosahedronGeometry(0.07, 1), { matrix: tf(0, 0.05, -0.03, 0, 0, 0, 1, 0.42, 1.55), color: shell, jitter: 0.006 });
+  const head = new GeoBuilder(51);
+  head.add(new IcosahedronGeometry(0.045, 1), { matrix: tf(0, 0, 0.01, 0, 0, 0, 1.1, 0.5, 1), color: shell });
+  for (const s of [-1, 1]) {
+    eye(head, s * 0.012, 0.022, 0.035, 0.006);
+    head.add(new CylinderGeometry(0.011, 0.013, 1, 5), { matrix: between(s * 0.03, 0, 0.03, s * 0.08, 0.012, 0.06), color: limb });
+    head.add(new CylinderGeometry(0.012, 0.011, 1, 5), { matrix: between(s * 0.08, 0.012, 0.06, s * 0.07, 0.018, 0.11), color: limb });
+    head.add(new IcosahedronGeometry(0.026, 0), { matrix: tf(s * 0.067, 0.018, 0.13, 0, 0, 0, 0.85, 0.6, 1.4), color: limb });
+    for (const f of [-1, 1]) head.add(new ConeGeometry(0.008, 1, 4), { matrix: between(s * 0.067 + f * 0.008, 0.018, 0.15, s * 0.064 + f * 0.004, 0.018, 0.19), color: '#5e4526' });
+  }
+  const legs: RigParts['legs'] = [];
+  const hips = [0.04, 0.015, -0.015, -0.045];
+  hips.forEach((hz, i) => {
+    const reach = 0.04 - i * 0.03;
+    for (const s of [-1, 1]) {
+      const b = new GeoBuilder(52 + i);
+      b.add(new CylinderGeometry(0.007, 0.009, 1, 4), { matrix: between(0, 0, 0, s * 0.06, 0.03, reach * 0.5), color: limb });
+      b.add(new CylinderGeometry(0.005, 0.007, 1, 4), { matrix: between(s * 0.06, 0.03, reach * 0.5, s * 0.11, -0.05, reach), color: limb });
+      legs.push({ geo: b.build(), hip: [s * 0.04, 0.05, hz], phase: (i + (s > 0 ? 1 : 0)) % 2 ? Math.PI : 0 });
+    }
+  });
+  const tail = new GeoBuilder(56);
+  let y = 0;
+  let z = 0;
+  SCORPION_CURL.forEach((curl, i) => {
+    const r = 0.02 - i * 0.0018;
+    const ny = y + Math.sin(curl) * SCORPION_SEG;
+    const nz = z - Math.cos(curl) * SCORPION_SEG;
+    tail.add(new CylinderGeometry(r * 0.9, r, 1, 6), { matrix: between(0, y, z, 0, ny, nz), color: shell, vary: 0.05 });
+    tail.add(new IcosahedronGeometry(r, 0), { matrix: tf(0, ny, nz), color: shell, vary: 0.05 });
+    y = ny;
+    z = nz;
+  });
+  const tip = SCORPION_CURL[SCORPION_CURL.length - 1] + 0.5;
+  const by = y + Math.sin(tip) * 0.02;
+  const bz = z - Math.cos(tip) * 0.02;
+  tail.add(new IcosahedronGeometry(0.02, 1), { matrix: tf(0, by, bz, 0, 0, 0, 0.9, 0.9, 1.2), color: '#d8b46a' });
+  tail.add(new ConeGeometry(0.007, 1, 4), { matrix: between(0, by, bz, 0, by + Math.sin(tip + 0.6) * 0.045, bz - Math.cos(tip + 0.6) * 0.045), color: '#2e2012' });
+  return {
+    body: body.build(),
+    head: head.build(),
+    headPivot: [0, 0.05, 0.1],
+    legs,
+    tail: { geo: tail.build(), pivot: [0, 0.055, -0.13] },
+    pivot: [0, 0.05, 0],
+  };
+}
+
+const BUILDERS: Partial<Record<SpeciesId, () => RigParts>> = { rabbit, wolf, bear, jackrabbit, javelina, quail, roadrunner, lizard, snake, cougar, scorpion };
 
 const cache = new Map<string, RigParts>();
 

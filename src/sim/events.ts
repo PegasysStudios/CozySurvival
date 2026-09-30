@@ -54,6 +54,8 @@ export type SimEvent =
   | { type: 'predatorAttack'; id: number; species: SpeciesId }
   /** A rattlesnake coiled and rattled at the player. */
   | { type: 'rattle'; id: number; x: number; z: number }
+  /** The stone this player just gathered had a scorpion under it. */
+  | { type: 'scorpion'; x: number; z: number }
   | { type: 'arrowFired'; power: number }
   | { type: 'arrowHit'; x: number; y: number; z: number; target: 'ground' | 'tree' | 'water' | 'animal' }
   | { type: 'cast'; power: number }

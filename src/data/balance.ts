@@ -177,6 +177,11 @@ export const BALANCE = {
    * `cooldown` seconds.
    */
   spines: { cooldown: 1.1, touch: 0.5, saguaro: 4, saguaroGap: 0.06 },
+  /**
+   * Each gather from a desert stone pile has `chance` to turn up a scorpion (see `SPECIES.scorpion`), with at most
+   * `max` out in the world at once.
+   */
+  scorpion: { chance: 0.18, max: 4 },
   /** Thirst lost the one time you taste alkali water before you learn to recognise it. */
   water: { alkaliTasteThirst: 4 },
 } as const;

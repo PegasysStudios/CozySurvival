@@ -64,7 +64,7 @@ const COPY: Record<BiomeId, { start: string; dawn: string; dawnLater: string; ni
 
 const FUR: Partial<Record<SpeciesId, string>> = {
   bear: '#2a2420', wolf: '#8e8a83', fish: '#cfe6f2', cougar: '#b48d5f', javelina: '#4a4039', jackrabbit: '#a58d6c',
-  quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360',
+  quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360', scorpion: '#c9a45c',
 };
 
 const MAP_FADE_MS = 900;
@@ -923,9 +923,14 @@ export class Game {
         const col = FUR[e.species] ?? '#8a6d52';
         if (e.species === 'fish') fx.splash(e.x, 0, e.z, 16);
         else fx.fur(e.x, e.y, e.z, col, e.killed ? 18 : 8);
-        if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
+        if (e.killed && e.species === 'scorpion') this.hud.toast('You squashed the scorpion.', 'good');
+        else if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
         break;
       }
+      case 'scorpion':
+        this.sfx('rattle', 0.35);
+        this.throttledToast('scorpion', 'A scorpion was under that stone! Hit it with a weapon, or walk away; it soon loses interest.', 'warn', 6);
+        break;
       case 'animalFlee':
         if (e.species === 'deer') this.throttledToast('deer', 'The deer bolted. They spook from far away; try a bow.', 'info', 60);
         else if (e.species === 'javelina') this.throttledToast('javelina', 'The javelina scattered. They see poorly but smell you from far off; try a bow.', 'info', 60);
@@ -952,7 +957,7 @@ export class Game {
         break;
       }
       case 'predatorAttack':
-        this.sfx('growl', 0.6);
+        if (e.species !== 'scorpion') this.sfx('growl', 0.6);
         break;
       case 'arrowFired':
         this.sfx('arrow', e.power);

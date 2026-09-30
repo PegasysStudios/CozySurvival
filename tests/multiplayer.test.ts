@@ -16,6 +16,7 @@ import { killKey } from '../src/data/objectives';
 import { BIN_UPGRADES, SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
 import { F_WORK } from '../src/net/protocol';
 import type { Collider } from '../src/sim/colliders';
+import { RESOURCES } from '../src/data/resources';
 
 const DT = 1 / 20;
 
@@ -666,5 +667,62 @@ describe('multiplayer: round 9', () => {
     expect(b.state.needs.health).toBeLessThan(100);
     expect(w.host.sim.state.needs.health).toBe(100);
     expect(w.host.sim.state.lastDamage).toBeNull();
+  });
+
+  it("a guest's stone can hide a scorpion: the host spawns it, everyone sees it, it stings the guest, and the guest can kill it", async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const cleo = await w.join('Cleo');
+    const b = guestSim(ben);
+    const c = guestSim(cleo);
+    const host = w.host.sim;
+    mortal.add(b);
+    const hp = host.state.player;
+    const away = (x: number, z: number) => Math.hypot(x - hp.x, z - hp.z);
+    const piles = b.gen.resources.map((r, i) => ({ r, i })).filter(({ r }) => r.kind === 'stonePile' && away(r.x, r.z) > 25 && away(r.x, r.z) < 70);
+    let found: { x: number; z: number } | null = null;
+    for (const { r, i } of piles) {
+      teleport(b, r.x + 1.6, r.z);
+      teleport(c, r.x + 3, r.z + 3);
+      w.pump(0.3);
+      for (let k = 0; k < RESOURCES.stonePile.charges && !found; k++) {
+        b.state.inventory.slots.fill(null);
+        b.perform({ kind: 'resource', index: i, dist: 1.6 });
+        const req = b.netOut.find((q) => q.k === 'scorpion');
+        if (req && req.k === 'scorpion') found = { x: req.x, z: req.z };
+      }
+      if (found) break;
+    }
+    expect(found).not.toBeNull();
+    expect(b.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
+    w.pump(0.3);
+    const onHost = host.state.animals.filter((a) => a.species === 'scorpion');
+    expect(onHost).toHaveLength(1);
+    const sc = onHost[0];
+    expect(Math.hypot(sc.x - found!.x, sc.z - found!.z)).toBeLessThan(1.5);
+    expect(b.state.animals.some((a) => a.id === sc.id)).toBe(true);
+    expect(c.state.animals.some((a) => a.id === sc.id)).toBe(true);
+
+    w.pump(3);
+    expect(b.state.lastDamage).toBe('scorpion');
+    expect(b.state.needs.health).toBeLessThan(100);
+    expect(host.state.lastDamage).toBeNull();
+
+    b.state.tools.push('spear');
+    b.state.activeTool = 'spear';
+    b.perform({ kind: 'animal', id: sc.id, dist: 1 });
+    w.pump(0.5);
+    expect(host.state.animals.some((a) => a.id === sc.id)).toBe(false);
+    expect(b.state.animals.some((a) => a.id === sc.id)).toBe(false);
+    expect(c.state.animals.some((a) => a.id === sc.id)).toBe(false);
+    expect(b.state.stats.kills.scorpion).toBe(1);
+    expect(host.state.carcasses).toHaveLength(0);
+
+    b.netOut.push({ k: 'scorpion', x: hp.x + 90, z: hp.z });
+    w.pump(0.3);
+    expect(host.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
   });
 });

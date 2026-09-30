@@ -12,6 +12,8 @@ import { deltaKey, mergeRemote, takeSnapshot, WorldTracker, type Delta } from '.
 /** Guests only get animals within this range of some guest. */
 const ANIMAL_RANGE = 130;
 const MAX_HIT = 400;
+/** A guest's uncovered scorpion must be within gathering reach of where the host last saw them, plus some lag. */
+const SCORPION_REACH = 10;
 const DELTA_KINDS = new Set(['t', 'r', 's', 'd', 'c', 's-', 'd-', 'c-']);
 
 interface GuestLink {
@@ -142,6 +144,8 @@ export class HostSession extends Session {
         this.checkSleep();
       } else if (r.k === 'wake') {
         this.sleeping.delete(link.pid);
+      } else if (r.k === 'scorpion' && peer && Number.isFinite(r.x) && Number.isFinite(r.z) && Math.hypot(r.x - peer.x, r.z - peer.z) < SCORPION_REACH) {
+        this.sim.revealScorpion(r.x, r.z);
       }
     }
   }

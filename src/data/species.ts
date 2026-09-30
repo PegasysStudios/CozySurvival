@@ -2,7 +2,7 @@ import type { ItemId } from './items';
 
 export type SpeciesId =
   | 'rabbit' | 'deer' | 'fish' | 'wolf' | 'bear'
-  | 'jackrabbit' | 'javelina' | 'quail' | 'roadrunner' | 'lizard' | 'snake' | 'cougar';
+  | 'jackrabbit' | 'javelina' | 'quail' | 'roadrunner' | 'lizard' | 'snake' | 'cougar' | 'scorpion';
 
 interface BaseSpecies {
   id: SpeciesId;
@@ -55,7 +55,22 @@ export interface PredatorSpecies extends BaseSpecies {
   aggroCooldown: number;
 }
 
-export type SpeciesDef = PreySpecies | PredatorSpecies;
+/**
+ * Lives under desert stones (a scorpion) and only comes out when one is gathered: it rears up for `revealTime`, then
+ * scuttles after the nearest player and stings anyone within `sting.range`. It loses interest and burrows (taking
+ * `burrowTime`, then gone) once nobody has been within `giveUpDist` for `giveUpTime` seconds, or after `maxChase`.
+ */
+export interface PestSpecies extends BaseSpecies {
+  kind: 'pest';
+  sting: { range: number; damage: number; cooldown: number };
+  revealTime: number;
+  giveUpDist: number;
+  giveUpTime: number;
+  maxChase: number;
+  burrowTime: number;
+}
+
+export type SpeciesDef = PreySpecies | PredatorSpecies | PestSpecies;
 
 export const SPECIES: Record<SpeciesId, SpeciesDef> = {
   rabbit: {
@@ -123,6 +138,16 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     alertRadius: 6.5, fearRadius: 0, calmRadius: 6, alertTime: [2.5, 4],
     strike: { radius: 1.8, damage: 9, cooldown: 2.2 },
     drops: [{ item: 'rawMeat', count: 1 }, { item: 'hide', count: 1 }],
+  },
+  scorpion: {
+    id: 'scorpion', name: 'Desert Hairy Scorpion', kind: 'pest', habitat: 'land',
+    // One axe, spear or arrow hit; two punches.
+    maxHealth: 1, radius: 0.12, hitHeight: 0.08, hitRadius: 0.32,
+    // Slower than a walk, so walking away always works.
+    walkSpeed: 1.2, runSpeed: 3.4, turnRate: 6, wanderRadius: 2,
+    sting: { range: 1.1, damage: 6, cooldown: 1.6 },
+    revealTime: 0.8, giveUpDist: 7, giveUpTime: 3, maxChase: 45, burrowTime: 1.5,
+    drops: [],
   },
   wolf: {
     id: 'wolf', name: 'Grey Wolf', kind: 'predator', habitat: 'land',

@@ -3,7 +3,7 @@ import { damp, headingTo, turnToward } from '../core/math';
 import type { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { biomeDef } from '../data/biomes';
-import { SPECIES, type PredatorSpecies, type PreySpecies, type SpeciesId } from '../data/species';
+import { SPECIES, type PestSpecies, type PredatorSpecies, type PreySpecies, type SpeciesId } from '../data/species';
 import type { Collider } from './colliders';
 import type { SimEvent } from './events';
 import type { AnimalMode, AnimalState, DamageSource } from './state';
@@ -358,6 +358,56 @@ function updatePredator(a: AnimalState, def: PredatorSpecies, env: AnimalEnv, dt
   }
 }
 
+/**
+ * A scorpion out from under its stone: `alert` while it rears up, `chase` while it goes after the nearest player,
+ * `retreat` while it burrows back in (the simulation removes it once `burrowed`).
+ */
+function updatePest(a: AnimalState, def: PestSpecies, env: AnimalEnv, dt: number, d: number): void {
+  const toPlayer = headingTo(a.x, a.z, env.playerX, env.playerZ);
+  switch (a.mode) {
+    case 'retreat':
+      a.speed = damp(a.speed, 0, 10, dt);
+      break;
+    case 'alert':
+      a.speed = damp(a.speed, 0, 10, dt);
+      a.heading = turnToward(a.heading, toPlayer, def.turnRate * dt);
+      if (a.timer <= 0) setMode(a, 'chase', def.giveUpTime);
+      break;
+    case 'chase': {
+      if (d < def.giveUpDist && !env.playerDead) a.timer = def.giveUpTime;
+      if (a.timer <= 0 || a.modeTime > def.maxChase) {
+        setMode(a, 'retreat', def.burrowTime);
+        break;
+      }
+      steer(a, env, toPlayer, d > def.sting.range * 0.6 ? def.runSpeed : 0, dt);
+      if (d < 1.5) a.heading = turnToward(a.heading, toPlayer, def.turnRate * dt);
+      if (d <= def.sting.range && a.cooldown <= 0 && !env.playerDead) {
+        a.cooldown = def.sting.cooldown;
+        env.hurtPlayer(def.sting.damage, a.species as DamageSource, a.x, a.z);
+        env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+      }
+      break;
+    }
+    default:
+      setMode(a, 'alert', def.revealTime);
+  }
+}
+
+const PREDATOR_ACTIVE: readonly AnimalMode[] = ['stalk', 'chase', 'attack', 'warn', 'reposition'];
+
+/** Hunting, charging or stinging someone right now: nobody can sleep with one of these close by. */
+export function hostile(a: AnimalState): boolean {
+  const def = SPECIES[a.species];
+  if (def.kind === 'predator') return PREDATOR_ACTIVE.includes(a.mode);
+  if (def.kind === 'pest') return a.mode === 'alert' || a.mode === 'chase';
+  return false;
+}
+
+/** A scorpion that has finished digging back in; the simulation drops it. */
+export function burrowed(a: AnimalState): boolean {
+  return SPECIES[a.species].kind === 'pest' && a.mode === 'retreat' && a.timer <= 0;
+}
+
 export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
   const def = SPECIES[a.species];
   const d = Math.hypot(env.playerX - a.x, env.playerZ - a.z);
@@ -373,6 +423,7 @@ export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
   a.aggroCooldown -= dt;
   a.hurt = Math.max(0, a.hurt - dt);
   if (def.kind === 'prey') updatePrey(a, def, env, dt, d);
+  else if (def.kind === 'pest') updatePest(a, def, env, dt, d);
   else updatePredator(a, def, env, dt, d);
 }
 
@@ -383,7 +434,9 @@ export function damageAnimal(a: AnimalState, amount: number, env: AnimalEnv): bo
   a.hurt = 0.35;
   if (a.health <= 0) return true;
   if (def.kind === 'prey') startFlee(a, env, false);
-  else if (a.health / def.maxHealth <= def.retreatHealthFrac) {
+  else if (def.kind === 'pest') {
+    if (a.mode !== 'retreat') setMode(a, 'chase', def.giveUpTime);
+  } else if (a.health / def.maxHealth <= def.retreatHealthFrac) {
     setMode(a, 'retreat', 30);
     a.aggroCooldown = def.aggroCooldown * 2;
   } else {

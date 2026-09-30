@@ -10,8 +10,8 @@ import { PLACE_MAX_DIST, PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPE_BY_ID, recipeOnMap } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
 import { LEVEL_NUMERALS, nextTier, tierCost, tierLine, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
-import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type SpeciesId } from '../data/species';
-import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
+import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type PestSpecies, type SpeciesId } from '../data/species';
+import { burrowed, createAnimal, damageAnimal, findSpawnPoint, hostile, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
@@ -123,12 +123,13 @@ export interface RemotePlayer {
 export type NetRequest =
   | { k: 'hit'; id: number; dmg: number; t?: number }
   | { k: 'sleep'; structure: number }
-  | { k: 'wake' };
+  | { k: 'wake' }
+  /** Gathering a stone turned up a scorpion at (x, z); the host spawns it. */
+  | { k: 'scorpion'; x: number; z: number };
 
 export const COOK_RADIUS = 4;
 const ARROW_GRAVITY = 9.8;
 const START_HOURS = BALANCE.time.startHour - BALANCE.time.dayStartHour;
-const PREDATOR_ACTIVE = ['stalk', 'chase', 'attack', 'warn', 'reposition'];
 const CARCASS_HIT_RADIUS: Partial<Record<SpeciesId, number>> = { bear: 1.1, deer: 0.9, cougar: 0.85, javelina: 0.8 };
 
 let runCounter = 0;
@@ -1252,7 +1253,34 @@ export class Simulation {
     spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
     this.emit({ type: 'swing', tool: 'hands', hit: true });
     this.gainXp('gathering', BALANCE.skills.xp.gather);
+    if (g.kind === 'stonePile' && this.biome === 'desert' && this.roll(BALANCE.scorpion.chance)) this.uncoverScorpion(g.x, g.z);
     this.worldVersion++;
+  }
+
+  /** A scorpion was under the stone just gathered at (x, z). It comes out on the player's side of the pile. */
+  private uncoverScorpion(x: number, z: number): void {
+    const s = this.state;
+    const p = s.player;
+    const d = Math.hypot(p.x - x, p.z - z) || 1;
+    const k = Math.min(0.5, d * 0.5) / d;
+    const sx = x + (p.x - x) * k;
+    const sz = z + (p.z - z) * k;
+    if (this.authority === 'guest') this.netOut.push({ k: 'scorpion', x: sx, z: sz });
+    else this.revealScorpion(sx, sz);
+    s.stats.events.scorpions = (s.stats.events.scorpions ?? 0) + 1;
+    this.emit({ type: 'scorpion', x: sx, z: sz });
+  }
+
+  /** Host or solo: a scorpion crawls out at (x, z) and goes for the nearest player. */
+  revealScorpion(x: number, z: number): AnimalState | null {
+    const s = this.state;
+    if (this.biome !== 'desert' || !this.terrain.inPlayBounds(x, z)) return null;
+    if (s.animals.filter((a) => a.species === 'scorpion').length >= BALANCE.scorpion.max) return null;
+    const a = createAnimal(s.nextId++, 'scorpion', x, z, this.rng, this.terrain);
+    a.mode = 'alert';
+    a.timer = (SPECIES.scorpion as PestSpecies).revealTime;
+    s.animals.push(a);
+    return a;
   }
 
   /** Unlock a plant's Foraging guide entry the first time it's harvested. */
@@ -1548,6 +1576,10 @@ export class Simulation {
       this.remoteKills.push({ pid: by, species: a.species, tool });
     }
     const def = SPECIES[a.species];
+    if (def.drops.length === 0) {
+      this.progress();
+      return;
+    }
     const remaining = def.drops.map((d) => ({ item: d.item, count: d.count }));
     const meat = remaining.find((r) => r.item === 'rawMeat');
     if (meat && by === null && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
@@ -1665,6 +1697,7 @@ export class Simulation {
       if (a.mode === 'flee' && prevMode !== 'flee' && a.species === 'deer') {
         s.stats.events.deerSpooked = (s.stats.events.deerSpooked ?? 0) + 1;
       }
+      if (burrowed(a)) s.animals.splice(i--, 1);
     }
     this.aiTarget = null;
   }
@@ -2099,9 +2132,10 @@ export class Simulation {
       return false;
     }
     const p = s.player;
-    const threat = s.animals.some((a) => SPECIES[a.species].kind === 'predator' && PREDATOR_ACTIVE.includes(a.mode) && Math.hypot(a.x - p.x, a.z - p.z) < 35);
+    const threat = s.animals.find((a) => hostile(a) && Math.hypot(a.x - p.x, a.z - p.z) < 35);
     if (threat) {
-      this.emit({ type: 'sleepDenied', reason: "You can't sleep with a predator nearby!" });
+      const what = SPECIES[threat.species].kind === 'predator' ? 'a predator nearby' : `a ${threat.species} after you`;
+      this.emit({ type: 'sleepDenied', reason: `You can't sleep with ${what}!` });
       return false;
     }
     const byFire = this.warmingFire() !== null;
@@ -2131,6 +2165,7 @@ export class Simulation {
     this.standUp();
     p.vx = 0;
     p.vz = 0;
+    s.animals = s.animals.filter((a) => SPECIES[a.species].kind !== 'pest');
     for (const a of s.animals) {
       if (SPECIES[a.species].kind === 'predator') {
         a.mode = 'wander';
@@ -2348,6 +2383,7 @@ export class Simulation {
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
     this.updateWear(elapsed, false, true, false);
+    s.animals = s.animals.filter((a) => SPECIES[a.species].kind !== 'pest');
     for (const a of s.animals) {
       if (SPECIES[a.species].kind !== 'predator') continue;
       a.mode = 'wander';
