@@ -1,6 +1,8 @@
 # CozySurvival
 
-A first-person, low-poly cozy survival game for the browser, set in a Pacific Northwest / Canadian forest. You wake up stranded by a lake with nothing but your hands. Gather, craft, cook, hunt, build a camp and see how many days you can last. One in-game day lasts 24 real minutes.
+A first-person, low-poly cozy survival game for the browser with two maps: a Pacific Northwest / Canadian forest and the Arizona high desert. You wake up stranded with nothing but your hands. Gather, craft, cook, hunt, build a camp and see how many days you can last. One in-game day lasts 24 real minutes.
+
+Pick the map with the arrows beside the title (or ← / → on the title screen). Each map keeps its own save and records. Everything below the **Maps** section describes the Pacific Northwest map, which plays exactly as it did before the desert was added.
 
 Built with Vite, TypeScript and Three.js. Models, terrain, sky and sound effects are generated procedurally. The only bundled asset is the background music track (`public/audio/forest-ambience.mp3`).
 
@@ -22,9 +24,9 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | `npm run preview` | Serve the production build on port **5288** |
 | `npm test` | Vitest suite for the simulation (no browser or WebGL needed) |
 | `npm run typecheck` | TypeScript only |
-| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then play a two-tab multiplayer session over `?net=local`. Fails on any console error |
+| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then switch to the desert with the title arrow, start a desert run, check that each map continues its own run, and play a two-tab multiplayer session on a desert server over `?net=local`. Saves title and first-person screenshots of both maps. Fails on any console error |
 
-`npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one.
+`npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one. Screenshots go to `smoke-shots/` (git-ignored); set `SMOKE_SHOTS` to save them elsewhere.
 
 ## Controls
 
@@ -144,6 +146,90 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 
   **M** mutes and unmutes everything without changing the sliders.
 
+## Maps
+
+| Map | Setting |
+| --- | --- |
+| Pacific Northwest | Fir, cedar, birch and maple forest around a lake and a pond. The original map, unchanged. |
+| Arizona Desert | Red-rock buttes and mesas, creosote flats and grass plains, a volcanic spire, and juniper, pinyon and ponderosa high country to the north. |
+
+Every difference lives in one biome config (`src/data/biomes.ts`) plus biome branches in world gen, forage, recipes and rendering. The Pacific Northwest path is pinned by a golden-fingerprint test (`tests/pnw-unchanged.test.ts`).
+
+### Arizona Desert
+
+- **Water is scarce.** Each world has three small pools and no lake:
+  - **Spring:** always drinkable. Radius 6.2–7.2 m, about 2.6 m deep, stocked with Gila trout. It sits about 26 m from the spawn on average, and you start facing it.
+  - **Tinaja:** a slickrock rain pool in the rock country. Radius 3.3–4 m, drinkable.
+  - **Alkali pool:** radius 5–6.4 m and shallow, with a pale crust and milky water. It shows as "Milky Pool" until you taste it, then "Alkali Pool". The first sip costs 4 thirst and teaches you; after that you refuse to drink it and a canteen won't fill there.
+
+  Across 40 seeds the desert averages 285 m² of open water against 3,357 m² on the Pacific Northwest map (8.5%), and its largest pool is 7.2 m across the radius against a 31 m lake.
+- **Hot days, cold nights.** The day holds warmth at 95 (Pacific Northwest: 80). From 16:00 to 19:30 it falls at 36 an hour (Pacific Northwest: 22 an hour from 17:00 to 21:30), and it climbs back from 5:30 to 9:00. Starting at 90 warmth at 16:00 with no fire:
+
+  | Hour | Pacific Northwest | Desert |
+  | --- | --- | --- |
+  | 17:00 | 80 | 76 |
+  | 18:00 | 70 | 40 |
+  | 19:00 | 48 | 5 |
+  | 20:00 | 26 | 0 |
+
+  A burning campfire, shelter or raised torch protects you exactly as on the Pacific Northwest map, and the first two nights still can't kill you.
+- **Trees give less wood.** About 244 trees per world against 1,119. The lowland is sparse (about 11 trees per hectare) and the northern high country is a juniper, pinyon and ponderosa woodland (about 75 per hectare). Saguaros are scenery and can't be chopped.
+
+  | Tree | Where | Logs |
+  | --- | --- | --- |
+  | Joshua tree | lowland flats | 1 |
+  | Mesquite | washes and flats (drops mesquite pods) | 1 |
+  | Fremont cottonwood | by the spring | 2 |
+  | Utah juniper | high country | 2 |
+  | Pinyon pine | high country (drops piñon nuts) | 2 |
+  | Ponderosa pine | high country | 3 |
+
+  For comparison, fir and cedar give 3 logs and birch and maple give 2.
+- **Plants.** Creosote fills the low flats at about 300 bushes per hectare, with sagebrush, bunchgrass and rocks around them (46 boulders per world against 116). Harvestable plants: prickly pear, banana yucca (fiber), cholla, agave, desert chia and wolfberry, plus mesquite and pinyon trees. Each has a Foraging guide page.
+- **Edibles.**
+
+  | Food | Source | Raw effect |
+  | --- | --- | --- |
+  | Prickly Pear Fruit | prickly pear, 2 per pick | +5 hunger, +4 thirst, +2 energy |
+  | Cholla Buds | cholla | +3 hunger, −2 health (spines) |
+  | Agave Heart | agave, once every 3 days | +4 hunger, −3 health (roast it) |
+  | Chia Seeds | desert chia | +3 hunger, +4 energy |
+  | Wolfberries | wolfberry, 2 per pick | +4 hunger, +2 thirst, +2 energy |
+  | Mesquite Pods | mesquite trees | +4 hunger, +3 energy |
+  | Piñon Nuts | pinyon trees | +5 hunger, +3 energy |
+
+  Desert recipes replace the forest meals (the fish, meat and water recipes that don't need forest plants stay):
+
+  | Recipe | Ingredients | Effect |
+  | --- | --- | --- |
+  | Desert Skewer | 2 prickly pear, 1 cholla buds, 1 stick | +16 hunger |
+  | Roast Agave | 1 agave heart, 2 sticks | +30 hunger |
+  | Mesquite Cakes (×2) | 3 mesquite pods, 1 boiled water | +14 hunger each |
+  | Chia Fresca | boiled water, chia seeds, prickly pear | +34 thirst |
+  | Wolfberry Tea | boiled water, 2 wolfberries | +30 thirst, +16 warmth |
+  | Roasted Piñon Nuts | 3 piñon nuts | +16 hunger |
+  | Desert Stew | boiled water, raw meat, cholla buds, mesquite pods | +42 hunger, +20 warmth, +12 health |
+  | Piñon-Crusted Trout | raw fish, 2 piñon nuts | +34 hunger |
+  | Trout & Prickly Pear Skewer | raw fish, 2 prickly pear, 1 stick | +24 hunger |
+
+  On the desert, plant fiber is Yucca Fiber, birch bark is Shredded Bark (peeled from juniper and cottonwood), lake water is Spring Water and trout are Gila Trout.
+- **Wildlife.** Eight huntable species. On day 1 a world holds about 14 jackrabbits, 12 Gambel's quail, 10 lizards, 7 javelina, 6 roadrunners, 5 rattlesnakes and 5 Gila trout, plus one mountain lion.
+  - **Mountain lion:** stalks from cover like the wolf and warns you with a growl. One on day 1, two from day 4. Fire and a raised torch keep it off.
+  - **Black bear:** one from day 3, and only in the juniper and pine high country.
+  - **Rattlesnake:** doesn't flee. It rattles when you come close and strikes within 1.8 m for 9 damage (every 2.2 s).
+  - **Javelina:** poor eyesight, so they notice you late, then scatter. Each gives 3 meat and 2 hides.
+  - Jackrabbits stand in for hares on the onboarding track.
+
+  On the Pacific Northwest map wolves go up to four (one more every two days) and bears appear from day 2, two from day 5.
+- **Onboarding** is the same 9 steps, reworded for the spring, desert forage, the Desert Skewer and jackrabbits.
+
+### Map select and saves
+
+- The title screen has ◀ and ▶ arrows either side of the title. They (or ← / →) cycle the maps; the name, tagline, record and **Continue** button update, and the background cross-fades to that map.
+- Each map has its own save and dawn snapshot. The Pacific Northwest map keeps the original storage keys (`cozysurvival.v1.save` and `cozysurvival.v1.daySnapshot`), so every existing save loads unchanged as a Pacific Northwest run. The desert uses the same keys with a `.desert` suffix.
+- Best days and deaths are kept per map. **Start from scratch** on one map wipes only that map's save and record.
+- The last map you picked is remembered.
+
 ## Multiplayer
 
 Up to 4 players share one world over Supabase Realtime. The host's browser runs the world, including the clock, the animals and the sleep vote, so there's no game server to deploy.
@@ -151,7 +237,7 @@ Up to 4 players share one world over Supabase Realtime. The host's browser runs 
 - **Set up.** Copy `.env.example` to `.env.local`, fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, and restart `npm run dev`. [docs/multiplayer-setup.md](docs/multiplayer-setup.md) walks through the free Supabase project and its one SQL snippet. Without these variables the game is single-player only: the Multiplayer block on the title screen is greyed out with a "not set up" note, and the Supabase library is never downloaded.
 - **Try it without Supabase.** Open `http://localhost:5287/?net=local` in two tabs of the same browser. The tabs talk over a BroadcastChannel ("Local test mode").
 - **Play.**
-  - **Create multiplayer server** starts a brand-new world. Other players see it in the server list and click **Join**. Everyone picks a name and a male or female character.
+  - **Create multiplayer server** starts a brand-new world on the map picked on the title screen. Other players see it in the server list, with its map, and click **Join**; guests get the host's map whatever their own title screen shows. Everyone picks a name and a male or female character.
   - Your pack, needs and skills are your own. Trees, forage, structures, fires, dropped items and animals are shared.
   - **Enter** opens chat, and messages show as bubbles over heads. **G** waves. **Esc** only opens settings, because the world keeps running.
   - The host's clock sets the time of day. Sleeping in a shelter or beside a campfire lies you down until everyone is in bed, then the night skips. **Space** gets you up.
@@ -168,7 +254,7 @@ Available on the dev server, or on any build with `?dev=1` in the URL.
   - jump to a time of day
   - give item kits
   - unlock all tools and gear
-  - spawn a wolf, bear, deer or rabbit nearby
+  - spawn an animal nearby: a wolf, bear, deer or rabbit on the Pacific Northwest map, or any desert predator or prey on the desert
   - refill needs, take damage, or die
   - show an FPS counter
 - **T** cycles the time scale through 1×, 10×, 60× and 240×. At 60× a full day takes 24 seconds. A `DEV ×N` badge on the clock shows when time is sped up.
@@ -211,7 +297,12 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 380 tests covering:
+`npm test` runs 447 tests covering:
+
+- the Arizona Desert (`tests/desert.test.ts`): the biome config, water across 40 seeds (always a drinkable spring near the spawn, no big lakes, far less water than the Pacific Northwest map), the alkali pool (first taste, refusal, no canteen fill), evening and night warmth against the Pacific Northwest map, a fire holding warmth, small-tree against big-tree wood, big trees only in the high country, scrub and cactus instead of forest plants, day-1 spawns, the cougar and upland-only bear schedule, the cougar's stalk and the torch, the rattlesnake strike, and the small prey bolting
+- per-map saves (`tests/maps.test.ts`): an old save loading unchanged as a Pacific Northwest run, a desert run leaving the Pacific Northwest save untouched, **Continue** on both maps, per-map records, Start from scratch and Retry the day on the desert, and a desert multiplayer server carrying its map through the lobby to a joining guest
+- the title map picker (`tests/title.test.ts`): arrow order and clicks, the map copy and the dots
+- the Pacific Northwest map unchanged (`tests/pnw-unchanged.test.ts`): a golden fingerprint of the terrain, world gen, starting state and early play on several seeds
 
 - inventory stacking and carry limits
 - crafting, every recipe available from the start, and ingredients consumed only on success
@@ -256,6 +347,8 @@ Rendering is built for 60 fps:
 
 `npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, the campfire menu and Esc, save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
+It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. The multiplayer part runs on a desert server, and the guest's server list shows "Arizona Desert". Along the way it saves four screenshots: each map's title screen and each map in first person.
+
 ## Menus and icons (round 6)
 
 - **Grid menus.** Crafting, the campfire, Upgrades and the Pack (tool belt, gear, Foraging guide) are square icon tiles like the pack slots. Hovering a tile fades in its name; selecting one shows its materials and the Craft, Cook or Upgrade button. Greyed tiles need more materials.
@@ -268,7 +361,15 @@ Rendering is built for 60 fps:
 
 - Desktop only: it needs a mouse and keyboard with pointer lock. The layout adapts to small screens, but there are no touch controls yet.
 - Visual and feel tuning (movement, lighting, animal behaviour) has only been checked through automated tests and a headless boot, not a hands-on playtest.
-- There is one world size (320 m square, with a lake and a pond), and no weather yet.
+- There is one world size (320 m square), and no weather yet.
+- The desert is tuned from real-world densities and the numbers only, not a playtest. Its animal models, plants and terrain colours haven't had a visual review.
+- The desert has no insects, neither huntable nor ambient.
+- Desert ambience reuses the lake loop and forest birds; there are no cicadas, canyon wrens or coyotes yet.
+- Creosote grows at about 300 bushes per hectare, a little under measured Sonoran stands (about 440 per hectare), to keep the flats walkable.
+- One or two mountain lions and a bear on a 9-hectare map is far above real territory density. That's a deliberate game choice, as it is for the wolves.
+- Saguaros are scenery and can't be chopped or harvested.
+- The title cross-fade fades out a snapshot of the old map's canvas, so the menu itself doesn't fade.
+- Multiplayer protocol version 4 carries the map, so older clients can't join newer servers (and the other way round).
 - Hunger, thirst, fire fuel and resource regrowth are still tuned per game hour, so with 24-minute days they tick 2.5× faster in real time than before. Cold and warmth are unchanged per game hour.
 - Trunk and boulder surfaces approximate the rendered meshes (a flat-topped slab and a half-ellipsoid dome).
 - Predators don't follow you into the water.
