@@ -2676,6 +2676,13 @@ export class Simulation {
     this.wasNight = this.night;
   }
 
+  /** Jumps to just before the next dawn, so the next step starts the new day as usual (and lifts the day-1 limit). */
+  devNextMorning(): void {
+    const s = this.state;
+    s.totalHours = (Math.floor(s.totalHours / 24) + 1) * 24 - 0.001;
+    this.wasNight = this.night;
+  }
+
   devSpawn(species: SpeciesId, distance = 22): AnimalState | null {
     const p = this.state.player;
     for (let i = 0; i < 24; i++) {

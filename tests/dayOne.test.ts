@@ -88,6 +88,17 @@ describe('the day-1 crafting limit (round 10)', () => {
     expect(sim.craft('knife').ok).toBe(true);
   });
 
+  it('the dev panel\'s Next morning starts day 2 like a real dawn and lifts the limit', () => {
+    const sim = newGame();
+    sim.devSetHour(15);
+    sim.devNextMorning();
+    expect(sim.day).toBe(1);
+    const ev = run(sim, 0.1);
+    expect(ev).toContainEqual({ type: 'dayStart', day: 2 });
+    expect(sim.hour).toBeCloseTo(6, 1);
+    expect(locked(sim)).toEqual([]);
+  });
+
   it('a track already past the night step is never locked, even on day 1', () => {
     const sim = newGame();
     sim.state.objective = NIGHT_STEP + 1;

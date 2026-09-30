@@ -45,7 +45,8 @@ export class DevPanel {
       host.toast(`Dev: gave ${label}`);
     };
     section('Set time',
-      ...[6, 9, 12, 17, 18.5, 20, 23].map((h) => button(`${Math.floor(h)}:${h % 1 ? '30' : '00'}`, 'dev-btn', () => host.sim().devSetHour(h))));
+      ...[6, 9, 12, 17, 18.5, 20, 23].map((h) => button(`${Math.floor(h)}:${h % 1 ? '30' : '00'}`, 'dev-btn', () => host.sim().devSetHour(h))),
+      button('Next morning', 'dev-btn', () => host.sim().devNextMorning()));
     section('Give',
       button('Basics', 'dev-btn', give({ stick: 10, stone: 8, fiber: 10 }, 'basics')),
       button('Cooking', 'dev-btn', give({ mushroom: 4, onion: 3, berries: 6, rawMeat: 2, rawFish: 2 }, 'cooking ingredients')),
