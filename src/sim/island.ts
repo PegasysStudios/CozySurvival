@@ -483,6 +483,9 @@ export class IslandLayout {
       const d = Math.hypot(x - s.x, z - s.z);
       if (d < s.r * 1.5) h = Math.max(h, lerp(s.h, h, smoothstep(s.r * 0.7, s.r * 1.5, d)));
     }
+    // The islet rises to a low grassy middle above its ring of sand, so its palms have somewhere to grow.
+    const di = Math.hypot(x - this.islet.x, z - this.islet.z);
+    if (di < this.islet.r) h += 1.9 * smoothstep(this.islet.r * 0.72, this.islet.r * 0.2, di);
     h = this.coveWalls(x, z, h);
     h = this.amphitheatre(x, z, h);
     for (const st of this.streams) h = this.carveStream(st, x, z, h);
@@ -759,6 +762,20 @@ export class IslandLayout {
     const c = g[((j + 1) * n + i) * 3 + ch];
     const d = g[((j + 1) * n + i + 1) * 3 + ch];
     return lerp(lerp(a, b, fx), lerp(c, d, fx), fz);
+  }
+
+  /**
+   * 0..1 how much bare beach sand covers the ground at (x, z), height `h`: the strand below about 2 m, within about
+   * 26 m of the sea. The same rule colours the sand and keeps every plant off it.
+   */
+  sandAt(x: number, z: number, h: number, L = this.land(x, z)): number {
+    if (h >= 2.2 || L >= 30) return 0;
+    return (1 - smoothstep(1.3, 2.2, h)) * (1 - smoothstep(24, 30, L));
+  }
+
+  /** Beach sand, where nothing grows (driftwood, stones, fallen coconuts and crabs are fine). */
+  onSand(x: number, z: number, h: number): boolean {
+    return this.sandAt(x, z, h) > 0.02;
   }
 
   /** 0..1 dense jungle: the windward side, the stream valleys and the waterfall, never the beach or the grassy summit. */
