@@ -59,23 +59,62 @@ function uncover(sim: Simulation): AnimalState {
 }
 
 describe('scorpions under desert stones (round 9)', () => {
-  it('about one stone gather in six turns up a scorpion (15-20%)', () => {
+  it('about one stone gather in eleven turns up a scorpion (9%)', () => {
+    expect(BALANCE.scorpion.chance).toBe(0.09);
     const sim = quietDesert();
     const piles = stonesNear(sim, 120);
     expect(piles.length).toBeGreaterThan(100);
-    const n = 2400;
+    const n = 4000;
     let found = 0;
     let told = 0;
     for (let k = 0; k < n; k++) {
-      const events = gatherStone(sim, piles[k % piles.length]);
+      const i = piles[k % piles.length];
+      // Measures the per-gather roll, so every gather is from a pile that hasn't given up its scorpion yet.
+      delete sim.state.resources[i].scorpion;
+      const events = gatherStone(sim, i);
       found += scorpions(sim).length;
       told += events.filter((e) => e.type === 'scorpion').length;
       sim.state.animals.length = 0;
     }
-    expect(found / n).toBeGreaterThanOrEqual(0.15);
-    expect(found / n).toBeLessThanOrEqual(0.2);
+    expect(found / n).toBeGreaterThanOrEqual(0.075);
+    expect(found / n).toBeLessThanOrEqual(0.105);
     expect(told).toBe(found);
     expect(sim.state.stats.events.scorpions).toBe(found);
+  });
+
+  it('each stone pile hides at most one scorpion, ever, and remembers it across a save', () => {
+    const sim = quietDesert();
+    const piles = stonesNear(sim, 120);
+    const perPile = new Map<number, number>();
+    for (let round = 0; round < 60; round++) {
+      for (const i of piles.slice(0, 40)) {
+        const events = gatherStone(sim, i);
+        const n = events.filter((e) => e.type === 'scorpion').length;
+        if (n) perPile.set(i, (perPile.get(i) ?? 0) + n);
+        sim.state.animals.length = 0;
+      }
+    }
+    expect(perPile.size).toBeGreaterThan(20);
+    for (const [i, n] of perPile) {
+      expect(n, `pile ${i}`).toBe(1);
+      expect(sim.state.resources[i].scorpion).toBe(true);
+    }
+    for (const i of piles.slice(0, 40)) if (!perPile.has(i)) expect(sim.state.resources[i].scorpion).toBeFalsy();
+
+    const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
+    loaded.state.animals.length = 0;
+    for (const [i] of perPile) expect(loaded.state.resources[i].scorpion).toBe(true);
+    for (let round = 0; round < 30; round++) {
+      for (const [i] of perPile) {
+        expect(gatherStone(loaded, i).some((e) => e.type === 'scorpion')).toBe(false);
+      }
+    }
+    expect(scorpions(loaded)).toHaveLength(0);
+    // Regrown to a full pile, it still keeps the mark.
+    const [first] = perPile.keys();
+    loaded.state.resources[first].charges = RESOURCES.stonePile.charges;
+    const again = new Simulation(deserializeState(serializeState(loaded.state))!);
+    expect(again.state.resources[first]).toMatchObject({ charges: RESOURCES.stonePile.charges, scorpion: true });
   });
 
   it('comes out on your side of the stone, rears up, then chases and stings you', () => {

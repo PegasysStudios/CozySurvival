@@ -46,6 +46,8 @@ function sameCarcass(a: CarcassState, b: CarcassState): boolean {
   return a.expiresAt === b.expiresAt && a.remaining.length === b.remaining.length && a.remaining.every((r, i) => r.count === b.remaining[i].count);
 }
 
+const sameResource = (a: ResourceDyn, b: ResourceDyn) => a.charges === b.charges && a.respawnAt === b.respawnAt && !!a.scorpion === !!b.scorpion;
+
 /**
  * Remembers the world as last shared, and reports what changed since. The host is `tolerant`: campfire fuel
  * burning down and slow weathering are only reported once they add up, so ticks stay small.
@@ -101,7 +103,7 @@ export class WorldTracker {
     for (let i = 0; i < s.resources.length; i++) {
       const cur = s.resources[i];
       const base = this.resources[i];
-      if (base && base.charges === cur.charges && base.respawnAt === cur.respawnAt) continue;
+      if (base && sameResource(base, cur)) continue;
       push(withPrev && base ? { k: 'r', i, v: { ...cur }, p: base } : { k: 'r', i, v: { ...cur } });
       this.resources[i] = { ...cur };
     }
@@ -259,7 +261,7 @@ export function mergeRemote(sim: Simulation, d: Delta, from: { x: number; z: num
       const max = RESOURCES[sim.gen.resources[d.i].kind].charges;
       const charges = Math.min(max, Math.max(0, h.charges + d.v.charges - d.p.charges));
       const respawnAt = d.v.respawnAt !== d.p.respawnAt ? d.v.respawnAt : h.respawnAt;
-      return sim.setResource(d.i, { charges, respawnAt });
+      return sim.setResource(d.i, { charges, respawnAt, ...(d.v.scorpion || h.scorpion ? { scorpion: true } : {}) });
     }
     case 's': {
       const h = s.structures.find((x) => x.id === d.v.id);
@@ -382,7 +384,7 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
   });
   const rs: [number, ResourceDyn][] = [];
   s.resources.forEach((dyn, i) => {
-    if (dyn.charges !== RESOURCES[gen.resources[i].kind].charges || dyn.respawnAt !== 0) rs.push([i, { ...dyn }]);
+    if (dyn.charges !== RESOURCES[gen.resources[i].kind].charges || dyn.respawnAt !== 0 || dyn.scorpion) rs.push([i, { ...dyn }]);
   });
   return {
     seed: s.seed,

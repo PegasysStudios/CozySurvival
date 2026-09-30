@@ -35,7 +35,9 @@ export function serializeState(s: GameState): string {
   const resources: number[][] = [];
   s.resources.forEach((r, i) => {
     const def = RESOURCES[gen.resources[i].kind];
-    if (r.charges !== def.charges) resources.push([gen.resources[i].spot, r.charges, r.respawnAt]);
+    // A fourth entry of 1 marks a stone pile that has already turned up its scorpion.
+    if (r.scorpion) resources.push([gen.resources[i].spot, r.charges, r.respawnAt, 1]);
+    else if (r.charges !== def.charges) resources.push([gen.resources[i].spot, r.charges, r.respawnAt]);
   });
   const out: Record<string, unknown> = { ...s, format: SAVE_FORMAT };
   out.trees = trees;
@@ -81,7 +83,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) return null;
   const version = raw.version;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== STATE_VERSION) return null;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== STATE_VERSION) return null;
   if (typeof raw.seed !== 'number' || typeof raw.totalHours !== 'number') return null;
   for (const k of REQUIRED_OBJECTS) if (!isObj(raw[k])) return null;
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
@@ -112,12 +114,12 @@ export function deserializeState(json: string | null): GameState | null {
   const bySpot = new Map(gen.resources.map((r, i) => [r.spot, i]));
   if (!regrown) for (const e of raw.resources as unknown[]) {
     if (!Array.isArray(e) || e.length < 3) return null;
-    const [spot, charges, respawnAt] = e as number[];
+    const [spot, charges, respawnAt, scorpion] = e as number[];
     if (!Number.isInteger(spot) || spot < 0 || spot >= gen.resourceSpots) return null;
     const i = bySpot.get(spot);
     // Saves from before forage was thinned can mention spots where nothing grows any more.
     if (i === undefined) continue;
-    resources[i] = { charges, respawnAt };
+    resources[i] = scorpion === 1 && gen.resources[i].kind === 'stonePile' ? { charges, respawnAt, scorpion: true } : { charges, respawnAt };
   }
   const skills = createSkills();
   if (isObj(raw.skills)) for (const id of SKILL_IDS) skills[id] = Math.max(0, num(raw.skills[id], 0));

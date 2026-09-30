@@ -5,7 +5,7 @@ import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 import type { WearingTool } from './durability';
 
-export const STATE_VERSION = 5;
+export const STATE_VERSION = 6;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
@@ -86,6 +86,8 @@ export interface TreeDyn {
 export interface ResourceDyn {
   charges: number;
   respawnAt: number;
+  /** Desert stone piles: this pile has already turned up its one scorpion, so it never hides another. */
+  scorpion?: boolean;
 }
 
 export interface StructureState {

@@ -124,8 +124,8 @@ export type NetRequest =
   | { k: 'hit'; id: number; dmg: number; t?: number }
   | { k: 'sleep'; structure: number }
   | { k: 'wake' }
-  /** Gathering a stone turned up a scorpion at (x, z); the host spawns it. */
-  | { k: 'scorpion'; x: number; z: number };
+  /** Gathering stone pile `i` turned up its scorpion at (x, z); the host spawns it. */
+  | { k: 'scorpion'; i: number; x: number; z: number };
 
 export const COOK_RADIUS = 4;
 const ARROW_GRAVITY = 9.8;
@@ -1256,19 +1256,22 @@ export class Simulation {
     spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
     this.emit({ type: 'swing', tool: 'hands', hit: true });
     this.gainXp('gathering', BALANCE.skills.xp.gather);
-    if (g.kind === 'stonePile' && this.biome === 'desert' && this.roll(BALANCE.scorpion.chance)) this.uncoverScorpion(g.x, g.z);
+    if (g.kind === 'stonePile' && this.biome === 'desert' && !dyn.scorpion && this.roll(BALANCE.scorpion.chance)) {
+      dyn.scorpion = true;
+      this.uncoverScorpion(index, g.x, g.z);
+    }
     this.worldVersion++;
   }
 
-  /** A scorpion was under the stone just gathered at (x, z). It comes out on the player's side of the pile. */
-  private uncoverScorpion(x: number, z: number): void {
+  /** A scorpion was under stone pile `index`, just gathered at (x, z). It comes out on the player's side of the pile. */
+  private uncoverScorpion(index: number, x: number, z: number): void {
     const s = this.state;
     const p = s.player;
     const d = Math.hypot(p.x - x, p.z - z) || 1;
     const k = Math.min(0.5, d * 0.5) / d;
     const sx = x + (p.x - x) * k;
     const sz = z + (p.z - z) * k;
-    if (this.authority === 'guest') this.netOut.push({ k: 'scorpion', x: sx, z: sz });
+    if (this.authority === 'guest') this.netOut.push({ k: 'scorpion', i: index, x: sx, z: sz });
     else this.revealScorpion(sx, sz);
     s.stats.events.scorpions = (s.stats.events.scorpions ?? 0) + 1;
     this.emit({ type: 'scorpion', x: sx, z: sz });
@@ -2507,7 +2510,10 @@ export class Simulation {
   setResource(i: number, v: ResourceDyn): void {
     const dyn = this.state.resources[i];
     if (!dyn) return;
+    // A stone pile's scorpion, once out, stays out: no update can put another one back under it.
+    const scorpion = dyn.scorpion || v.scorpion;
     Object.assign(dyn, v);
+    if (scorpion) dyn.scorpion = true;
     this.worldVersion++;
   }
 

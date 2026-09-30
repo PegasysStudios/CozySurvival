@@ -686,7 +686,7 @@ describe('multiplayer: round 9', () => {
     const hp = host.state.player;
     const away = (x: number, z: number) => Math.hypot(x - hp.x, z - hp.z);
     const piles = b.gen.resources.map((r, i) => ({ r, i })).filter(({ r }) => r.kind === 'stonePile' && away(r.x, r.z) > 25 && away(r.x, r.z) < 70);
-    let found: { x: number; z: number } | null = null;
+    let found: { x: number; z: number; i: number } | null = null;
     for (const { r, i } of piles) {
       teleport(b, r.x + 1.6, r.z);
       teleport(c, r.x + 3, r.z + 3);
@@ -695,7 +695,7 @@ describe('multiplayer: round 9', () => {
         b.state.inventory.slots.fill(null);
         b.perform({ kind: 'resource', index: i, dist: 1.6 });
         const req = b.netOut.find((q) => q.k === 'scorpion');
-        if (req && req.k === 'scorpion') found = { x: req.x, z: req.z };
+        if (req && req.k === 'scorpion') found = { x: req.x, z: req.z, i: req.i };
       }
       if (found) break;
     }
@@ -706,6 +706,7 @@ describe('multiplayer: round 9', () => {
     expect(onHost).toHaveLength(1);
     const sc = onHost[0];
     expect(Math.hypot(sc.x - found!.x, sc.z - found!.z)).toBeLessThan(1.5);
+    w.pump(0.5);
     expect(b.state.animals.some((a) => a.id === sc.id)).toBe(true);
     expect(c.state.animals.some((a) => a.id === sc.id)).toBe(true);
 
@@ -724,9 +725,13 @@ describe('multiplayer: round 9', () => {
     expect(b.state.stats.kills.scorpion).toBe(1);
     expect(host.state.carcasses).toHaveLength(0);
 
-    b.netOut.push({ k: 'scorpion', x: hp.x + 90, z: hp.z });
+    expect(host.state.resources[found!.i].scorpion).toBe(true);
+    expect(c.state.resources[found!.i].scorpion).toBe(true);
+    const fresh = piles.find(({ i }) => i !== found!.i)!;
+    b.netOut.push({ k: 'scorpion', i: fresh.i, x: hp.x + 90, z: hp.z });
     w.pump(0.3);
     expect(host.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
+    expect(host.state.resources[fresh.i].scorpion).toBeFalsy();
   });
 
   it('a javelina charges a guest who walks into its ground, and turns on them when they fight back', async () => {
