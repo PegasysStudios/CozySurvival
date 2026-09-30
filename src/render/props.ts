@@ -349,7 +349,7 @@ export function toolGeometry(tool: ToolId): THREE.BufferGeometry {
     case 'axe':
       sleeveAndHand(b);
       b.add(new CylinderGeometry(0.018, 0.022, 0.62, 6), { matrix: tf(0, 0.2, -0.03, 0.05, 0, 0), color: '#8a6440' });
-      b.add(new DodecahedronGeometry(0.075, 0), { matrix: tf(0.06, 0.47, -0.04, 0, 0, 0.2, 1.5, 0.9, 0.45), color: '#8c9196', vary: 0.1 });
+      b.add(new DodecahedronGeometry(0.075, 0), { matrix: tf(0, 0.47, -0.1, 0.2, 0, 0, 0.45, 0.9, 1.5), color: '#8c9196', vary: 0.1 });
       b.add(new CylinderGeometry(0.026, 0.026, 0.08, 6), { matrix: tf(0, 0.43, -0.03), color: '#c9b27a' });
       break;
     case 'spear':

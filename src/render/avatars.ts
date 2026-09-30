@@ -92,8 +92,9 @@ function toolGeometry(tool: ToolId): THREE.BufferGeometry | null {
   const b = new GeoBuilder(71);
   switch (tool) {
     case 'axe':
-      b.add(new CylinderGeometry(0.02, 0.022, 0.62, 5), { matrix: tf(0, 0, 0.12, Math.PI / 2, 0, 0), color: '#8a6440' });
-      b.add(new BoxGeometry(0.03, 0.14, 0.12), { matrix: tf(0, 0.06, 0.4), color: '#8d8a84' });
+      // Haft through the fist, square to the forearm, so the blade leads the chop and faces forward at rest.
+      b.add(new CylinderGeometry(0.02, 0.022, 0.62, 5), { matrix: tf(0, -0.19, 0), color: '#8a6440' });
+      b.add(new BoxGeometry(0.03, 0.1, 0.14), { matrix: tf(0, -0.46, -0.06), color: '#8d8a84' });
       break;
     case 'spear':
       b.add(new CylinderGeometry(0.018, 0.02, 1.7, 5), { matrix: tf(0, 0, 0.35, Math.PI / 2, 0, 0), color: '#9a7449' });
