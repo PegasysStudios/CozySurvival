@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { recipesFor } from '../src/data/recipes';
-import { SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../src/data/upgrades';
+import { PREFABS } from '../src/data/prefabs';
+import { BIN_UPGRADES, SHELTER_TIERS, SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../src/data/upgrades';
 import { hasAll } from '../src/sim/inventory';
 import type { Simulation } from '../src/sim/simulation';
 import { campfireTiles, craftTiles, UPGRADE_ONLY_SHELTERS, upgradeTiles } from '../src/ui/catalog';
@@ -10,7 +11,7 @@ import { CRAFT_TABS, Panels } from '../src/ui/panels';
 import { BALANCE } from '../src/data/balance';
 import { countItem } from '../src/sim/inventory';
 import { repairCost } from '../src/sim/repair';
-import { buildFresh, give, giveRecipe, placeStructure, quietSim } from './helpers';
+import { buildFresh, give, giveRecipe, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 
 const RECIPES = recipesFor('pnw');
 
@@ -54,10 +55,10 @@ describe('all recipes visible from the start (round 6)', () => {
     expect(meat).toMatchObject({ greyed: false, ready: false, badge: 'fire' });
   });
 
-  it('shows every tool upgrade and shelter tier from the start, with how each is reached', () => {
+  it('shows every tool upgrade and each upgrade line from the start, with how each is reached', () => {
     const sim = quietSim();
     const ups = upgradeTiles(sim);
-    expect(ups.map((t) => t.id)).toEqual([...UPGRADABLE_TOOLS, ...UPGRADE_ONLY_SHELTERS]);
+    expect(ups.map((t) => t.key)).toEqual([...UPGRADABLE_TOOLS.map((t) => `t:${t}`), 'l:shelter', 'l:storage']);
     expect(ups.every((t) => t.greyed)).toBe(true);
     const { panels, root } = openPanels(sim);
     panels.open('crafting', { tab: 'upgrades' });
@@ -66,10 +67,10 @@ describe('all recipes visible from the start (round 6)', () => {
     const rod = root.querySelector('.recipe-detail')!.textContent!;
     expect(rod).toContain('Craft the Fishing Pole first');
     for (const u of ['Bark Float', 'Weighted Line', "Angler's Pole"]) expect(rod).toContain(u);
-    tiles(root).find((t) => t.dataset.key === 's:barkHut')!.click();
-    const hut = root.querySelector('.recipe-detail')!;
-    expect(hut.textContent).toContain('Only built by upgrading an A-Frame Shelter in place');
-    expect(hut.querySelectorAll('.ingredient').length).toBe(SHELTER_UPGRADES.barkHut!.length);
+    tiles(root).find((t) => t.dataset.key === 'l:shelter')!.click();
+    const shelter = root.querySelector('.recipe-detail')!;
+    expect(shelter.textContent).toContain('Build a Lean-to Shelter from the Build tab first. It can then be upgraded three times');
+    expect([...shelter.querySelectorAll('.tier span')].map((s) => s.textContent)).toEqual(SHELTER_TIERS.map((p) => PREFABS[p].name));
   });
 
   it('the crafting grid renders one greyed tile per recipe and the selected tile shows materials and Craft', () => {
@@ -342,5 +343,110 @@ describe('the storage bin menu layout (round 9)', () => {
     expect(cols).not.toBeNull();
     expect(Number(cols![1])).toBeGreaterThanOrEqual(5 * 64 + 4 * 8 + 2 * 16 + 2);
     expect(rule('.store-grid,\n.pack-grid')).toContain('minmax(64px, 1fr)');
+  });
+});
+
+describe('Upgrades tab polish (round 9)', () => {
+  function upgradesTab(sim: Simulation) {
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting', { tab: 'upgrades' });
+    const tile = (key: string) => root.querySelector<HTMLElement>(`.panel .tile-grid .tile[data-key="${key}"]`)!;
+    const lit = (key: string) => tile(key).querySelectorAll('.level-pips i.on').length;
+    const detail = () => root.querySelector<HTMLElement>('.panel .recipe-detail')!;
+    return { panels, root, tile, lit, detail };
+  }
+
+  /** Room for the bigger tiers' materials all at once. */
+  function roomy(sim: Simulation): void {
+    sim.state.gear.push('basket', 'backpack');
+    sim.state.inventory.slots.push(...Array(20).fill(null));
+  }
+
+  it('centres the three tier diamonds on tool tiles and pins them to the bottom', async () => {
+    const css = (await import('node:fs')).readFileSync('src/styles.css', 'utf8');
+    const rule = /\n\.tile \.level-pips \{([^}]*)\}/.exec(css)![1];
+    for (const decl of ['position: absolute;', 'left: 0;', 'right: 0;', 'margin: 0;', 'justify-content: center;']) expect(rule).toContain(decl);
+    expect(rule).toMatch(/bottom: \d+px;/);
+    expect(rule).not.toContain('translateX');
+    const { tile } = upgradesTab(quietSim());
+    for (const t of UPGRADABLE_TOOLS) expect(tile(`t:${t}`).querySelectorAll('.level-pips i')).toHaveLength(3);
+  });
+
+  it('collapses the shelter tiers into one Shelter tile whose diamonds show the current tier', () => {
+    const sim = quietSim();
+    let ui = upgradesTab(sim);
+    expect(ui.root.querySelector('.panel .tile[data-key^="s:"]')).toBeNull();
+    expect(ui.tile('l:shelter').classList.contains('greyed')).toBe(true);
+    expect(ui.tile('l:shelter').querySelectorAll('.level-pips i')).toHaveLength(3);
+    expect(ui.lit('l:shelter')).toBe(0);
+    placeShelter(sim, 'barkHut');
+    ui = upgradesTab(sim);
+    expect(ui.lit('l:shelter')).toBe(2);
+    expect(ui.tile('l:shelter').dataset.tip).toBe('Shelter · Bark Hut');
+  });
+
+  it("selecting the Shelter tile shows the next tier's cost, what improves and an Upgrade button that rebuilds it in place", () => {
+    const sim = quietSim();
+    roomy(sim);
+    const lean = placeShelter(sim, 'leanTo');
+    const ui = upgradesTab(sim);
+    ui.tile('l:shelter').click();
+    const d = ui.detail();
+    expect(d.dataset.line).toBe('shelter');
+    expect(d.querySelector('h4')!.textContent).toContain('Upgrade to A-Frame Shelter');
+    expect(d.textContent).toContain('Now: +');
+    expect(d.textContent).toContain('After: +');
+    expect(d.querySelectorAll('.ingredient')).toHaveLength(SHELTER_UPGRADES.aFrame!.length);
+    expect(d.querySelector<HTMLButtonElement>('.btn.primary')!.disabled).toBe(true);
+    expect(d.querySelector('.craft-reason')).not.toBeNull();
+
+    give(sim, Object.fromEntries(SHELTER_UPGRADES.aFrame!.map((c) => [c.item, c.count])));
+    ui.tile('l:shelter').click();
+    expect(ui.tile('l:shelter').classList.contains('ready')).toBe(true);
+    ui.detail().querySelector<HTMLButtonElement>('.btn.primary')!.click();
+    const st = sim.state.structures.find((x) => x.id === lean.id)!;
+    expect(st.prefab).toBe('aFrame');
+    expect({ x: st.x, z: st.z }).toEqual({ x: lean.x, z: lean.z });
+    expect(ui.lit('l:shelter')).toBe(1);
+    expect(ui.detail().querySelector('h4')!.textContent).toContain('Upgrade to Bark Hut');
+  });
+
+  it('at the top tier the tile is marked MAX and the details say it is fully upgraded', () => {
+    const sim = quietSim();
+    placeShelter(sim, 'hideTent');
+    const ui = upgradesTab(sim);
+    expect(ui.lit('l:shelter')).toBe(3);
+    expect(ui.tile('l:shelter').querySelector('.tile-badge.max')).not.toBeNull();
+    ui.tile('l:shelter').click();
+    expect(ui.detail().textContent).toContain('Fully upgraded');
+    expect(ui.detail().querySelector('.btn.primary')).toBeNull();
+  });
+
+  it('works on the nearest shelter when there are several', () => {
+    const sim = quietSim();
+    const lean = placeShelter(sim, 'leanTo');
+    teleport(sim, lean.x + 40, lean.z);
+    const hut = placeShelter(sim, 'barkHut');
+    expect(Math.hypot(hut.x - lean.x, hut.z - lean.z)).toBeGreaterThan(20);
+    expect(upgradesTab(sim).lit('l:shelter')).toBe(2);
+    teleport(sim, lean.x + 1, lean.z + 1);
+    expect(upgradesTab(sim).lit('l:shelter')).toBe(0);
+  });
+
+  it('storage bins, crates and chests use the same single-tile pattern, with two diamonds', () => {
+    const sim = quietSim();
+    roomy(sim);
+    const bin = placeStructure(sim, 'storageBin');
+    const ui = upgradesTab(sim);
+    expect(ui.tile('l:storage').querySelectorAll('.level-pips i')).toHaveLength(2);
+    expect(ui.lit('l:storage')).toBe(0);
+    give(sim, Object.fromEntries(BIN_UPGRADES.storageCrate!.map((c) => [c.item, c.count])));
+    ui.tile('l:storage').click();
+    expect(ui.detail().textContent).toContain('After: 15 slots');
+    ui.detail().querySelector<HTMLButtonElement>('.btn.primary')!.click();
+    const st = sim.state.structures.find((x) => x.id === bin.id)!;
+    expect(st.prefab).toBe('storageCrate');
+    expect(st.store).toHaveLength(15);
+    expect(ui.lit('l:storage')).toBe(1);
   });
 });

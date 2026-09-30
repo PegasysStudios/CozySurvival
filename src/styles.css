@@ -2292,6 +2292,11 @@ b {
   gap: 6px;
 }
 
+.line-detail .tier-ladder {
+  padding: 0;
+  margin: 10px 0 4px;
+}
+
 .breakdown {
   font-size: 12px;
   font-weight: 650;
@@ -3400,11 +3405,14 @@ b {
   letter-spacing: 0.04em;
 }
 
+/* Spans the tile and centres the diamonds; the inline pips' left margin would push them off centre. */
 .tile .level-pips {
   position: absolute;
-  bottom: 5px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  bottom: 6px;
+  margin: 0;
+  justify-content: center;
 }
 
 .tile-pin {

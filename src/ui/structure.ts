@@ -95,8 +95,8 @@ export function shelterMenu(sim: Simulation, id: number): ShelterMenu | null {
   };
 }
 
-/** The next tier of an upgradable structure, as its menu shows it. */
-function nextTierInfo(sim: Simulation, id: number, prefab: PrefabId): ShelterMenu['next'] {
+/** The next tier of an upgradable structure, as its menu (and the Upgrades tab) shows it. */
+export function nextTierInfo(sim: Simulation, id: number, prefab: PrefabId): ShelterMenu['next'] {
   const nextId = nextTier(prefab);
   if (!nextId) return null;
   const cost = tierCost(nextId)!;

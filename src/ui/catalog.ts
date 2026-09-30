@@ -1,17 +1,18 @@
 import { GEAR, TOOLS, type GearId, type ToolId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPES, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
-import { LEVEL_NUMERALS, SHELTER_TIERS, SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../data/upgrades';
+import { BIN_TIERS, LEVEL_NUMERALS, nextTier, SHELTER_TIERS, SHELTER_UPGRADES, tierCost, UPGRADABLE_TOOLS } from '../data/upgrades';
 import { hasItems } from '../sim/canteen';
 import type { Simulation } from '../sim/simulation';
+import type { StructureState } from '../sim/state';
 import { nextToolUpgrade, toolLevel } from '../sim/upgrades';
 import { gearIcon, itemIcon, prefabIcon, toolIcon } from './icons';
 
-export type TileKind = 'recipe' | 'tool' | 'shelter' | 'repair';
+export type TileKind = 'recipe' | 'tool' | 'shelter' | 'repair' | 'line';
 
 /** One square tile in a grid menu, kept free of DOM so what each menu shows can be tested. */
 export interface Tile {
-  /** Unique within a menu: `r:<recipe>`, `t:<tool>`, `s:<prefab>` or `w:<tool>` (at the workbench). */
+  /** Unique within a menu: `r:<recipe>`, `t:<tool>`, `s:<prefab>`, `w:<tool>` (at the workbench) or `l:<line>` (an upgrade line). */
   key: string;
   kind: TileKind;
   id: string;
@@ -23,8 +24,10 @@ export interface Tile {
   /** It can be crafted, cooked or upgraded right now. */
   ready: boolean;
   badge: 'owned' | 'fire' | 'upgrade' | 'max' | 'full' | null;
-  /** Upgrade level, for tools that have one. */
+  /** Upgrade level, for tools and upgrade lines, drawn as tier diamonds. */
   level: number | null;
+  /** How many diamonds (upgrades above the base tier); tools have `MAX_TOOL_LEVEL`. */
+  levels?: number;
   /** Condition in percent, drawn as a durability bar (workbench tiles). */
   condition?: number;
 }
@@ -113,9 +116,44 @@ export function craftTiles(sim: Simulation, tab: 'all' | RecipeCategory): Tile[]
   return tiles;
 }
 
-/** The Upgrades tab: every tool and weapon (made or not), then every shelter tier reached by upgrading. */
+export type UpgradeLineId = 'shelter' | 'storage';
+
+/** Structures upgraded in place, tier by tier: each line is a single tile on the Upgrades tab. */
+export const UPGRADE_LINES: Record<UpgradeLineId, { name: string; tiers: PrefabId[] }> = {
+  shelter: { name: 'Shelter', tiers: SHELTER_TIERS },
+  storage: { name: 'Storage', tiers: BIN_TIERS },
+};
+
+export const UPGRADE_LINE_IDS = Object.keys(UPGRADE_LINES) as UpgradeLineId[];
+
+/** The built structure an upgrade line's tile works on: the nearest one of any tier, or null before one is built. */
+export function lineTarget(sim: Simulation, line: UpgradeLineId): StructureState | null {
+  const tiers = UPGRADE_LINES[line].tiers;
+  return sim.nearestStructure((p) => tiers.includes(p), Infinity);
+}
+
+/** An upgrade line's tile: the target's tier as diamonds, greyed like a tool (nothing built, or short of the next tier's cost). */
+export function lineTile(sim: Simulation, line: UpgradeLineId): Tile {
+  const { name, tiers } = UPGRADE_LINES[line];
+  const st = lineTarget(sim, line);
+  const next = st ? nextTier(st.prefab) : null;
+  return {
+    key: `l:${line}`,
+    kind: 'line',
+    id: line,
+    name: st ? `${name} · ${PREFABS[st.prefab].name}` : name,
+    icon: prefabIcon(st?.prefab ?? tiers[0]),
+    greyed: !st || (!!next && !hasItems(sim.state, tierCost(next)!)),
+    ready: !!st && sim.canUpgradeStructure(st.id).ok,
+    badge: st && !next ? 'max' : null,
+    level: st ? tiers.indexOf(st.prefab) : 0,
+    levels: tiers.length - 1,
+  };
+}
+
+/** The Upgrades tab: every tool and weapon (made or not), then one tile per structure line upgraded in place. */
 export function upgradeTiles(sim: Simulation): Tile[] {
-  return [...UPGRADABLE_TOOLS.map((t) => toolTile(sim, t)), ...UPGRADE_ONLY_SHELTERS.map((p) => shelterTile(sim, p))];
+  return [...UPGRADABLE_TOOLS.map((t) => toolTile(sim, t)), ...UPGRADE_LINE_IDS.map((l) => lineTile(sim, l))];
 }
 
 export function campfireTiles(sim: Simulation, recipes: Recipe[]): Tile[] {

@@ -15,12 +15,12 @@ import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skillP
 import type { Simulation } from '../sim/simulation';
 import { nextToolUpgrade, toolBreakdown, toolEffectLines, toolLevel, UPGRADE_FAILURE_TEXT } from '../sim/upgrades';
 import { campfireMenu } from './campfire';
-import { campfireTiles, craftTiles, recipeFor, recipeIcon, recipeTile, toolTile, upgradeTiles, type Tile } from './catalog';
+import { campfireTiles, craftTiles, lineTarget, recipeFor, recipeIcon, recipeTile, toolTile, UPGRADE_LINES, upgradeTiles, type Tile, type UpgradeLineId } from './catalog';
 import { attachTooltip, button, el, escapeHtml } from './dom';
 import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
 import { CRAFT_TAB_ICON_DIR, gearIcon, iconImg, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
-import { ingredients, packRoomNote, repairTile, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type RepairRow, type ShelterMenu } from './structure';
+import { ingredients, nextTierInfo, packRoomNote, repairTile, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type RepairRow, type ShelterMenu } from './structure';
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
 export type CraftTab = RecipeCategory | 'upgrades';
@@ -51,8 +51,8 @@ function costText(inputs: Cost): string {
   return inputs.map((i) => `${i.count} ${itemName(i.item, i.count).toLowerCase()}`).join(', ');
 }
 
-function levelPips(level: number, withTitle = true): string {
-  return `<span class="level-pips"${withTitle ? ` title="Upgrade level ${level} of ${MAX_TOOL_LEVEL}"` : ''}>${Array.from({ length: MAX_TOOL_LEVEL }, (_, i) => `<i class="${i < level ? 'on' : ''}"></i>`).join('')}</span>`;
+function levelPips(level: number, withTitle = true, levels = MAX_TOOL_LEVEL): string {
+  return `<span class="level-pips"${withTitle ? ` title="Upgrade level ${level} of ${levels}"` : ''}>${Array.from({ length: levels }, (_, i) => `<i class="${i < level ? 'on' : ''}"></i>`).join('')}</span>`;
 }
 
 const TILE_BADGES: Record<NonNullable<Tile['badge']>, string> = {
@@ -73,7 +73,7 @@ export function tileButton(t: Tile, selected: boolean): HTMLButtonElement {
   b.dataset.key = t.key;
   b.setAttribute('aria-label', t.name);
   const dur = t.condition === undefined ? '' : `<span class="dur ${lowCondition(t.condition) ? 'low' : ''}"><i style="transform:scaleX(${(t.condition / 100).toFixed(3)})"></i></span>`;
-  b.innerHTML = `<span class="tile-icon">${t.icon}</span>${t.badge ? TILE_BADGES[t.badge] : ''}${t.level !== null ? levelPips(t.level, false) : ''}${dur}<span class="tile-label">${escapeHtml(t.name)}</span>`;
+  b.innerHTML = `<span class="tile-icon">${t.icon}</span>${t.badge ? TILE_BADGES[t.badge] : ''}${t.level !== null ? levelPips(t.level, false, t.levels) : ''}${dur}<span class="tile-label">${escapeHtml(t.name)}</span>`;
   return b;
 }
 
@@ -402,6 +402,52 @@ export class Panels {
     d.innerHTML = `<div class="detail-icon big">${prefabIcon(p)}</div><h3>${escapeHtml(PREFABS[p].name)}</h3><p>${escapeHtml(SHELTER_UPGRADE_TEXT[p] ?? '')}</p><div class="effects">${escapeHtml(`Shelter tier ${tier} of ${SHELTER_TIERS.length} · ${restText(p)}`)}</div><div class="how-to">${MISC_ICONS.upgrade}<span>${escapeHtml(how)}</span></div>${ingredientsHtml(ingredients(sim, inputs))}`;
     const room = packRoomNote(sim.state, inputs);
     if (room) d.append(el('div', 'effects muted', escapeHtml(room)));
+    return d;
+  }
+
+  /** An upgrade line on the Upgrades tab, like a tool: the nearest one's tier, what the next tier improves, its cost and Upgrade. */
+  private lineDetail(line: UpgradeLineId): HTMLElement {
+    const sim = this.host.sim();
+    const { name, tiers } = UPGRADE_LINES[line];
+    const levels = tiers.length - 1;
+    const st = lineTarget(sim, line);
+    const tier = st ? tiers.indexOf(st.prefab) : -1;
+    const gives = (p: PrefabId) => (PREFABS[p].shelter ? restText(p) : `${PREFABS[p].storage!.slots} slots`);
+    const d = el('div', 'tool-detail line-detail');
+    d.dataset.line = line;
+    const ladder = this.tierLadder(tiers, tier + 1);
+    if (!st) {
+      const times = ['', 'once', 'twice', 'three times'][levels];
+      d.innerHTML = `<div class="detail-icon big">${prefabIcon(tiers[0])}</div><h3>${name} ${levelPips(0, true, levels)}</h3><p>${escapeHtml(`Build a ${PREFABS[tiers[0]].name} from the Build tab first. It can then be upgraded ${times}, rebuilt where it stands each time:`)}</p>`;
+      d.append(ladder);
+      return d;
+    }
+    const p = sim.state.player;
+    const dist = Math.round(Math.hypot(st.x - p.x, st.z - p.z));
+    d.innerHTML = `<div class="detail-icon big">${prefabIcon(st.prefab)}</div><h3>${escapeHtml(PREFABS[st.prefab].name)} ${levelPips(tier, true, levels)}</h3><div class="effects">${escapeHtml(gives(st.prefab))}</div><div class="effects muted">${escapeHtml(`Your nearest ${name.toLowerCase()}, ${dist} m away. Upgrading rebuilds it where it stands.`)}</div>`;
+    d.append(ladder);
+    const n = nextTierInfo(sim, st.id, st.prefab);
+    if (!n) {
+      d.append(el('div', 'upgrade-next maxed', `<h4>${MISC_ICONS.upgrade} Fully upgraded</h4><p class="muted">${line === 'shelter' ? 'This is the finest shelter you can build in these woods.' : 'This is the roomiest store you can build.'}</p>`));
+      return d;
+    }
+    const box = el('div', 'upgrade-next');
+    box.innerHTML = `<h4>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h4><p>${escapeHtml(n.text)}</p><div class="effects">Now: ${escapeHtml(gives(st.prefab))}<br>After: ${escapeHtml(n.rest)}</div>${ingredientsHtml(n.inputs)}`;
+    const actions = el('div', 'detail-actions');
+    const go = button('Upgrade', `btn primary ${n.check.ok ? '' : 'disabled'}`, () => {
+      const res = sim.upgradeStructure(st.id);
+      if (!res.ok) {
+        this.host.sfx('deny');
+        this.host.toast(n.reason ?? UPGRADE_FAILURE_TEXT[res.reason!], 'warn');
+      }
+      this.render();
+    });
+    go.disabled = !n.check.ok;
+    actions.append(go);
+    box.append(actions);
+    if (n.reason) box.append(el('div', 'craft-reason', escapeHtml(n.reason)));
+    if (n.room) box.append(el('div', 'effects muted', escapeHtml(n.room)));
+    d.append(box);
     return d;
   }
 
@@ -744,7 +790,8 @@ export class Panels {
     const detail = !sel ? el('div', '', '<div class="detail-empty"><p>Pick a tile.</p></div>')
       : sel.kind === 'recipe' ? this.recipeDetail(RECIPE_BY_ID[sel.id])
         : sel.kind === 'tool' ? this.toolDetail(sel.id as ToolId)
-          : this.shelterDetail(sel.id as PrefabId);
+          : sel.kind === 'line' ? this.lineDetail(sel.id as UpgradeLineId)
+            : this.shelterDetail(sel.id as PrefabId);
     detail.classList.add('recipe-detail');
     if (tabs) {
       const left = el('div', 'craft-left');
