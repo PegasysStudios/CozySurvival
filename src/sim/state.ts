@@ -171,7 +171,7 @@ export interface AnimalState {
   lod: number;
 }
 
-export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'dev';
+export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'spines' | 'scorpion' | 'javelina' | 'dev';
 
 export interface GameState {
   version: number;

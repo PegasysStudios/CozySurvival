@@ -311,6 +311,10 @@ export class Simulation {
   private respawnTimer = 0;
   private readonly litFires: { x: number; z: number }[] = [];
   private readonly tmpColliders: Collider[] = [];
+  private readonly spineColliders: Collider[] = [];
+  private spineCooldown = 0;
+  /** Spiny plants that have already pricked this player this session, so the warning shows once each. */
+  private readonly prickedBy = new Set<string>();
   private readonly look = { x: 0, y: 0, z: 1 };
   private readonly hit = { x: 0, y: 0, z: 0, water: false };
   private readonly moveEnv: MoveEnv;
@@ -497,6 +501,7 @@ export class Simulation {
     if (move.splash > 0) this.emit({ type: 'splash', impact: move.splash });
     this.lastLanding = move.landed;
     this.distanceWalked += move.distance;
+    this.checkSpines(dt);
     const speed = horizontalSpeed(p);
     this.activity = p.swimming ? 'swim' : speed < 0.5 ? 'idle' : p.sprinting ? 'sprint' : 'walk';
     const targetNoise = this.activity === 'idle' ? 0.5 : this.activity === 'sprint' ? 1.6 : 0.6 + 0.4 * Math.min(1, speed / BALANCE.player.walkSpeed);
@@ -589,6 +594,43 @@ export class Simulation {
     const dead = applyDamage(s.needs, amount);
     this.emit({ type: 'hurt', amount, source, fromX, fromZ });
     if (dead) this.die(source);
+  }
+
+  /**
+   * The spiny plant this player is pressing into, if any: within half a body width of a prickly pear's, cholla's or
+   * yucca's core (a picked yucca is just a stub), or right up against a saguaro. Picking them from arm's length is safe.
+   */
+  spinyPlantTouching(): { name: string; damage: number; x: number; z: number } | null {
+    const p = this.state.player;
+    const S = BALANCE.spines;
+    const body = BALANCE.player.radius;
+    for (const c of this.colliders.query(p.x, p.z, 1.5, this.spineColliders)) {
+      if (c.kind === 'cactus') {
+        const k = this.gen.cacti[c.ref];
+        if (Math.hypot(p.x - k.x, p.z - k.z) < k.r + body + S.saguaroGap) return { name: 'Saguaro', damage: S.saguaro, x: k.x, z: k.z };
+      } else if (c.kind === 'resource') {
+        const r = this.gen.resources[c.ref];
+        const def = RESOURCES[r.kind];
+        if (!def.spines) continue;
+        const stub = r.kind === 'yucca' && this.state.resources[c.ref].charges <= 0 ? 0.38 : 1;
+        if (Math.hypot(p.x - r.x, p.z - r.z) < def.spines.radius * r.scale * stub + body * S.touch) return { name: def.name, damage: def.spines.damage, x: r.x, z: r.z };
+      }
+    }
+    return null;
+  }
+
+  private checkSpines(dt: number): void {
+    this.spineCooldown = Math.max(0, this.spineCooldown - dt);
+    if (this.spineCooldown > 0 || this.state.player.swimming) return;
+    const hit = this.spinyPlantTouching();
+    if (!hit) return;
+    this.spineCooldown = BALANCE.spines.cooldown;
+    const s = this.state;
+    s.stats.events.pricked = (s.stats.events.pricked ?? 0) + 1;
+    this.hurtPlayer(hit.damage, 'spines', hit.x, hit.z);
+    if (this.prickedBy.has(hit.name)) return;
+    this.prickedBy.add(hit.name);
+    this.emit({ type: 'message', text: `${hit.name} spines! Pick it from arm's length and don't walk into it.`, tone: 'warn' });
   }
 
   // ------------------------------------------------------------------ warmth & fire helpers

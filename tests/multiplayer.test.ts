@@ -648,4 +648,23 @@ describe('multiplayer: round 9', () => {
     expect(after).not.toBe(b);
     expect(after.state.pinned).toEqual(['axe']);
   });
+
+  it('cactus spines prick a guest in their own world, and the host only when the host touches one', async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    mortal.add(b);
+    mortal.add(w.host.sim);
+    const pear = b.gen.resources.findIndex((r) => r.kind === 'pricklyPear');
+    const r = b.gen.resources[pear];
+    teleport(b, r.x + 0.2, r.z);
+    w.pump(0.5);
+    expect(b.state.lastDamage).toBe('spines');
+    expect(b.state.needs.health).toBeLessThan(100);
+    expect(w.host.sim.state.needs.health).toBe(100);
+    expect(w.host.sim.state.lastDamage).toBeNull();
+  });
 });
