@@ -62,7 +62,7 @@ export class HostSession extends Session {
       if (typeof pid === 'string') this.dropGuest(pid);
     });
     this.room.onPresence((entries) => this.onRoster(entries.map((e) => e.meta as unknown as RoomMeta)));
-    this.advert = new LobbyAdvert(transport, { sid, name: serverName, host: profile.name, n: 1, max: MAX_PLAYERS, day: sim.day, v: PROTOCOL_VERSION });
+    this.advert = new LobbyAdvert(transport, { sid, name: serverName, host: profile.name, n: 1, max: MAX_PLAYERS, day: sim.day, v: PROTOCOL_VERSION, map: sim.biome });
   }
 
   async start(): Promise<void> {

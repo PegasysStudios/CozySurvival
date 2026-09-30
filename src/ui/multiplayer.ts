@@ -1,3 +1,4 @@
+import { BIOMES, DEFAULT_BIOME, type BiomeId } from '../data/biomes';
 import { MAX_PLAYERS, PROTOCOL_VERSION } from '../net/config';
 import type { ServerInfo } from '../net/lobby';
 import { cleanName, cleanText, NAME_MAX, type Avatar, type Profile } from '../net/protocol';
@@ -55,6 +56,8 @@ export class MpMenu {
   private status: MpStatus = { kind: 'unconfigured' };
   private servers: ServerInfo[] | null = null;
   private notice: string | null = null;
+  /** The map a new server would host (the one picked on the title screen). */
+  private map: BiomeId = DEFAULT_BIOME;
 
   constructor(parent: HTMLElement, host: MpMenuHost) {
     this.host = host;
@@ -75,6 +78,12 @@ export class MpMenu {
   /** `null` while the first lobby list is still on its way. */
   setServers(list: ServerInfo[] | null): void {
     this.servers = list;
+    this.render();
+  }
+
+  setMap(map: BiomeId): void {
+    if (map === this.map) return;
+    this.map = map;
     this.render();
   }
 
@@ -100,7 +109,7 @@ export class MpMenu {
     if (this.notice) sec.append(el('div', 'mp-notice', escapeHtml(this.notice)));
 
     const online = s.kind === 'online';
-    const create = button('Create multiplayer server <span class="btn-sub">A brand-new world · up to 4 players</span>', 'btn big mp-create', () => {
+    const create = button(`Create multiplayer server <span class="btn-sub">A brand-new ${escapeHtml(BIOMES[this.map].name)} world · up to 4 players</span>`, 'btn big mp-create', () => {
       this.host.sfx();
       this.openForm(null);
     });
@@ -138,7 +147,7 @@ export class MpMenu {
     const row = el('div', 'mp-server');
     const full = sv.n >= sv.max;
     const mismatch = sv.v !== PROTOCOL_VERSION;
-    row.innerHTML = `<div class="mp-server-info"><b>${escapeHtml(sv.name)}</b><span>Host ${escapeHtml(sv.host)} · Day ${sv.day} · ${sv.n}/${sv.max} players${mismatch ? ' · different game version' : ''}</span></div>`;
+    row.innerHTML = `<div class="mp-server-info"><b>${escapeHtml(sv.name)}</b><span>${escapeHtml(BIOMES[sv.map].name)} · Host ${escapeHtml(sv.host)} · Day ${sv.day} · ${sv.n}/${sv.max} players${mismatch ? ' · different game version' : ''}</span></div>`;
     const join = button(full ? 'Full' : 'Join', 'btn primary mp-join', () => {
       this.host.sfx();
       this.openForm(sv);
@@ -157,7 +166,7 @@ export class MpMenu {
     const card = el('form', 'mp-card');
     card.noValidate = true;
     card.innerHTML = `
-      <div class="death-kicker">${server ? 'Join a server' : 'New multiplayer world'}</div>
+      <div class="death-kicker">${server ? `Join a server · ${escapeHtml(BIOMES[server.map].name)}` : `New multiplayer world · ${escapeHtml(BIOMES[this.map].name)}`}</div>
       <h2>${server ? escapeHtml(server.name) : 'Create a server'}</h2>
       <label class="mp-field">Your name<input name="name" maxlength="${NAME_MAX}" autocomplete="nickname" spellcheck="false" placeholder="Up to ${NAME_MAX} characters" value="${escapeHtml(saved?.name ?? '')}"></label>
       ${server ? '' : `<label class="mp-field">Server name<input name="server" maxlength="${SERVER_NAME_MAX}" spellcheck="false" placeholder="${escapeHtml(saved ? `${saved.name}'s camp` : 'Lakeside camp')}"></label>`}

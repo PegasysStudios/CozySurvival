@@ -38,6 +38,8 @@ export interface BiomeDef {
   name: string;
   /** Title-screen line under the logo. */
   tagline: string;
+  /** "Day 1 in this same forest". */
+  place: string;
   warmth: BiomeWarmth;
   /** Prey in population order (the order also fixes world-creation RNG use). */
   prey: readonly WildlifeSpawn[];
@@ -68,6 +70,7 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     id: 'pnw',
     name: 'Pacific Northwest',
     tagline: 'Stranded in the Pacific Northwest woods. Keep warm, keep fed, and see how many days you can last.',
+    place: 'forest',
     warmth: {
       day: BALANCE.needs.warmth.day, night: BALANCE.needs.warmth.night, warmUp: [5, 9], coolDown: [17, 21.5],
       rate: BALANCE.needs.warmthRatePerHour, coolRate: BALANCE.needs.warmthRatePerHour,
@@ -90,6 +93,7 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     id: 'desert',
     name: 'Arizona Desert',
     tagline: 'Stranded in the Arizona desert. Water is scarce and the nights turn cold fast. Find a spring, keep a fire, and last.',
+    place: 'desert',
     // Hot days; after about 4 PM the dry air sheds heat fast and the night drops to the same cold as the woods.
     warmth: { day: 95, night: 0, warmUp: [5.5, 9], coolDown: [16, 19.5], rate: BALANCE.needs.warmthRatePerHour, coolRate: 36 },
     prey: [
