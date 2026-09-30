@@ -2,13 +2,15 @@
 // (SwiftShader WebGL), starts a run, walks, opens crafting, plays a two-tab
 // multiplayer session over BroadcastChannel (?net=local), and fails on any
 // console error or uncaught exception. It also switches the title screen to the
-// desert map, plays it, and saves title and first-person screenshots of both maps.
+// desert and island maps, plays them, measures frame time, draw calls and memory
+// on all three, and saves title and first-person screenshots of each map.
+// The multiplayer session runs on an island server.
 //
 //   npm run smoke                 build + check
 //   SMOKE_SHOTS=/some/dir npm run smoke   where the screenshots go (default smoke-shots/)
 //   SMOKE_NO_BUILD=1 npm run smoke   reuse the existing dist/
 //   CHROME_PATH=/path/to/chrome npm run smoke
-import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { build, loadEnv, preview } from 'vite';
 import puppeteer from 'puppeteer-core';
@@ -37,6 +39,55 @@ function check(name, ok, detail = '') {
 /** Title cards slide in with a CSS animation that only runs once frames render; clicks during it can miss. */
 const settleTitle = (page) =>
   page.waitForFunction(() => document.getAnimations().every((a) => a.animationName !== 'rise' || a.playState === 'finished'), { timeout: 20_000, polling: 100 });
+
+/**
+ * Frame time over 90 frames (median and 95th percentile, headless software GL), one frame's draw calls and
+ * triangles including shadows, live geometries and textures, and the JS heap.
+ */
+const perfLog = [];
+async function measure(page, label) {
+  const m = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const g = window.__cozy.game;
+        const times = [];
+        let last = performance.now();
+        let i = 0;
+        const f = (now) => {
+          times.push(now - last);
+          last = now;
+          if (++i < 90) return requestAnimationFrame(f);
+          times.shift();
+          times.sort((a, b) => a - b);
+          const r = g.view.renderer.info;
+          r.autoReset = false;
+          r.reset();
+          requestAnimationFrame(() => {
+            const out = {
+              medianMs: +times[Math.floor(times.length / 2)].toFixed(1),
+              p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(1),
+              calls: r.render.calls,
+              triangles: r.render.triangles,
+              geometries: r.memory.geometries,
+              textures: r.memory.textures,
+              heapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null,
+              trees: g.sim.gen.trees.length,
+              resources: g.sim.gen.resources.length,
+              animals: g.sim.state.animals.length,
+              worldSize: g.sim.terrain.size,
+            };
+            r.autoReset = true;
+            resolve(out);
+          });
+        };
+        requestAnimationFrame(f);
+      }),
+  );
+  const entry = { label, ...m };
+  perfLog.push(entry);
+  console.log(`  perf ${label}: ${m.medianMs} ms median frame (p95 ${m.p95Ms}), ${m.calls} draw calls, ${m.triangles.toLocaleString()} triangles, ${m.geometries} geometries, heap ${m.heapMB} MB`);
+  return entry;
+}
 
 const shots = [];
 async function shoot(page, name) {
@@ -67,6 +118,7 @@ async function main() {
       '--ignore-gpu-blocklist',
       '--mute-audio',
       '--autoplay-policy=no-user-gesture-required',
+      '--enable-precise-memory-info',
       '--window-size=1280,720',
     ],
   });
@@ -285,6 +337,7 @@ async function main() {
         }),
     );
     console.log(`  one frame incl. shadows: ${info.calls} draw calls, ${info.triangles.toLocaleString()} triangles, ${info.geometries} geometries, ${info.programs} shader programs`);
+    const pnwPerf = await measure(page, 'Pacific Northwest');
 
     const runtimeErrors = [];
     const collectRuntimeErrors = async () => runtimeErrors.push(...(await page.evaluate(() => window.__cozy?.errors ?? [])));
@@ -716,6 +769,7 @@ async function main() {
     await page.keyboard.up('KeyW');
     await waitFrames(4);
     await shoot(page, 'gameplay-desert');
+    await measure(page, 'Arizona Desert');
     await lock();
     await page.keyboard.press('KeyC');
     await sleep(300);
@@ -748,6 +802,109 @@ async function main() {
     await page.waitForFunction(() => window.__cozy.game.sim.biome === 'desert' && !document.querySelector('.map-fade'), { timeout: 20_000, polling: 100 }).catch(() => {});
     const desertAgain = await titleState();
     check('the desert run can be continued too', desertAgain.biome === 'desert' && /Continue/.test(desertAgain.primary), JSON.stringify(desertAgain));
+
+    // Island: the third map on the carousel, with its own save; it has to stay smooth at four times the area.
+    const desertSave = await page.evaluate(() => localStorage.getItem('cozysurvival.v1.save.desert'));
+    const pnwSaveNow = await page.evaluate(() => localStorage.getItem('cozysurvival.v1.save'));
+    await page.evaluate(() => (window.__fadeSeen = false));
+    const switchStart = Date.now();
+    await page.click('.title-screen .map-arrow.next');
+    await page.waitForFunction(() => window.__cozy.game.run.biome === 'island' && !document.querySelector('.map-fade'), { timeout: 30_000, polling: 100 }).catch(() => {});
+    const switchMs = Date.now() - switchStart;
+    await settleTitle(page);
+    const islandTitle = await titleState();
+    const islandFade = await page.evaluate(() => window.__fadeSeen);
+    check(
+      'the right arrow cross-fades the title to the island, the third map',
+      islandFade && islandTitle.mode === 'title' && islandTitle.run === 'island' && islandTitle.biome === 'island' && islandTitle.name === 'Tropical Island' && /^Stranded on a tropical island/.test(islandTitle.tagline) && /Start surviving/.test(islandTitle.primary),
+      JSON.stringify({ islandFade, ...islandTitle }),
+    );
+    const dots = await page.evaluate(() => ({ n: document.querySelectorAll('.title-screen .map-dots i').length, on: [...document.querySelectorAll('.title-screen .map-dots i')].findIndex((d) => d.classList.contains('on')) }));
+    check('the map dots show three maps with the island third', dots.n === 3 && dots.on === 2, JSON.stringify(dots));
+    console.log(`  switching the title to the island (world generation, terrain, water and nature) took ${switchMs} ms`);
+    await shoot(page, 'title-island');
+    await page.click('.title-screen .btn.primary');
+    await sleep(500);
+    await lock();
+    const islandRun = await page.evaluate(() => {
+      const g = window.__cozy.game;
+      const isl = g.sim.terrain.island;
+      return {
+        mode: g.mode, biome: g.sim.biome, day: g.sim.day, size: g.sim.terrain.size,
+        streams: isl?.streams.length ?? 0, caves: isl?.caves.length ?? 0, pools: g.sim.terrain.lakes.map((l) => l.kind),
+        saved: !!localStorage.getItem('cozysurvival.v1.save.island'),
+        desertSave: localStorage.getItem('cozysurvival.v1.save.desert'), pnwSave: localStorage.getItem('cozysurvival.v1.save'),
+        objective: g.sim.currentObjective()?.title ?? '',
+      };
+    });
+    check(
+      'a new island run starts with its own save and leaves the forest and desert saves alone',
+      islandRun.mode === 'playing' && islandRun.biome === 'island' && islandRun.day === 1 && islandRun.size > 320 && islandRun.streams >= 2 && islandRun.caves >= 2 && islandRun.pools.includes('plunge') && islandRun.saved && islandRun.desertSave === desertSave && islandRun.pnwSave === pnwSaveNow,
+      JSON.stringify({ ...islandRun, desertSave: islandRun.desertSave === desertSave, pnwSave: islandRun.pnwSave === pnwSaveNow }),
+    );
+    check('island onboarding starts with finding fresh water', /fresh water/i.test(islandRun.objective), islandRun.objective);
+    await page.keyboard.down('KeyW');
+    await sleep(1400);
+    await page.keyboard.up('KeyW');
+    await waitFrames(4);
+    await shoot(page, 'gameplay-island');
+    const islandPerf = await measure(page, 'Tropical Island');
+    check(
+      'the island (four times the area) renders within twice the forest\'s frame time and draw calls',
+      islandPerf.medianMs <= pnwPerf.medianMs * 2 && islandPerf.calls <= pnwPerf.calls * 2.5,
+      JSON.stringify({ island: islandPerf, pnw: pnwPerf }),
+    );
+    const salt = await page.evaluate(() => {
+      const sim = window.__cozy.game.sim;
+      const p = sim.state.player;
+      for (let r = 2; r < 80; r += 1) {
+        for (let k = 0; k < 32; k++) {
+          const x = p.x + Math.cos((k / 32) * Math.PI * 2) * r;
+          const z = p.z + Math.sin((k / 32) * Math.PI * 2) * r;
+          if (sim.terrain.heightAt(x, z) < -0.3 && sim.terrain.lakeAt(x, z)?.kind === 'sea') {
+            const thirst = sim.state.needs.thirst;
+            sim.target = { kind: 'water', dist: 1, x, z };
+            const info = sim.describeTarget();
+            sim.actionCooldown = 0;
+            sim.perform(sim.target);
+            return { info, thirst: [thirst, sim.state.needs.thirst], refused: sim.state.stats.events.saltRefused ?? 0 };
+          }
+        }
+      }
+      return null;
+    });
+    check('sea water is salt: it can\'t be drunk and says so', !!salt && salt.info?.enabled === false && /salt/i.test(salt.info.action) && salt.refused === 1 && salt.thirst[1] <= salt.thirst[0], JSON.stringify(salt));
+    await lock();
+    await page.keyboard.press('KeyC');
+    await sleep(300);
+    const islandKeys = await page.evaluate(() => {
+      const keys = [];
+      for (const tab of document.querySelectorAll('.craft-tab')) {
+        tab.click();
+        keys.push(...[...document.querySelectorAll('.tile.recipe')].map((t) => t.dataset.key));
+      }
+      return keys;
+    });
+    check(
+      'island crafting offers the island dishes and none of the forest or desert ones',
+      islandKeys.includes('r:beachSkewer') && islandKeys.includes('r:coconutFish') && islandKeys.includes('r:poi') && islandKeys.includes('r:campfire') && islandKeys.includes('r:knife') && !islandKeys.includes('r:skewer') && !islandKeys.includes('r:desertSkewer'),
+      islandKeys.join(','),
+    );
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    await quit();
+    await settleTitle(page);
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(() => window.__cozy.game.sim.biome === 'desert' && !document.querySelector('.map-fade'), { timeout: 30_000, polling: 100 }).catch(() => {});
+    const desertBack = await titleState();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => window.__cozy.game.sim.biome === 'island' && !document.querySelector('.map-fade'), { timeout: 30_000, polling: 100 }).catch(() => {});
+    const islandAgain = await titleState();
+    check(
+      'the desert and the island each continue their own run',
+      desertBack.biome === 'desert' && /Continue/.test(desertBack.primary) && islandAgain.biome === 'island' && /Continue/.test(islandAgain.primary),
+      JSON.stringify({ desertBack, islandAgain }),
+    );
 
     await collectRuntimeErrors();
     await page.close();
@@ -783,11 +940,11 @@ async function main() {
     await fillForm(hostTab, 'Ana', 'Smoke camp');
     await hostTab.waitForFunction(() => window.__cozy.game.mp?.role === 'host' && window.__cozy.game.mode === 'playing', { timeout: 20_000, polling: 250 });
     const hostWorld = await hostTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, biome: window.__cozy.game.sim.biome, name: window.__cozy.game.mp.profile.name }));
-    check('host creates a server with a brand-new world on the selected map', hostWorld.name === 'Ana' && hostWorld.biome === 'desert', JSON.stringify(hostWorld));
+    check('host creates a server with a brand-new world on the selected map (the island)', hostWorld.name === 'Ana' && hostWorld.biome === 'island', JSON.stringify(hostWorld));
 
     await guestTab.bringToFront();
     const listed = await guestTab
-      .waitForFunction(() => [...document.querySelectorAll('.mp-server')].some((r) => r.textContent.includes('Smoke camp') && r.textContent.includes('Arizona Desert')), { timeout: 20_000, polling: 250 })
+      .waitForFunction(() => [...document.querySelectorAll('.mp-server')].some((r) => r.textContent.includes('Smoke camp') && r.textContent.includes('Tropical Island')), { timeout: 20_000, polling: 250 })
       .then(() => true, () => false);
     check('the server shows up in the other tab\'s server list with its map', listed);
     if (listed) {
@@ -856,7 +1013,11 @@ async function main() {
     check('no runtime errors', runtimeErrors.length === 0, runtimeErrors.join(' | '));
   } finally {
     check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 8).join(' | '));
-    const missing = ['title-pnw', 'title-desert', 'gameplay-pnw', 'gameplay-desert'].map((n) => join(SHOTS_DIR, `${n}.png`)).filter((f) => !shots.includes(f) || !existsSync(f) || statSync(f).size < 10_000);
+    const missing = ['title-pnw', 'title-desert', 'title-island', 'gameplay-pnw', 'gameplay-desert', 'gameplay-island'].map((n) => join(SHOTS_DIR, `${n}.png`)).filter((f) => !shots.includes(f) || !existsSync(f) || statSync(f).size < 10_000);
+    if (perfLog.length) {
+      mkdirSync(SHOTS_DIR, { recursive: true });
+      writeFileSync(join(SHOTS_DIR, 'perf.json'), JSON.stringify(perfLog, null, 2) + '\n');
+    }
     check('screenshots saved', missing.length === 0, `missing ${missing.join(', ')}`);
     for (const f of shots) console.log(`  screenshot: ${f}`);
     await browser.close();

@@ -425,9 +425,9 @@ export class NatureView {
       }
       const j = isl.jungle(x, z);
       if (j > 0.45) {
-        if (roll < 0.2) put(under, 0, x, h, z, rng.range(0.8, 1.3));
-        else if (roll < 0.27) put(under, 1, x, h, z, rng.range(0.8, 1.2));
-        else if (roll < 0.34) put(under, 2, x, h, z, rng.range(0.8, 1.3));
+        if (roll < 0.13) put(under, 0, x, h, z, rng.range(0.9, 1.4));
+        else if (roll < 0.18) put(under, 1, x, h, z, rng.range(0.8, 1.2));
+        else if (roll < 0.23) put(under, 2, x, h, z, rng.range(0.9, 1.4));
         continue;
       }
       const pl = isl.plains(x, z);

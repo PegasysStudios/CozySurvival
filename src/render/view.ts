@@ -240,7 +240,8 @@ export class GameView {
         this.nature.sync(sim.state, true);
         this.entities.sync(sim.state);
       }
-      this.nature.update(dt, pose.x, pose.z, this.fog.far + 15);
+      // Past about 90% fog the island's jungle is only a haze, so its trees stop a little short of the fog's end.
+      this.nature.update(dt, pose.x, pose.z, this.fog.far + (this.islandTerrain ? -25 : 15));
       this.entities.update(sim, dt, time, pose.x, pose.z);
       this.ghost.update(sim.placement, time);
       for (const f of this.entities.fires) {
