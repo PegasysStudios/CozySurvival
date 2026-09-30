@@ -55,7 +55,7 @@ export class DevPanel {
     section('Unlock',
       button('All tools', 'dev-btn', () => {
         const st = host.sim().state;
-        for (const t of ['axe', 'spear', 'bow', 'torch', 'rod'] as ToolId[]) if (!st.tools.includes(t)) st.tools.push(t);
+        for (const t of ['axe', 'spear', 'bow', 'torch', 'rod', 'knife'] as ToolId[]) if (!st.tools.includes(t)) st.tools.push(t);
       }),
       button('All gear', 'dev-btn', () => {
         const st = host.sim().state;
