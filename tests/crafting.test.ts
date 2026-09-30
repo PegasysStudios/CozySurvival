@@ -107,9 +107,9 @@ describe('crafting', () => {
     expect(craft(s, 'cordage', noFire).ok).toBe(true);
     // now fill every slot with full stacks and try again
     s.inventory.slots = s.inventory.slots.map(() => ({ item: 'stone' as const, count: 10 }));
-    s.inventory.slots[0] = { item: 'fiber', count: 16 };
+    s.inventory.slots[0] = { item: 'fiber', count: ITEMS.fiber.stack };
     expect(craft(s, 'cordage', noFire).reason).toBe('noRoom');
-    expect(countItem(s.inventory, 'fiber')).toBe(16);
+    expect(countItem(s.inventory, 'fiber')).toBe(ITEMS.fiber.stack);
   });
 
   it('gear expands carry capacity', () => {

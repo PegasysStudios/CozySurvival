@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
+import { ITEMS } from '../src/data/items';
 import { RESOURCES, TREES } from '../src/data/resources';
 import { createAnimal } from '../src/sim/animals';
 import { countItem } from '../src/sim/inventory';
@@ -102,10 +103,10 @@ describe('gathering by hand', () => {
     const sim = quietSim();
     for (let k = 0; k < 6; k++) sim.state.inventory.slots[k] = { item: 'stone', count: 10 };
     // stick and stone piles give one per harvest, so use a fern (two fiber) to get a partial fit
-    sim.state.inventory.slots[5] = { item: 'fiber', count: 15 };
+    sim.state.inventory.slots[5] = { item: 'fiber', count: ITEMS.fiber.stack - 1 };
     const i = nearestResource(sim, 'fern');
     sim.perform({ kind: 'resource', index: i, dist: 1 });
-    expect(countItem(sim.state.inventory, 'fiber')).toBe(16);
+    expect(countItem(sim.state.inventory, 'fiber')).toBe(ITEMS.fiber.stack);
     expect(sim.state.drops).toHaveLength(1);
     expect(sim.state.drops[0]).toMatchObject({ item: 'fiber', count: 1 });
     sim.state.inventory.slots[0] = null;
