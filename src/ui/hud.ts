@@ -125,7 +125,7 @@ export class Hud {
     this.hint.innerHTML = `
       <div><b>WASD</b> move and swim · <b>Shift</b> run · <b>Space</b> jump</div>
       <div><b>Left-click</b> gather, use and interact</div>
-      <div><b>C</b> crafting · <b>Tab</b> pack · <b>1–5</b> tools · <b>F</b> quick eat</div>`;
+      <div><b>C</b> crafting · <b>Tab</b> pack · <b>1–6</b> tools · <b>F</b> quick eat</div>`;
 
     this.root.append(this.hurt, this.cold, this.low, this.damageDir, clock, this.objective, needs, bottom, center, this.toasts, this.banner, this.hint, this.fps);
     parent.append(this.root);
@@ -292,10 +292,11 @@ export class Hud {
       return;
     }
     toggle(this.placeHelp, 'show', false);
-    const info = sim.describeTarget();
-    const drawing = sim.bowDraw >= 0;
+    const info = sim.describeFishing() ?? sim.describeTarget();
+    const winding = sim.fishing?.phase === 'charging';
+    const drawing = sim.bowDraw >= 0 || winding;
     toggle(this.charge, 'show', drawing);
-    if (drawing) this.charge.style.setProperty('--p', String(Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw)));
+    if (drawing) this.charge.style.setProperty('--p', String(winding ? sim.fishing!.power : Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw)));
     if (sim.state.player.sitting) {
       setHtml(this.prompt, '<span class="prompt-name">Resting on the bench</span><span class="prompt-action">Move to stand up</span>', this.promptKey);
       toggle(this.prompt, 'show', true);

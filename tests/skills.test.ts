@@ -9,7 +9,7 @@ import {
   addSkillXp, burnChance, durabilityMultiplier, gatherBonusChance, huntDamageMultiplier, MAX_SKILL_LEVEL,
   skillEffect, skillFactor, skillLevel, skillProgress, SKILL_IDS,
 } from '../src/sim/skills';
-import { drain, give, keepAlive, nearestResource, placeStructure, quietSim } from './helpers';
+import { drain, give, giveRecipe, keepAlive, nearestResource, placeStructure, quietSim } from './helpers';
 
 const K = BALANCE.skills;
 const MAX_XP = K.thresholds[K.thresholds.length - 1];
@@ -53,7 +53,7 @@ describe('skill levels', () => {
 
   it('addSkillXp returns the new level only when it goes up', () => {
     const sim = quietSim();
-    expect(sim.state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0 });
+    expect(sim.state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0 });
     expect(addSkillXp(sim.state, 'cooking', K.thresholds[0] - 1)).toBeNull();
     expect(addSkillXp(sim.state, 'cooking', 1)).toBe(2);
     expect(addSkillXp(sim.state, 'cooking', 1)).toBeNull();
@@ -217,7 +217,8 @@ describe('cooking skill and burnt meals', () => {
     placeStructure(sim, 'campfire');
     expect(sim.state.skills.crafting).toBe(K.xp.build);
     sim.state.known.push('cookedMeat', 'axe');
-    give(sim, { rawMeat: 1, stick: 2, stone: 2, fiber: 2 });
+    give(sim, { rawMeat: 1 });
+    giveRecipe(sim, 'axe');
     sim.craft('cookedMeat');
     expect(sim.state.skills.cooking).toBe(K.xp.cook);
     sim.craft('axe');

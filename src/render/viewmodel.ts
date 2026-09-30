@@ -10,13 +10,13 @@ export interface ViewModelInput {
   sprinting: boolean;
   lookDX: number;
   lookDY: number;
-  /** Bow draw fraction 0..1, or -1 when not drawing. */
+  /** Bow draw or fishing-cast wind-up fraction 0..1, or -1 when not drawing. */
   draw: number;
   sitting: boolean;
   hasArrows: boolean;
 }
 
-type SwingKind = 'chop' | 'thrust' | 'grab' | 'swipe';
+type SwingKind = 'chop' | 'thrust' | 'grab' | 'swipe' | 'cast';
 
 /** First-person tool rendered in its own scene on top of the world (no clipping into trees). */
 export class ViewModel {
@@ -77,7 +77,7 @@ export class ViewModel {
   swing(tool: ToolId, hit: boolean): void {
     this.swingT = 0;
     this.swingHit = hit;
-    this.swingKind = tool === 'axe' ? 'chop' : tool === 'spear' ? 'thrust' : tool === 'torch' ? 'swipe' : 'grab';
+    this.swingKind = tool === 'axe' ? 'chop' : tool === 'spear' ? 'thrust' : tool === 'torch' ? 'swipe' : tool === 'rod' ? 'cast' : 'grab';
   }
 
   /** World-space position of the torch flame (for embers). */
@@ -137,6 +137,10 @@ export class ViewModel {
         h.rotation.z += env * 0.8;
         h.position.x -= env * 0.18;
         break;
+      case 'cast':
+        h.rotation.x -= env * 0.5;
+        h.position.z -= env * 0.1;
+        break;
       case 'grab':
         h.position.z -= env * 0.22;
         h.position.y -= env * 0.08;
@@ -153,6 +157,10 @@ export class ViewModel {
       pos.needsUpdate = true;
       this.nocked.visible = i.hasArrows && (i.draw >= 0 || this.swingT >= 1);
       this.nocked.position.set(0, 0.04, -0.02 + this.drawK * 0.32 - 0.3);
+    }
+    if (i.tool === 'rod') {
+      h.rotation.x += this.drawK * 0.9;
+      h.position.y += this.drawK * 0.05;
     }
     if (i.tool === 'torch') {
       const f = 1 + Math.sin(time * 14) * 0.08 + Math.sin(time * 23) * 0.05;

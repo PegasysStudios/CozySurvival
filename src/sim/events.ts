@@ -6,7 +6,7 @@ import type { PlacementReason } from './placement';
 import type { DamageSource, SkillId } from './state';
 
 export type SimEvent =
-  | { type: 'gathered'; item: ItemId; count: number; x: number; y: number; z: number; source: ResourceKind | 'tree' | 'drop' | 'carcass' | 'water' | 'craft' | 'bark' }
+  | { type: 'gathered'; item: ItemId; count: number; x: number; y: number; z: number; source: ResourceKind | 'tree' | 'drop' | 'carcass' | 'water' | 'craft' | 'bark' | 'fishing' }
   | { type: 'packFull'; item: ItemId }
   | { type: 'swing'; tool: ToolId; hit: boolean }
   | { type: 'chop'; tree: number; x: number; y: number; z: number; trunk?: boolean }
@@ -41,6 +41,11 @@ export type SimEvent =
   | { type: 'predatorAttack'; id: number; species: SpeciesId }
   | { type: 'arrowFired'; power: number }
   | { type: 'arrowHit'; x: number; y: number; z: number; target: 'ground' | 'tree' | 'water' | 'animal' }
+  | { type: 'cast'; power: number }
+  | { type: 'lureLanded'; x: number; z: number; water: boolean }
+  | { type: 'fishBite'; x: number; z: number }
+  /** The line came back in: `caught` a fish, it `slipped` the hook, it `escaped` before the strike, or `reeled` in empty. */
+  | { type: 'fishDone'; result: 'caught' | 'slipped' | 'escaped' | 'reeled'; x: number; z: number }
   | { type: 'jump' }
   | { type: 'land'; impact: number }
   | { type: 'message'; text: string; tone?: 'info' | 'warn' | 'good' };

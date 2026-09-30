@@ -5,7 +5,7 @@ import { PREFABS } from '../data/prefabs';
 import { RESOURCE_KINDS, type ResourceKind, type TreeSpecies } from '../data/resources';
 import type { GameState } from '../sim/state';
 import { PLAY_HALF, type Terrain } from '../sim/terrain';
-import { TRUNK_AXIS_LIFT, trunkSpan } from '../sim/trunks';
+import { barkStripped, TRUNK_AXIS_LIFT, trunkSpan } from '../sim/trunks';
 import type { WorldGen } from '../sim/worldgen';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
@@ -58,6 +58,9 @@ export class NatureView {
   private readonly treeGeos = {} as Record<TreeSpecies, THREE.BufferGeometry>;
   private readonly trees = {} as Record<TreeSpecies, ChunkedInstances>;
   private readonly stumps = {} as Record<TreeSpecies, ChunkedInstances>;
+  /** Peeled birches, drawn from a twin instance set with a bare lower trunk. */
+  private strippedBirch!: ChunkedInstances;
+  private strippedBirchGeo!: THREE.BufferGeometry;
   private readonly treeLocal: Int32Array;
   private readonly resources = {} as Record<ResourceKind, ChunkedInstances>;
   private berries: ChunkedInstances | null = null;
@@ -72,6 +75,7 @@ export class NatureView {
   /** Fallen trunks still waiting to be chopped up, keyed by tree index. */
   private readonly trunks = new Map<number, { mesh: THREE.Mesh; logs: number }>();
   private readonly felled: Uint8Array;
+  private readonly stripped: Uint8Array;
   private readonly resourceUp: Int8Array;
   private readonly structuresSeen = new Set<number>();
   private readonly tmpQ = new THREE.Quaternion();
@@ -82,6 +86,7 @@ export class NatureView {
     this.gen = gen;
     this.mats = mats;
     this.felled = new Uint8Array(gen.trees.length);
+    this.stripped = new Uint8Array(gen.trees.length);
     this.resourceUp = new Int8Array(gen.resources.length).fill(-1);
     this.treeLocal = new Int32Array(gen.trees.length);
     this.resLocal = new Int32Array(gen.resources.length);
@@ -123,6 +128,13 @@ export class NatureView {
       this.group.add(this.stumps[s].group);
       this.trunkGeos[s] = this.own(trunkGeometry(s));
     }
+    this.strippedBirchGeo = this.own(treeGeometry('birch', 0, true));
+    const strippedSpecs = specs.birch.map((sp) => ({ matrix: sp.matrix.clone(), color: sp.color?.clone() }));
+    this.strippedBirch = new ChunkedInstances(this.strippedBirchGeo, this.mats.foliage, strippedSpecs, {
+      chunkSize: 48, castShadow: true, name: 'trees-birch-stripped', lod: this.own(treeGeometry('birch', 1, true)),
+    });
+    for (let i = 0; i < strippedSpecs.length; i++) this.strippedBirch.setHidden(i, true);
+    this.group.add(this.strippedBirch.group);
   }
 
   /** Create, shorten or remove the mesh for tree `i`'s fallen trunk. */
@@ -258,11 +270,18 @@ export class NatureView {
   /** Bring instance visibility in line with the simulation state. */
   sync(state: GameState, animate: boolean): void {
     for (let i = 0; i < this.gen.trees.length; i++) {
+      const sp = this.gen.trees[i].species;
+      const strip = barkStripped(sp, state.trees[i]) ? 1 : 0;
+      if (strip !== this.stripped[i] && !state.trees[i].felled) {
+        this.stripped[i] = strip;
+        this.trees[sp].setHidden(this.treeLocal[i], !!strip);
+        this.strippedBirch.setHidden(this.treeLocal[i], !strip);
+      }
       const felled = state.trees[i].felled ? 1 : 0;
       if (felled !== this.felled[i]) {
         this.felled[i] = felled;
-        const sp = this.gen.trees[i].species;
-        this.trees[sp].setHidden(this.treeLocal[i], !!felled);
+        this.trees[sp].setHidden(this.treeLocal[i], !!felled || !!this.stripped[i]);
+        if (this.stripped[i]) this.strippedBirch.setHidden(this.treeLocal[i], !!felled);
         this.stumps[sp].setHidden(this.treeLocal[i], !felled);
         if (felled && animate) {
           this.startFall(i, state);
@@ -300,7 +319,7 @@ export class NatureView {
   private startFall(i: number, state: GameState): void {
     const tr = this.gen.trees[i];
     const y = this.terrain.heightAt(tr.x, tr.z) - 0.15;
-    const mesh = new THREE.Mesh(this.treeGeos[tr.species], this.mats.foliage);
+    const mesh = new THREE.Mesh(this.stripped[i] ? this.strippedBirchGeo : this.treeGeos[tr.species], this.mats.foliage);
     mesh.castShadow = true;
     mesh.position.set(tr.x, y, tr.z);
     mesh.scale.setScalar(tr.scale);
@@ -325,6 +344,7 @@ export class NatureView {
       this.trees[s].cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
       this.stumps[s].cullByDistance(px, pz, viewDist);
     }
+    this.strippedBirch.cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
     for (const k of RESOURCE_KINDS) this.resources[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
     this.berries?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
     for (const o of this.others) o.cullByDistance(px, pz, viewDist);
@@ -364,6 +384,7 @@ export class NatureView {
       this.trees[s].dispose();
       this.stumps[s].dispose();
     }
+    this.strippedBirch.dispose();
     for (const k of RESOURCE_KINDS) this.resources[k]?.dispose();
     this.berries?.dispose();
     for (const g of [...this.grass, ...this.flowers, ...this.others]) g.dispose();

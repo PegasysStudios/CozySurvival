@@ -17,7 +17,7 @@ import { addItem, countItem, createInventory, removeAll, removeFromSlot, removeI
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, type MoveEnv } from './movement';
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
 import { checkPlacement, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
-import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, huntDamageMultiplier, SKILL_INFO } from './skills';
+import { addSkillXp, burnChance, butcherBonusChance, catchChance, createSkills, gatherBonusChance, huntDamageMultiplier, SKILL_INFO } from './skills';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, WATER_LEVEL, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
@@ -76,6 +76,24 @@ export interface Projectile {
   vz: number;
   damage: number;
   life: number;
+}
+
+export type FishingPhase = 'charging' | 'flying' | 'waiting' | 'bite';
+
+/** A fishing cast in progress. It isn't saved: loading a save simply finds the line reeled in. */
+export interface FishingLine {
+  phase: FishingPhase;
+  /** Seconds spent in the current phase. */
+  t: number;
+  /** Cast strength 0..1, growing while charging. */
+  power: number;
+  /** Where the cast was thrown from and where the lure lands. */
+  fromX: number;
+  fromZ: number;
+  x: number;
+  z: number;
+  /** Seconds after the lure settles until a fish bites. */
+  biteAt: number;
 }
 
 /** `solo` is single-player. In multiplayer the host's simulation owns the world and guests follow it. */
@@ -184,6 +202,7 @@ export class Simulation {
   readonly projectiles: Projectile[] = [];
   /** Seconds the bow has been drawn, or -1 when not drawing. */
   bowDraw = -1;
+  fishing: FishingLine | null = null;
   actionCooldown = 0;
   /** Increments whenever trees/resources/structures/drops/carcasses change, so views can resync. */
   worldVersion = 0;
@@ -407,6 +426,7 @@ export class Simulation {
     } else {
       this.handlePrimary(input, dt);
     }
+    this.updateFishing(dt);
 
     this.updateProjectiles(dt);
     this.updateAnimals(dt);
@@ -453,6 +473,7 @@ export class Simulation {
     s.needs.health = 0;
     this.placement = null;
     this.bowDraw = -1;
+    this.endFishing('reeled');
     this.emit({ type: 'death', cause });
   }
 
@@ -691,10 +712,12 @@ export class Simulation {
       case 'animal': {
         const a = s.animals.find((d) => d.id === t.id);
         if (!a) return null;
+        if (s.activeTool === 'rod') return { name: SPECIES[a.species].name, action: '', enabled: false };
         const armed = s.activeTool !== 'hands' && s.activeTool !== 'bow';
         return { name: SPECIES[a.species].name, action: armed ? 'Attack' : s.activeTool === 'bow' ? 'Shoot' : 'Punch', enabled: true };
       }
       case 'water': {
+        if (s.activeTool === 'rod') return { name: 'Lake', action: 'Hold to wind up a cast', enabled: true };
         if (this.canteenFillAmount() > 0) return { name: 'Lake', action: 'Fill canteen', enabled: true };
         return { name: 'Lake', action: 'Drink', enabled: s.needs.thirst < 99.5 };
       }
@@ -725,9 +748,14 @@ export class Simulation {
       }
       return;
     }
+    if (tool === 'rod') {
+      this.handleRod(input, dt, t);
+      return;
+    }
     if (!input.primary || this.actionCooldown > 0) return;
     if (!t) {
       if (input.primaryPressed) {
+        if (tool !== 'hands') spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
         this.emit({ type: 'swing', tool, hit: false });
         this.actionCooldown = this.toolCooldown();
       }
@@ -749,6 +777,150 @@ export class Simulation {
         return c.torch.cooldown;
       default:
         return c.hand.cooldown;
+    }
+  }
+
+  // ------------------------------------------------------------------ fishing
+
+  /** Hold to wind up, release to cast; with a line out, a click strikes a biting fish or reels in. */
+  private handleRod(input: SimInput, dt: number, t: Target | null): void {
+    const s = this.state;
+    const F = BALANCE.fishing;
+    const f = this.fishing;
+    if (!f) {
+      if (!input.primaryPressed || this.actionCooldown > 0) return;
+      if (t && t.kind !== 'animal' && t.kind !== 'tree' && t.kind !== 'water') {
+        this.perform(t);
+        return;
+      }
+      if (s.player.swimming) {
+        this.actionCooldown = 0.6;
+        this.message('Find your footing before you cast.', 'warn');
+        return;
+      }
+      const p = s.player;
+      this.fishing = { phase: 'charging', t: 0, power: 0, fromX: p.x, fromZ: p.z, x: p.x, z: p.z, biteAt: 0 };
+      return;
+    }
+    if (f.phase === 'charging') {
+      if (input.primary) {
+        f.t += dt;
+        f.power = clamp(f.t / F.fullCharge, 0, 1);
+      }
+      if (input.primaryReleased || !input.primary) {
+        if (f.t >= F.minCharge) this.castLine(f);
+        else this.fishing = null;
+      }
+      return;
+    }
+    if (!input.primaryPressed) return;
+    if (f.phase === 'bite') this.strike(f);
+    else this.endFishing('reeled');
+  }
+
+  private castLine(f: FishingLine): void {
+    const s = this.state;
+    const p = s.player;
+    const F = BALANCE.fishing;
+    const d = lookDir(p.yaw, 0, this.look);
+    const len = Math.hypot(d.x, d.z) || 1;
+    const dist = lerp(F.minCast, F.maxCast, f.power);
+    f.phase = 'flying';
+    f.t = 0;
+    f.fromX = p.x;
+    f.fromZ = p.z;
+    f.x = p.x + (d.x / len) * dist;
+    f.z = p.z + (d.z / len) * dist;
+    this.actionCooldown = 0.3;
+    spendEnergy(s.needs, BALANCE.needs.energy.castCost);
+    this.emit({ type: 'swing', tool: 'rod', hit: true });
+    this.emit({ type: 'cast', power: f.power });
+    this.wearTool('rod', 1);
+  }
+
+  /** Lakes and ponds deep enough under the lure to hold fish. */
+  fishableAt(x: number, z: number): boolean {
+    return this.terrain.inPlayBounds(x, z) && this.terrain.heightAt(x, z) < WATER_LEVEL - BALANCE.fishing.minDepth;
+  }
+
+  private updateFishing(dt: number): void {
+    const f = this.fishing;
+    if (!f || f.phase === 'charging') return;
+    const s = this.state;
+    const p = s.player;
+    const F = BALANCE.fishing;
+    if (s.activeTool !== 'rod' || p.swimming || Math.hypot(f.x - p.x, f.z - p.z) > F.maxCast + F.leashSlack) {
+      this.endFishing('reeled');
+      return;
+    }
+    f.t += dt;
+    if (f.phase === 'flying') {
+      if (f.t < F.flightSeconds) return;
+      const water = this.fishableAt(f.x, f.z);
+      this.emit({ type: 'lureLanded', x: f.x, z: f.z, water });
+      if (!water) {
+        this.message('The lure landed on dry ground. Cast out over open water.', 'warn');
+        this.fishing = null;
+        return;
+      }
+      f.phase = 'waiting';
+      f.t = 0;
+      f.biteAt = this.rng.range(F.biteWait[0], F.biteWait[1]);
+    } else if (f.phase === 'waiting') {
+      if (f.t < f.biteAt) return;
+      f.phase = 'bite';
+      f.t = 0;
+      this.emit({ type: 'fishBite', x: f.x, z: f.z });
+    } else if (f.t > F.biteWindow) {
+      this.message('It got away. Click as soon as the float dips.');
+      this.endFishing('escaped');
+    }
+  }
+
+  /** Strike a biting fish: the fishing skill decides whether it's landed or slips the hook. */
+  private strike(f: FishingLine): void {
+    const s = this.state;
+    const xp = BALANCE.skills.xp;
+    spendEnergy(s.needs, BALANCE.needs.energy.hookCost);
+    this.emit({ type: 'swing', tool: 'rod', hit: true });
+    if (this.rng.chance(catchChance(s.skills.fishing))) {
+      s.stats.events.fishCaught = (s.stats.events.fishCaught ?? 0) + 1;
+      const added = this.give('rawFish', 1, f.x, WATER_LEVEL + 0.2, f.z, 'fishing');
+      if (added === 0) this.dropAt('rawFish', 1, s.player.x, s.player.z);
+      this.message(added ? 'You landed a trout!' : 'You landed a trout! No room in your pack, so it is at your feet.', 'good');
+      this.gainXp('fishing', xp.catch);
+      this.endFishing('caught');
+    } else {
+      this.message('The trout slipped the hook. Your fishing is improving.');
+      this.gainXp('fishing', xp.slip);
+      this.endFishing('slipped');
+    }
+  }
+
+  private endFishing(result: Extract<SimEvent, { type: 'fishDone' }>['result']): void {
+    const f = this.fishing;
+    if (!f) return;
+    this.fishing = null;
+    if (f.phase !== 'charging') this.emit({ type: 'fishDone', result, x: f.x, z: f.z });
+  }
+
+  /** Reel the line in (menus, pausing, switching away). */
+  cancelFishing(): void {
+    this.endFishing('reeled');
+  }
+
+  /** HUD prompt while a cast is in progress. */
+  describeFishing(): TargetInfo | null {
+    const f = this.fishing;
+    if (!f) return null;
+    switch (f.phase) {
+      case 'charging':
+        return { name: 'Fishing Pole', action: 'Release to cast', enabled: true };
+      case 'flying':
+      case 'waiting':
+        return { name: 'Waiting for a bite', action: 'Click to reel in', enabled: true };
+      case 'bite':
+        return { name: 'A fish is biting!', action: 'Click now to strike', enabled: true };
     }
   }
 
@@ -956,6 +1128,7 @@ export class Simulation {
     if (s.activeTool === tool) {
       s.activeTool = 'hands';
       this.bowDraw = -1;
+      this.endFishing('reeled');
     }
     this.emit({ type: 'broke', name: TOOLS[tool].name, tool });
     this.message(`Your ${TOOLS[tool].name} broke. You can craft a new one.`, 'warn');
@@ -1048,7 +1221,10 @@ export class Simulation {
       if (added > 0) any = true;
     }
     if (!any) this.message('Your pack is full.', 'warn');
-    else this.gainXp('hunting', BALANCE.skills.xp.butcher);
+    else {
+      spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
+      this.gainXp('hunting', BALANCE.skills.xp.butcher);
+    }
     if (c.remaining.every((r) => r.count <= 0)) s.carcasses.splice(i, 1);
     this.emit({ type: 'swing', tool: this.state.activeTool, hit: true });
     this.worldVersion++;
@@ -1380,6 +1556,7 @@ export class Simulation {
 
   selectTool(tool: ToolId): boolean {
     if (!this.state.tools.includes(tool)) return false;
+    if (tool !== this.state.activeTool) this.endFishing('reeled');
     this.state.activeTool = tool;
     this.bowDraw = -1;
     return true;
@@ -1457,6 +1634,7 @@ export class Simulation {
       rot: p.yaw, valid: false, reason: null,
     };
     this.bowDraw = -1;
+    this.endFishing('reeled');
     this.updatePlacementPreview();
     return true;
   }
@@ -1668,6 +1846,7 @@ export class Simulation {
       this.sleepByFire = byFire;
       this.placement = null;
       this.bowDraw = -1;
+      this.endFishing('reeled');
       p.sitting = false;
       p.vx = 0;
       p.vz = 0;
@@ -1675,6 +1854,7 @@ export class Simulation {
       this.emit({ type: 'sleepWait', structure: st.id });
       return true;
     }
+    this.endFishing('reeled');
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
     const elapsed = s.totalHours - before;
@@ -1803,6 +1983,7 @@ export class Simulation {
     this.sleepingIn = null;
     this.placement = null;
     this.bowDraw = -1;
+    this.fishing = null;
     this.projectiles.length = 0;
   }
 

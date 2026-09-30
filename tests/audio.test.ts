@@ -1,9 +1,9 @@
-import { existsSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  busGains, clampVolume, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME, MASTER_HEADROOM, masterGain, MUSIC_FADE_SECONDS, MUSIC_LEVEL, MUSIC_URL,
-  musicFadeLevel, volumePercent,
+  busGains, clampVolume, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME, LAKE_EDGE_LEVEL, LAKE_HEAR_DIST, LAKE_URL, lakeAmbienceLevel,
+  MASTER_HEADROOM, masterGain, MUSIC_FADE_SECONDS, MUSIC_LEVEL, MUSIC_URL, musicFadeLevel, volumePercent,
 } from '../src/audio/mix';
 import { DEFAULT_SETTINGS, MemoryStorage, normalizeSettings, RunManager, STORAGE_KEYS } from '../src/sim/run';
 
@@ -69,6 +69,45 @@ describe('background music', () => {
   it('the track ships with the game at the URL the player loads', () => {
     expect(MUSIC_URL.endsWith('audio/forest-ambience.mp3')).toBe(true);
     const file = resolve(__dirname, '../public', MUSIC_URL.replace(/^.*?audio\//, 'audio/'));
+    expect(existsSync(file)).toBe(true);
+    expect(statSync(file).size).toBeGreaterThan(1_000_000);
+  });
+});
+
+describe('lake ambience', () => {
+  it('swells as you approach the water and is silent away from it', () => {
+    expect(lakeAmbienceLevel(LAKE_HEAR_DIST)).toBe(0);
+    expect(lakeAmbienceLevel(LAKE_HEAR_DIST * 3)).toBe(0);
+    expect(lakeAmbienceLevel(99)).toBe(0);
+    expect(lakeAmbienceLevel(Number.NaN)).toBe(0);
+    expect(lakeAmbienceLevel(0)).toBe(LAKE_EDGE_LEVEL);
+    expect(lakeAmbienceLevel(-2)).toBe(LAKE_EDGE_LEVEL);
+    let prev = Infinity;
+    for (let d = 0; d <= LAKE_HEAR_DIST; d += 0.5) {
+      const v = lakeAmbienceLevel(d);
+      expect(v).toBeLessThanOrEqual(prev);
+      prev = v;
+    }
+    // eases out: halfway to the edge of hearing it is already down to a quarter
+    expect(lakeAmbienceLevel(LAKE_HEAR_DIST / 2)).toBeCloseTo(LAKE_EDGE_LEVEL / 4);
+    expect(lakeAmbienceLevel(5)).toBeGreaterThan(lakeAmbienceLevel(20));
+  });
+
+  it('stays quiet even at the water\'s edge', () => {
+    expect(LAKE_EDGE_LEVEL).toBeLessThanOrEqual(0.5);
+    expect(Math.max(...[0, 1, 2, 5].map(lakeAmbienceLevel))).toBe(LAKE_EDGE_LEVEL);
+  });
+
+  it('follows the Effects slider, not the Music slider', () => {
+    const src = readFileSync(resolve(__dirname, '../src/audio/audio.ts'), 'utf8');
+    expect(src).toMatch(/this\.lakeGain\.connect\(this\.ambBus\)/);
+    expect(src).not.toMatch(/lakeGain\.connect\(this\.musicVolume\)/);
+    expect(src).not.toMatch(/waterGain/);
+  });
+
+  it('ships Jon\'s lake recording with the game', () => {
+    expect(LAKE_URL.endsWith('audio/lake-water-moving.mp3')).toBe(true);
+    const file = resolve(__dirname, '../public', LAKE_URL.replace(/^.*?audio\//, 'audio/'));
     expect(existsSync(file)).toBe(true);
     expect(statSync(file).size).toBeGreaterThan(1_000_000);
   });

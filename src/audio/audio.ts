@@ -1,8 +1,11 @@
-import { busGains, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME, MUSIC_FADE_SECONDS, MUSIC_URL, musicFadeLevel, type VolumeSettings } from './mix';
+import {
+  busGains, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME, LAKE_URL, lakeAmbienceLevel, MUSIC_FADE_SECONDS, MUSIC_URL, musicFadeLevel,
+  type VolumeSettings,
+} from './mix';
 
 /**
- * Web Audio: a looping background music track plus procedural layered ambience (wind, water, fire, birds,
- * crickets, owls) and synthesized SFX. Music and effects/ambience each have their own volume bus, and both
+ * Web Audio: a looping background music track, a recorded lake loop that swells near water, procedural layered
+ * ambience (wind, fire, birds, crickets, owls) and synthesized SFX. Music and effects/ambience each have their own volume bus, and both
  * run through one master gain, so master volume and mute apply to all of it.
  */
 
@@ -10,7 +13,7 @@ export type Sfx =
   | 'gatherPlant' | 'gatherWood' | 'gatherStone' | 'chop' | 'treeFall' | 'craft' | 'learned' | 'objective'
   | 'place' | 'placeFail' | 'eat' | 'drink' | 'fill' | 'hurt' | 'death' | 'sleep' | 'dawn' | 'nightfall'
   | 'arrow' | 'hit' | 'growl' | 'howl' | 'jump' | 'land' | 'click' | 'fuel' | 'swing' | 'deny' | 'packFull'
-  | 'splash' | 'skillUp' | 'broke';
+  | 'splash' | 'skillUp' | 'broke' | 'cast' | 'plop' | 'bite' | 'reel';
 
 export interface AmbienceInput {
   hour: number;
@@ -31,7 +34,8 @@ export class AudioSystem {
   private noise!: AudioBuffer;
   private windGain!: GainNode;
   private windFilter!: BiquadFilterNode;
-  private waterGain!: GainNode;
+  private lakeGain!: GainNode;
+  private lake: HTMLAudioElement | null = null;
   private fireGain!: GainNode;
   private musicGain!: GainNode;
   private music: HTMLAudioElement | null = null;
@@ -54,6 +58,7 @@ export class AudioSystem {
     if (this.ctx) {
       void this.ctx.resume();
       this.playMusic();
+      this.playLake();
       return;
     }
     const Ctor = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
@@ -101,9 +106,32 @@ export class AudioSystem {
     const wind = loop('lowpass', 500, 0.6);
     this.windGain = wind.g;
     this.windFilter = wind.f;
-    this.waterGain = loop('bandpass', 420, 0.7).g;
     this.fireGain = loop('lowpass', 900, 0.4).g;
     this.startMusic(ctx);
+    this.startLake(ctx);
+  }
+
+  /** The lake loop plays on the ambience bus (Effects slider), silent until you come near water. */
+  private startLake(ctx: AudioContext): void {
+    if (typeof Audio === 'undefined') return;
+    const el = new Audio(LAKE_URL);
+    el.loop = true;
+    el.preload = 'auto';
+    this.lakeGain = ctx.createGain();
+    this.lakeGain.gain.value = 0;
+    this.lakeGain.connect(this.ambBus);
+    try {
+      ctx.createMediaElementSource(el).connect(this.lakeGain);
+    } catch {
+      return;
+    }
+    this.lake = el;
+    this.playLake();
+  }
+
+  private playLake(): void {
+    const el = this.lake;
+    if (el?.paused) el.play().catch(() => undefined);
   }
 
   private startMusic(ctx: AudioContext): void {
@@ -368,6 +396,21 @@ export class AudioSystem {
         this.burst(0.5, { type: 'lowpass', freq: 900, to: 250, gain: 0.35 * Math.min(1, strength) + 0.1 });
         this.burst(0.35, { type: 'highpass', freq: 1800, gain: 0.12, delay: 0.03 });
         break;
+      case 'cast':
+        this.burst(0.3, { freq: 900, to: 2600, q: 1.2, gain: 0.06 + 0.06 * strength });
+        this.tone(2400, 0.4, { type: 'triangle', gain: 0.012, to: 1500, delay: 0.05 });
+        break;
+      case 'plop':
+        this.tone(420 * r(), 0.09, { gain: 0.08, to: 900 });
+        this.burst(0.18, { type: 'lowpass', freq: 1100, to: 400, gain: 0.12 });
+        break;
+      case 'bite':
+        for (let i = 0; i < 3; i++) this.burst(0.06, { type: 'lowpass', freq: 800, to: 300, gain: 0.14, delay: i * 0.11 });
+        this.tone(330, 0.05, { type: 'triangle', gain: 0.05, delay: 0.02 });
+        break;
+      case 'reel':
+        for (let i = 0; i < 6; i++) this.tone(1500 * r(), 0.02, { type: 'square', gain: 0.012, lp: 2500, delay: i * 0.045 });
+        break;
       case 'skillUp':
         [659, 880, 1175].forEach((f, i) => this.tone(f, 0.8, { type: 'triangle', gain: 0.06, delay: i * 0.08, attack: 0.02 }));
         break;
@@ -464,8 +507,7 @@ export class AudioSystem {
     const windLevel = (0.05 + 0.035 * Math.sin(this.t * 0.13) + 0.02 * Math.sin(this.t * 0.41)) * (a.indoors ? 0.5 : 1) * quiet;
     this.windGain.gain.setTargetAtTime(windLevel, now, 0.5);
     this.windFilter.frequency.setTargetAtTime(380 + 260 * (0.5 + 0.5 * Math.sin(this.t * 0.21)), now, 0.8);
-    const water = Math.max(0, 1 - a.waterDist / 22);
-    this.waterGain.gain.setTargetAtTime(water * water * 0.14 * quiet, now, 0.4);
+    if (this.lake) this.lakeGain.gain.setTargetAtTime(lakeAmbienceLevel(a.waterDist) * quiet, now, 0.6);
     this.fireNear = Math.max(0, 1 - a.fireDist / 12);
     this.fireGain.gain.setTargetAtTime(this.fireNear * this.fireNear * 0.12 * quiet, now, 0.3);
     if (a.paused) return;

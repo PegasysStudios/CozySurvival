@@ -19,6 +19,9 @@ export type ItemId =
   | 'berryTea'
   | 'stew'
   | 'cedarTrout'
+  | 'troutChowder'
+  | 'troutSkewer'
+  | 'smokedTrout'
   | 'charredMeal'
   | 'arrow';
 
@@ -67,11 +70,14 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   berryTea: { id: 'berryTea', name: 'Salmonberry Tea', plural: 'Salmonberry Tea', stack: 4, color: '#e0664d', water: true, meal: true, description: 'A warm mug that tastes like summer.', food: { hunger: 4, thirst: 30, warmth: 16, health: 2, energy: 12 } },
   stew: { id: 'stew', name: 'Forest Stew', plural: 'Forest Stew', stack: 4, color: '#a86d3b', meal: true, description: 'Meat, chanterelles, and onion simmered in boiled water. Deeply cozy.', food: { hunger: 42, thirst: 16, warmth: 20, health: 12, energy: 18 } },
   cedarTrout: { id: 'cedarTrout', name: 'Bark-Baked Trout', plural: 'Bark-Baked Trout', stack: 4, color: '#c98b52', meal: true, description: 'Trout and onion baked in a birch-bark parcel.', food: { hunger: 34, thirst: 4, warmth: 8, health: 8, energy: 12 } },
+  troutChowder: { id: 'troutChowder', name: 'Trout Chowder', plural: 'Trout Chowder', stack: 4, color: '#e3c9a0', meal: true, description: 'Trout, onion and chanterelles simmered in boiled water.', food: { hunger: 38, thirst: 18, warmth: 18, health: 10, energy: 16 } },
+  troutSkewer: { id: 'troutSkewer', name: 'Trout & Berry Skewer', plural: 'Trout & Berry Skewers', stack: 6, color: '#d9785a', meal: true, description: 'Roast trout glazed with salmonberries.', food: { hunger: 24, thirst: 5, warmth: 5, health: 5, energy: 10 } },
+  smokedTrout: { id: 'smokedTrout', name: 'Smoked Trout', plural: 'Smoked Trout', stack: 8, color: '#b0643c', meal: true, description: 'A strip of smoky trout. Light, and good for a long day.', food: { hunger: 16, warmth: 3, health: 3, energy: 10 } },
   charredMeal: { id: 'charredMeal', name: 'Charred Meal', plural: 'Charred Meals', stack: 6, color: '#5a4032', description: 'A little burnt around the edges, but still filling. Practice makes perfect.', food: { hunger: 8, warmth: 2 } },
   arrow: { id: 'arrow', name: 'Arrow', plural: 'Arrows', stack: 16, color: '#b08a5a', description: 'Stone-tipped. Sometimes you can find them again.' },
 };
 
-export type ToolId = 'hands' | 'axe' | 'spear' | 'bow' | 'torch';
+export type ToolId = 'hands' | 'axe' | 'spear' | 'bow' | 'torch' | 'rod';
 
 export interface ToolDef {
   id: ToolId;
@@ -86,9 +92,11 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   spear: { id: 'spear', name: 'Spear', slot: 3, description: 'Long reach. Good for fish and for keeping wolves at bay.' },
   bow: { id: 'bow', name: 'Bow', slot: 4, description: 'Hold left-click to draw, release to shoot. Needs arrows.' },
   torch: { id: 'torch', name: 'Torch', slot: 5, description: 'Light and warmth. Predators keep their distance.' },
+  rod: { id: 'rod', name: 'Fishing Pole', slot: 6, description: 'Hold left-click to wind up a cast, release to throw. Click when a fish bites.' },
 };
 
-export const TOOL_ORDER: ToolId[] = ['hands', 'axe', 'spear', 'bow', 'torch'];
+/** Multiplayer sends the held tool as its index here, so new tools go at the end. */
+export const TOOL_ORDER: ToolId[] = ['hands', 'axe', 'spear', 'bow', 'torch', 'rod'];
 
 export type GearId = 'basket' | 'backpack' | 'canteen';
 

@@ -107,6 +107,9 @@ function toolGeometry(tool: ToolId): THREE.BufferGeometry | null {
         b.add(new CylinderGeometry(0.014, 0.014, 1, 4), { matrix: between(0, Math.sin(a0) * 0.5, Math.cos(a0) * 0.18, 0, Math.sin(a1) * 0.5, Math.cos(a1) * 0.18), color: '#7a5634' });
       }
       break;
+    case 'rod':
+      b.add(new CylinderGeometry(0.008, 0.02, 1.9, 5), { matrix: tf(0, 0.55, 0.6, Math.PI / 2 - 0.55, 0, 0), color: '#9a7449' });
+      break;
     default:
       return null;
   }

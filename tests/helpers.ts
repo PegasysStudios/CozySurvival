@@ -1,6 +1,7 @@
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
 import type { ItemId } from '../src/data/items';
+import { RECIPE_BY_ID } from '../src/data/recipes';
 import type { AnimalEnv } from '../src/sim/animals';
 import type { Collider } from '../src/sim/colliders';
 import type { SimEvent } from '../src/sim/events';
@@ -89,16 +90,41 @@ export function nearestTree(sim: Simulation, species?: string): number {
   return best;
 }
 
-export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench' | 'hideTent'): StructureState {
-  const inputs = { campfire: { stone: 5, stick: 4, fiber: 1 }, leanTo: { log: 3, stick: 4, fiber: 4, cordage: 1 }, bench: { log: 2 }, hideTent: { hide: 3, log: 2, cordage: 2 } }[recipe];
+/** A recipe's ingredients as a `give` map. */
+export function recipeInputs(recipe: string): Partial<Record<ItemId, number>> {
+  const out: Partial<Record<ItemId, number>> = {};
+  for (const i of RECIPE_BY_ID[recipe].inputs) out[i.item] = (out[i.item] ?? 0) + i.count;
+  return out;
+}
+
+/** Give exactly what `recipe` needs. */
+export function giveRecipe(sim: Simulation, recipe: string): void {
+  give(sim, recipeInputs(recipe));
+}
+
+/**
+ * Builds `recipe` from freshly given ingredients without draining events; whatever the pack held beforehand is set
+ * aside and put back, since the bigger structures fill a starting pack on their own.
+ */
+export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench' | 'hideTent'): StructureState {
   if (!sim.state.known.includes(recipe)) sim.state.known.push(recipe);
-  give(sim, inputs);
+  const inv = sim.state.inventory;
+  const held = inv.slots.slice();
+  inv.slots.fill(null);
+  giveRecipe(sim, recipe);
   sim.beginPlacement(recipe);
   const spot = findValidSpot(sim, recipe);
   sim.setPlacementAt(spot.x, spot.z);
   if (!sim.confirmPlacement()) throw new Error(`could not place ${recipe}`);
-  drain(sim);
+  held.forEach((s, i) => (inv.slots[i] = s));
   return sim.state.structures[sim.state.structures.length - 1];
+}
+
+/** Like `buildFresh`, then drains the events. */
+export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench' | 'hideTent'): StructureState {
+  const s = buildFresh(sim, recipe);
+  drain(sim);
+  return s;
 }
 
 /** Aim the camera at a world point. */

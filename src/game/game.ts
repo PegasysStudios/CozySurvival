@@ -285,7 +285,7 @@ export class Game {
     this.saveNow();
     this.screens.syncSettings(this.settings);
     if (this.mp) {
-      this.sim.bowDraw = -1;
+      this.dropCharge();
       this.mpHud.closeChat();
     }
     this.screens.showPause(this.mp ? { host: this.mp.role === 'host', players: this.mp.roster().length } : null);
@@ -304,10 +304,16 @@ export class Game {
     this.showTitle();
   }
 
+  /** Let go of a half-drawn bow or a wound-up cast without firing it. */
+  private dropCharge(): void {
+    this.sim.bowDraw = -1;
+    if (this.sim.fishing?.phase === 'charging') this.sim.cancelFishing();
+  }
+
   private openPanel(kind: 'inventory' | 'crafting' | 'campfire', fireId?: number): void {
     if (this.mode !== 'playing' && this.mode !== 'panel') return;
     this.sim.cancelPlacement();
-    this.sim.bowDraw = -1;
+    this.dropCharge();
     if (this.dev?.open) this.dev.toggle();
     this.panels.open(kind, { fireId });
     if (kind === 'crafting') this.hud.clearNewRecipes();
@@ -511,7 +517,7 @@ export class Game {
     vm.sprinting = ps.sprinting;
     vm.lookDX = playing ? input.mouseDX : 0;
     vm.lookDY = playing ? input.mouseDY : 0;
-    vm.draw = sim.bowDraw >= 0 ? Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw) : -1;
+    vm.draw = sim.fishing?.phase === 'charging' ? sim.fishing.power : sim.bowDraw >= 0 ? Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw) : -1;
     vm.sitting = ps.sitting;
     vm.hasArrows = sim.state.inventory.slots.some((s) => s?.item === 'arrow');
     this.view.showViewModel = this.mode !== 'title' && this.mode !== 'dead' && !sim.placement && sim.sleepingIn === null;
@@ -678,6 +684,23 @@ export class Game {
       case 'splash':
         this.sfx('splash', e.impact / 10);
         fx.splash(p.x, 0, p.z, 18);
+        break;
+      case 'cast':
+        this.sfx('cast', e.power);
+        break;
+      case 'lureLanded':
+        if (e.water) {
+          this.sfx('plop');
+          fx.splash(e.x, 0, e.z, 5);
+        }
+        break;
+      case 'fishBite':
+        this.sfx('bite');
+        fx.splash(e.x, 0, e.z, 7);
+        break;
+      case 'fishDone':
+        if (e.result !== 'escaped') this.sfx('reel');
+        if (e.result === 'caught' || e.result === 'slipped') fx.splash(e.x, 0, e.z, 12);
         break;
       case 'treeFell':
         this.sfx('treeFall');
@@ -1137,7 +1160,7 @@ export class Game {
   private openChat(): void {
     if (!this.mp || this.mpJoining) return;
     this.input.releaseAll();
-    this.sim.bowDraw = -1;
+    this.dropCharge();
     if (this.input.locked) {
       this.expectUnlock = true;
       this.input.exitLock();

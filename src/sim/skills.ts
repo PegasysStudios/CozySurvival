@@ -4,7 +4,7 @@ import type { GameState, SkillId } from './state';
 
 const K = BALANCE.skills;
 
-export const SKILL_IDS: SkillId[] = ['gathering', 'hunting', 'cooking', 'crafting'];
+export const SKILL_IDS: SkillId[] = ['gathering', 'hunting', 'cooking', 'crafting', 'fishing'];
 export const MAX_SKILL_LEVEL = K.thresholds.length + 1;
 
 export const SKILL_INFO: Record<SkillId, { name: string; how: string }> = {
@@ -12,10 +12,11 @@ export const SKILL_INFO: Record<SkillId, { name: string; how: string }> = {
   hunting: { name: 'Hunting', how: 'Hit and bring down animals, then butcher them.' },
   cooking: { name: 'Cooking', how: 'Cook at a campfire.' },
   crafting: { name: 'Crafting', how: 'Craft tools, gear and materials, and build structures.' },
+  fishing: { name: 'Fishing', how: 'Cast a fishing pole into lakes and ponds and strike when a fish bites.' },
 };
 
 export function createSkills(): Record<SkillId, number> {
-  return { gathering: 0, hunting: 0, cooking: 0, crafting: 0 };
+  return { gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0 };
 }
 
 export function skillLevel(xp: number): number {
@@ -45,6 +46,7 @@ export const huntDamageMultiplier = (xp: number) => 1 + curve(K.huntDamageBonus,
 export const butcherBonusChance = (xp: number) => curve(K.butcherBonusChance, xp);
 export const burnChance = (xp: number) => curve(K.burnChance, xp);
 export const durabilityMultiplier = (xp: number) => curve(K.durabilityMultiplier, xp);
+export const catchChance = (xp: number) => curve(K.catchChance, xp);
 
 /** One-line description of what the current level does, for the UI. */
 export function skillEffect(id: SkillId, xp: number): string {
@@ -58,6 +60,8 @@ export function skillEffect(id: SkillId, xp: number): string {
       return `${pct(burnChance(xp))} chance to char a meal`;
     case 'crafting':
       return `Crafted tools and shelters last ×${durabilityMultiplier(xp).toFixed(1)}`;
+    case 'fishing':
+      return `${pct(catchChance(xp))} chance to land a hooked fish`;
   }
 }
 

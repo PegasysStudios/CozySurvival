@@ -3,7 +3,7 @@ import { BALANCE } from '../src/data/balance';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction } from '../src/sim/durability';
 import { checkPlacement } from '../src/sim/placement';
 import type { Simulation } from '../src/sim/simulation';
-import { drain, give, keepAlive, nearestTree, placeStructure, quietSim, run } from './helpers';
+import { drain, giveRecipe, keepAlive, nearestTree, placeStructure, quietSim, run } from './helpers';
 
 const D = BALANCE.durability;
 const MAX_XP = BALANCE.skills.thresholds[BALANCE.skills.thresholds.length - 1];
@@ -42,7 +42,7 @@ describe('wear math', () => {
 
 function withAxe(sim: Simulation) {
   if (!sim.state.known.includes('axe')) sim.state.known.push('axe');
-  give(sim, { stick: 2, stone: 2, fiber: 2 });
+  giveRecipe(sim, 'axe');
   expect(sim.craft('axe').ok).toBe(true);
   drain(sim);
 }

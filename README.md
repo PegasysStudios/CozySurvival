@@ -38,7 +38,8 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | Gather, use tool, interact (fires, benches, shelters, carcasses) | Left-click (hold to repeat) |
 | Campfire menu (fuel meter, add a stick or log, cook) | Left-click a lit campfire (an unlit one takes fuel straight away) |
 | Draw and release the bow | Hold and release left-click |
-| Select tool | 1–5 or mouse wheel |
+| Fish (fishing pole) | Hold left-click to wind up, release to cast, click when the float dips |
+| Select tool | 1–6 or mouse wheel |
 | Crafting | C |
 | Pack (inventory) | Tab |
 | Quick eat or drink whatever you need most | F |
@@ -55,22 +56,24 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 - **Cold.** Night pulls warmth toward zero; fires, shelters and a torch hold it up.
   - Cold can't kill you during the first two nights: freezing still hurts, but stops at 1 health. From night 3 on it can be lethal. Hunger and thirst can still kill at any time.
   - Within range of a burning campfire (5.5 m) the cold never lowers your warmth, even at the edge of the firelight or while wading.
-  - Sleeping through the night with no burning campfire in range costs 30 of your 100 warmth (`sleep.coldWarmthCost` in `balance.ts`). Beside a burning fire you wake at least as warm as you lay down, and a shelter can still warm you up. Energy is generous: walking barely touches it, running drains it, standing still or sitting on a bench restores it, food and drink speed up recovery, and sleep refills it. Tasks cost a little energy each: chopping and swinging, gathering, crafting, building, and swimming.
-- **Skills.** Gathering, hunting, cooking and crafting each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Pack panel (Tab). The effects are gentle:
+  - Sleeping through the night with no burning campfire in range costs 30 of your 100 warmth (`sleep.coldWarmthCost` in `balance.ts`). Beside a burning fire you wake at least as warm as you lay down, and a shelter can still warm you up. Energy is a real resource: walking drains a little (0.1/s), running drains 0.8/s (about two minutes from full), and every task and tool action costs energy: swinging an axe, spear or torch or loosing an arrow 1, gathering 0.5, casting a line 1.2, striking a fish 0.4, crafting 3, building 6, swimming 0.2/s. Standing still or sitting on a bench restores it, food and drink speed up recovery, and sleep refills it.
+- **Skills.** Gathering, hunting, cooking, crafting and fishing each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Pack panel (Tab). The effects are gentle:
   - gathering: a growing chance of a bonus find (up to 40%)
   - hunting: up to 25% more damage to animals and a chance of extra meat when you butcher
   - cooking: a novice sometimes chars a meal (20% at level 1, never at level 10). The first time you cook a dish it always comes out right, drinks never burn, and a Charred Meal is still edible.
   - crafting: tools and shelters you make last longer (up to 4×)
+  - fishing: the chance to land a hooked fish, from 35% at level 1 (a few tries per fish) to 90% at level 10
 - **Durability.** Crafted tools, shelters and benches wear out.
   - Tools lose a point per use and a little over time, and a lit torch burns down while you hold it. The HUD shows a bar under each tool, and the bow's slot shows how many arrows you carry (red at zero).
   - Shelters weather slowly and wear a little each night you sleep in them. Benches wear a little each time you sit.
   - You get a warning at 25%. At zero the item breaks: a tool is gone, a structure falls apart. Craft or build a new one; your recipes stay known.
   - Campfires, gear (basket, backpack, canteen) and bare hands don't wear.
 - **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack. Recipes are learned by doing (for example, gathering sticks and stones teaches the Stone Axe), and a 12-step guided objective track leads through the basics:
-  - tools: axe, spear, bow and arrows, torch
+  - tools: axe, spear, bow and arrows, torch, fishing pole
   - campfire and fuel
   - water: drink by hand, fill a canteen, boil it at a fire
-  - multi-ingredient meals: Forest Stew, Mushroom Skewer, Salmonberry Tea, Bark-Baked Trout
+  - multi-ingredient meals: Forest Stew, Mushroom Skewer, Salmonberry Tea, Bark-Baked Trout, Trout Chowder, Trout & Berry Skewer, Smoked Trout
+  - gear, tools, structures and cordage cost about 5× what they did in round 3 (a workbench is 10 logs). Arrows, fuel and food recipes are unchanged. The comment above `RECIPES` in `src/data/recipes.ts` lists the few recipes kept below 5× and why.
   - hunting, chopping trees, and shelters (lean-to, hide tent)
   - carry upgrades: Grass Basket, Hide Backpack
 - **Forage is sparse, so the track spans several days.**
@@ -83,6 +86,8 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   - Rabbits, deer and fish each have their own fear radius and flee behaviour. Deer spook from far away, so a bow helps.
   - Predators are rare early. Day 1 has a single distant grey wolf, black bears appear from day 2, and numbers grow slowly after that. Wolves spot you from farther away at night.
   - Predators stalk and attack, but keep away from lit fires, and a raised torch holds them off.
+- **Fishing.** Craft a Fishing Pole (10 sticks, 5 stones, 5 cordage) once you have made cordage and found the water. Stand at a lake or pond, hold left-click to wind up (longer throws further, 3 to 14 m), release to cast, and wait for a bite (2.5 to 7 s). Click within 0.9 s of the float dipping to strike; your fishing skill decides whether the trout is landed or slips the hook. Clicking early reels in, and switching tools, swimming or walking off reels the line in too.
+- **Stripped birches.** Peeling all the bark off a paper birch leaves the lower half of its trunk bare wood until the bark grows back a day later. The look follows the saved bark state, so it survives reloads and syncs in multiplayer.
 - **Trees.** Felling a tree takes two steps.
   - Chop it down with the axe. It topples with a thud and the whole trunk lies on the ground, leaving a stump.
   - Keep chopping the fallen trunk to cut it into logs, two hits per log, working in from the stump end. The last log also gives the branches as sticks.
@@ -103,13 +108,13 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   - Flat-shaded models with wind sway, soft shadows, and a lake with shoreline foam.
   - Particles: wood chips, leaves, dust, splashes, embers and fireflies.
   - First-person hands and tools with swing, chop, draw and bob animation.
-  - Procedural ambience (wind, water, fire crackle, birds by day, crickets and owls at night) and sound effects for every action.
+  - Ambience: Jon's recorded lake loop (`public/audio/lake-water-moving.mp3`) near lakes and ponds, quiet even at the water's edge and fading out 36 m from the shore, plus procedural wind, fire crackle, birds by day, and crickets and owls at night. Sound effects for every action.
   - Background music: a looping forest-ambience track that fades in gently after your first click (browsers block audio before that).
   - Gentle HUD toasts, banners and tooltips.
 - **Volume.** The pause menu (Esc) has three sliders, saved in `localStorage` with your other settings:
   - **Master** (default 50%) scales every sound, music included.
   - **Music** (default 10%) is the background track only. At 100% it plays at its original mix level.
-  - **Effects** (default 100%) covers every other sound: effects and ambience. At 100% they sound exactly as loud as before.
+  - **Effects** (default 100%) covers every other sound: effects and ambience, including the lake loop.
 
   **M** mutes and unmutes everything without changing the sliders.
 
@@ -179,18 +184,22 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 308 tests covering:
+`npm test` runs 338 tests covering:
 
 - inventory stacking and carry limits
 - crafting, recipe unlocks, and ingredients consumed only on success
+- round 4 costs: the 5× rule against the round 3 table, the listed exceptions, unchanged arrows, fuel and food, and every recipe fitting a 6-slot pack
+- fishing: the pole recipe and unlock, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals
 - placement validity against trees, rocks, felled trunks, structures, water, slope and reach, plus rotation
-- needs, energy drain for movement, swimming and tasks, regen and sleep restore
+- needs, energy drain for movement, swimming, tasks and every tool action, regen and sleep restore
+- stripped birches: the bare-trunk state, its survival through save and load, and regrowth
 - day-cycle timing (24-minute days) at 1× and scaled time
 - skills: levels, XP from each activity, gathering bonuses, hunting damage and extra meat, burn chance, beginner's luck
 - durability: skill-scaled tools and structures, wear per use and over time, torch burn, low warnings, breaking and re-crafting
 - two-step trees: trunk collider and targeting, logs cut from the stump end, full-pack drops, save/load mid-trunk
 - boulders and trunks you can stand on, rocks too tall to climb, swimming in and out of deep water, splashes
 - master volume, mute and music fade-in math, plus settings persistence and migration
+- the lake loop's proximity volume, its Effects-bus routing and the shipped track
 - separate music and effects volume, the 10% music default, and migration of older audio settings
 - Esc priority: an open menu closes without pausing, and Esc pauses only with no menu open
 - the bow's arrow count in the hotbar
@@ -229,4 +238,8 @@ Rendering is built for 60 fps:
 - While muted, the music keeps playing silently, so unmuting picks it back up mid-track.
 - Multiplayer has only run over the in-memory and BroadcastChannel transports here. The Supabase transport is written against the setup guide but hasn't been played live.
 - Multiplayer trusts every client: the host doesn't check a guest's reach or placement. If two players take the last item at the same moment, both may get it, though the world's count stays right.
+- Round 4 pacing (5× costs against sparse forage, faster energy drain) and the fishing timings are tuned from the numbers only, not a playtest.
+- A birch only shows bare wood once all its bark is peeled; with one of its two strips left it still looks whole.
+- Other players see your fishing pole but not your line or float, and fishing makes no sound for them.
+- The lake loop measures distance to each lake's round outline (centre and radius), so on irregular shores it can be a few metres off. It keeps streaming silently when you are far from water.
 - Other players' actions make no sound yet. The host's tab keeps the world running when it's in the background, but a browser may slow its timers there, and guests then see a "Host is away" note.

@@ -5,13 +5,14 @@ import { checkPlacement } from '../src/sim/placement';
 import { deserializeState, serializeState, SAVE_FORMAT } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
 import { STATE_VERSION } from '../src/sim/state';
-import { findValidSpot, give, placeStructure, quietSim, run } from './helpers';
+import { give, giveRecipe, placeStructure, quietSim, run } from './helpers';
 
 function playedSim(): Simulation {
   const sim = Simulation.newGame(42);
   run(sim, 2, { moveZ: 1 });
   sim.state.known.push('axe', 'campfire');
-  give(sim, { stick: 8, stone: 7, fiber: 3, berries: 4 });
+  giveRecipe(sim, 'axe');
+  give(sim, { berries: 4 });
   sim.craft('axe');
   // chop the nearest tree down
   const p = sim.state.player;
@@ -28,11 +29,7 @@ function playedSim(): Simulation {
   // gather from a resource
   sim.state.resources[3].charges = 1;
   sim.state.resources[3].respawnAt = 40;
-  // place a campfire
-  sim.beginPlacement('campfire');
-  const spot = findValidSpot(sim, 'campfire');
-  sim.setPlacementAt(spot.x, spot.z);
-  sim.confirmPlacement();
+  placeStructure(sim, 'campfire');
   sim.takeEvents([]);
   return sim;
 }
@@ -99,7 +96,7 @@ describe('save / load', () => {
     obj.skills = { gathering: -5, hunting: 'lots', cooking: 12 };
     const loaded = deserializeState(JSON.stringify(obj))!;
     expect(loaded.toolWear).toEqual({ axe: { dur: 40, max: 40 } });
-    expect(loaded.skills).toEqual({ gathering: 0, hunting: 0, cooking: 12, crafting: 0 });
+    expect(loaded.skills).toEqual({ gathering: 0, hunting: 0, cooking: 12, crafting: 0, fishing: 0 });
   });
 
   it('migrates version-1 saves from before skills, durability, trunks and swimming', () => {
@@ -117,7 +114,7 @@ describe('save / load', () => {
     const state = deserializeState(JSON.stringify(v1))!;
     expect(state).not.toBeNull();
     expect(state.version).toBe(STATE_VERSION);
-    expect(state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0 });
+    expect(state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0 });
     expect(state.toolWear).toEqual({});
     expect(state.player.swimming).toBe(false);
     expect(state.structures.find((s) => s.prefab === 'campfire')!.wear).toBeUndefined();

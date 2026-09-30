@@ -37,11 +37,17 @@ const g = (item: ItemId, atLeast = 1): UnlockCond => ({ gathered: item, atLeast 
 const c = (recipe: string, atLeast = 1): UnlockCond => ({ crafted: recipe, atLeast });
 const e = (event: string, atLeast = 1): UnlockCond => ({ event, atLeast });
 
+/**
+ * Gear, tool, structure and material costs are 5x their original counts, except where that would break
+ * progression: every recipe must fit the base 6-slot pack (gear upgrades are optional), the first tool must come
+ * out of the starter patch, and cordage (an ingredient in many other recipes whose cordage counts already went 5x)
+ * only goes up a little so those don't compound to 25x. Arrows, cooking and campfire fuel keep their costs.
+ */
 export const RECIPES: Recipe[] = [
   // ---- materials
   {
     id: 'cordage', name: 'Cordage', category: 'materials',
-    inputs: [{ item: 'fiber', count: 3 }],
+    inputs: [{ item: 'fiber', count: 4 }],
     output: { kind: 'item', item: 'cordage', count: 1 },
     unlock: { all: [g('fiber', 3)] },
     learnHint: 'Fern fiber twists into strong cordage.',
@@ -58,7 +64,7 @@ export const RECIPES: Recipe[] = [
   // ---- tools
   {
     id: 'axe', name: 'Stone Axe', category: 'tools',
-    inputs: [{ item: 'stick', count: 2 }, { item: 'stone', count: 2 }, { item: 'fiber', count: 2 }],
+    inputs: [{ item: 'stick', count: 6 }, { item: 'stone', count: 6 }, { item: 'fiber', count: 6 }],
     output: { kind: 'tool', tool: 'axe' },
     unlock: { all: [g('stick', 2), g('stone', 2)] },
     learnHint: 'A stick, a sharp stone, some fiber... an axe!',
@@ -66,7 +72,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'spear', name: 'Spear', category: 'tools',
-    inputs: [{ item: 'stick', count: 3 }, { item: 'stone', count: 1 }, { item: 'cordage', count: 1 }],
+    inputs: [{ item: 'stick', count: 15 }, { item: 'stone', count: 5 }, { item: 'cordage', count: 5 }],
     output: { kind: 'tool', tool: 'spear' },
     unlock: { all: [c('axe')], any: [g('fiber', 3), c('cordage')] },
     learnHint: 'Lash a stone point to a long shaft for a spear.',
@@ -74,7 +80,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'bow', name: 'Bow', category: 'tools',
-    inputs: [{ item: 'stick', count: 3 }, { item: 'cordage', count: 2 }],
+    inputs: [{ item: 'stick', count: 15 }, { item: 'cordage', count: 10 }],
     output: { kind: 'tool', tool: 'bow' },
     unlock: { any: [c('spear'), e('deerSpooked')] },
     learnHint: 'Deer bolt long before you get close. A bow would reach them.',
@@ -82,16 +88,24 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'torch', name: 'Torch', category: 'tools',
-    inputs: [{ item: 'stick', count: 1 }, { item: 'fiber', count: 2 }, { item: 'bark', count: 1 }],
+    inputs: [{ item: 'stick', count: 5 }, { item: 'fiber', count: 10 }, { item: 'bark', count: 5 }],
     output: { kind: 'tool', tool: 'torch' },
     unlock: { any: [c('campfire'), e('nightfall')] },
     learnHint: 'Birch bark burns bright. Wrap it on a stick for a torch.',
     description: 'Carry light and a little warmth. Predators keep their distance.',
   },
+  {
+    id: 'rod', name: 'Fishing Pole', category: 'tools',
+    inputs: [{ item: 'stick', count: 10 }, { item: 'stone', count: 5 }, { item: 'cordage', count: 5 }],
+    output: { kind: 'tool', tool: 'rod' },
+    unlock: { all: [c('cordage')], any: [e('drankByHand'), g('lakeWater', 1), g('rawFish', 1)] },
+    learnHint: 'A long stick, a stone sinker and a cordage line: a fishing pole.',
+    description: 'Hold left-click to wind up a cast, release to throw. Click the moment a fish bites.',
+  },
   // ---- gear
   {
     id: 'basket', name: 'Grass Basket', category: 'gear',
-    inputs: [{ item: 'fiber', count: 6 }, { item: 'stick', count: 2 }],
+    inputs: [{ item: 'fiber', count: 30 }, { item: 'stick', count: 10 }],
     output: { kind: 'gear', gear: 'basket' },
     unlock: { any: [e('packFull'), g('fiber', 8)] },
     learnHint: 'Your hands are full. Weave a basket to carry more.',
@@ -99,7 +113,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'canteen', name: 'Bark Canteen', category: 'gear',
-    inputs: [{ item: 'bark', count: 3 }, { item: 'cordage', count: 1 }],
+    inputs: [{ item: 'bark', count: 15 }, { item: 'cordage', count: 5 }],
     output: { kind: 'gear', gear: 'canteen' },
     unlock: { any: [g('bark', 1)] },
     learnHint: 'Folded birch bark holds water. A canteen!',
@@ -107,7 +121,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'backpack', name: 'Hide Backpack', category: 'gear',
-    inputs: [{ item: 'hide', count: 2 }, { item: 'cordage', count: 2 }, { item: 'stick', count: 2 }],
+    inputs: [{ item: 'hide', count: 10 }, { item: 'cordage', count: 10 }, { item: 'stick', count: 10 }],
     output: { kind: 'gear', gear: 'backpack' },
     unlock: { all: [g('hide', 1)] },
     learnHint: 'Hide and cordage would make a sturdy backpack.',
@@ -170,10 +184,34 @@ export const RECIPES: Recipe[] = [
     learnHint: 'Wrap trout and onion in birch bark and bake it in the embers.',
     description: 'Tender, aromatic trout.',
   },
+  {
+    id: 'troutChowder', name: 'Trout Chowder', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'boiledWater', count: 1 }, { item: 'rawFish', count: 1 }, { item: 'onion', count: 1 }, { item: 'mushroom', count: 1 }],
+    output: { kind: 'item', item: 'troutChowder', count: 1 },
+    unlock: { all: [c('boilWater'), g('rawFish', 1)] },
+    learnHint: 'Trout, onion and chanterelles simmered in boiled water: a lakeside chowder.',
+    description: 'Creamy, warming and very filling.',
+  },
+  {
+    id: 'troutSkewer', name: 'Trout & Berry Skewer', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 1 }, { item: 'berries', count: 2 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'troutSkewer', count: 1 },
+    unlock: { all: [g('rawFish', 1), g('berries', 1)] },
+    learnHint: 'Thread trout and salmonberries on a stick and roast them over the fire.',
+    description: 'Smoky fish with a sweet, tart glaze.',
+  },
+  {
+    id: 'smokedTrout', name: 'Smoked Trout ×2', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 2 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'smokedTrout', count: 2 },
+    unlock: { all: [c('grilledTrout')] },
+    learnHint: 'Hang two trout in the smoke on a stick. It keeps you going on long days.',
+    description: 'Two strips of smoked trout for the trail.',
+  },
   // ---- structures (placed in the world)
   {
     id: 'campfire', name: 'Campfire', category: 'structures',
-    inputs: [{ item: 'stone', count: 5 }, { item: 'stick', count: 4 }, { item: 'fiber', count: 1 }],
+    inputs: [{ item: 'stone', count: 25 }, { item: 'stick', count: 20 }, { item: 'fiber', count: 5 }],
     output: { kind: 'place', prefab: 'campfire' },
     unlock: { any: [c('axe'), g('stone', 6)] },
     learnHint: 'Ring some stones, stack sticks, add tinder: a campfire.',
@@ -181,7 +219,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'leanTo', name: 'Lean-to Shelter', category: 'structures',
-    inputs: [{ item: 'log', count: 3 }, { item: 'stick', count: 4 }, { item: 'fiber', count: 4 }, { item: 'cordage', count: 1 }],
+    inputs: [{ item: 'log', count: 12 }, { item: 'stick', count: 12 }, { item: 'fiber', count: 16 }, { item: 'cordage', count: 5 }],
     output: { kind: 'place', prefab: 'leanTo' },
     unlock: { any: [g('log', 1), e('nightfall')] },
     learnHint: 'Logs and fern boughs make a lean-to. Sleep through the night!',
@@ -189,7 +227,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'bench', name: 'Log Bench', category: 'structures',
-    inputs: [{ item: 'log', count: 2 }],
+    inputs: [{ item: 'log', count: 10 }],
     output: { kind: 'place', prefab: 'bench' },
     unlock: { all: [g('log', 2)] },
     learnHint: 'Split a log into a bench. Resting there restores energy faster.',
@@ -197,7 +235,7 @@ export const RECIPES: Recipe[] = [
   },
   {
     id: 'hideTent', name: 'Hide Tent', category: 'structures',
-    inputs: [{ item: 'hide', count: 3 }, { item: 'log', count: 2 }, { item: 'cordage', count: 2 }],
+    inputs: [{ item: 'hide', count: 15 }, { item: 'log', count: 8 }, { item: 'cordage', count: 10 }],
     output: { kind: 'place', prefab: 'hideTent' },
     unlock: { all: [g('hide', 3)] },
     learnHint: 'Enough hides for a proper tent: warmer sleep, better rest.',

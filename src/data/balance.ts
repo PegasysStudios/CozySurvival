@@ -30,19 +30,24 @@ export const BALANCE = {
     warmth: { day: 80, night: 0, fire: 100, shelterBonus: 35, torchBonus: 14, wadingPenalty: 25 },
     fireWarmRadius: 5.5,
     shelterWarmRadius: 3.2,
-    /** Energy is driven by real-time activity (seconds), not game hours. */
+    /**
+     * Energy is driven by real-time activity (seconds), not game hours. `swingCost` is every tool action (axe,
+     * spear and torch swings, punches, bow shots); `castCost` is each fishing cast and `hookCost` each strike.
+     */
     energy: {
-      walkDrainPerSec: 0.05,
-      sprintDrainPerSec: 0.5,
+      walkDrainPerSec: 0.1,
+      sprintDrainPerSec: 0.8,
       idleRegenPerSec: 0.55,
       boostMultiplier: 2.5,
       boostSeconds: 120,
       jumpCost: 1.2,
-      swingCost: 0.35,
-      gatherCost: 0.18,
-      craftCost: 1.5,
-      buildCost: 3,
-      swimDrainPerSec: 0.12,
+      swingCost: 1,
+      gatherCost: 0.5,
+      castCost: 1.2,
+      hookCost: 0.4,
+      craftCost: 3,
+      buildCost: 6,
+      swimDrainPerSec: 0.2,
       exhaustedRecoverAt: 20,
       exhaustedSpeedMul: 0.8,
       sittingMultiplier: 1.8,
@@ -83,13 +88,31 @@ export const BALANCE = {
   skills: {
     /** Total XP needed to reach level 2, 3, ... 10. */
     thresholds: [10, 25, 45, 70, 100, 140, 190, 250, 320],
-    xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5 },
+    xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5, catch: 4, slip: 1 },
     /** Values at level 1 -> level 10 (linear in between). */
     gatherBonusChance: [0, 0.4],
     huntDamageBonus: [0, 0.25],
     butcherBonusChance: [0, 0.5],
     burnChance: [0.2, 0],
     durabilityMultiplier: [1, 4],
+    /** Chance that a hooked fish is landed rather than slipping off. */
+    catchChance: [0.35, 0.9],
+  },
+  fishing: {
+    /** Seconds of holding left-click for a full-strength cast; shorter taps than `minCharge` don't cast. */
+    fullCharge: 1.1,
+    minCharge: 0.15,
+    minCast: 3,
+    maxCast: 14,
+    flightSeconds: 0.55,
+    /** Seconds between the lure settling and a bite. */
+    biteWait: [2.5, 7],
+    /** Seconds to click once a fish bites. */
+    biteWindow: 0.9,
+    /** Water at least this deep under the lure (below the surface) holds fish. */
+    minDepth: 0.35,
+    /** Walking this far past the longest cast reels the line in. */
+    leashSlack: 6,
   },
   durability: {
     /** Durability at crafting level 1 (scaled by the crafting skill). Tools lose 1 per use plus `perHour` of slow decay. */
@@ -98,6 +121,7 @@ export const BALANCE = {
       spear: { uses: 25, perHour: 0.05 },
       bow: { uses: 30, perHour: 0.05 },
       torch: { uses: 60, perHour: 0.05, burnPerHour: 6 },
+      rod: { uses: 30, perHour: 0.05 },
     },
     /** Shelters and benches weather `perHour` and wear `useCost` per sleep/sit. */
     structures: {
