@@ -155,6 +155,27 @@ async function main() {
 
     await page.keyboard.press('KeyC');
     await sleep(300);
+    const dayOne = await page.evaluate(() => {
+      const tiles = [...document.querySelectorAll('.tile-grid .recipe')];
+      const axe = document.querySelector('.tile[data-key="r:axe"]');
+      return {
+        day: window.__cozy.game.sim.day,
+        head: document.querySelector('.panel')?.textContent.includes('Day 1: only what your onboarding steps have reached'),
+        tiles: tiles.length,
+        locked: document.querySelectorAll('.tile-grid .tile-badge.locked').length,
+        axeLocked: !!axe?.querySelector('.tile-badge.locked') && axe.classList.contains('greyed'),
+      };
+    });
+    check('on day 1 recipes the onboarding has not reached are locked until tomorrow', dayOne.day === 1 && dayOne.head && dayOne.locked === dayOne.tiles && dayOne.axeLocked, JSON.stringify(dayOne));
+    await page.keyboard.press('Escape');
+    await sleep(250);
+    await page.evaluate(() => {
+      window.__cozy.game.input.locked = true;
+      window.__cozy.game.sim.devNextMorning();
+    });
+    await page.waitForFunction(() => window.__cozy.game.sim.day === 2, { timeout: 15_000, polling: 100 });
+    await page.keyboard.press('KeyC');
+    await sleep(300);
     const panel = await page.evaluate(() => {
       const tabs = [...document.querySelectorAll('.craft-left > .craft-tabs > .craft-tab')];
       const out = {
@@ -587,11 +608,14 @@ async function main() {
       }));
     };
     const snapHours = await page.evaluate(() => JSON.parse(localStorage.getItem('cozysurvival.v1.daySnapshot')).totalHours);
-    await page.evaluate(() => (window.__cozy.game.sim.state.totalHours += 3));
+    const deathDay = await page.evaluate(() => {
+      window.__cozy.game.sim.state.totalHours += 3;
+      return window.__cozy.game.sim.day;
+    });
     const firstDeath = await die();
     check(
       'death screen shows days survived, best record and three options',
-      firstDeath.buttons.length === 3 && /Retry the day/.test(firstDeath.buttons[0]) && /Restart from day 1/.test(firstDeath.buttons[1]) && /Start from scratch/.test(firstDeath.buttons[2]) && /Survived/.test(firstDeath.text) && /Day 1/.test(firstDeath.text) && /best/i.test(firstDeath.text),
+      firstDeath.buttons.length === 3 && /Retry the day/.test(firstDeath.buttons[0]) && /Restart from day 1/.test(firstDeath.buttons[1]) && /Start from scratch/.test(firstDeath.buttons[2]) && /Survived/.test(firstDeath.text) && firstDeath.text.includes(`Day ${deathDay}`) && /best/i.test(firstDeath.text),
       JSON.stringify(firstDeath.buttons),
     );
     const beforeRetry = await state();
