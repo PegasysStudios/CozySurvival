@@ -629,6 +629,7 @@ export class Panels {
       this.render();
     };
     const body = el('div', 'panel-body storage-body');
+    const left = el('div', 'storage-left');
     const binCol = el('div', 'storage-col store-col');
     binCol.innerHTML = `<h3>${prefabIcon(m.prefab)} In storage <span class="muted">${m.used}/${m.slots}</span></h3>`;
     const binGrid = el('div', 'inv-grid store-grid');
@@ -640,10 +641,9 @@ export class Panels {
     const packGrid = el('div', 'inv-grid pack-grid');
     s.inventory.slots.forEach((slot, i) => packGrid.append(this.slotCell(slot, (n) => moved(sim.storeItem(id, i, n)))));
     packCol.append(packGrid, el('div', 'effects muted storage-hint', 'Click a stack to move it across, right-click to move just one.'));
-    body.append(binCol, packCol);
-    const foot = el('div', 'storage-foot');
-    foot.append(this.upgradeBox(id, m.next, 'This is the roomiest store you can build.'));
-    this.card.append(head, this.tierLadder(m.line, m.tier), body, foot);
+    left.append(binCol, packCol);
+    body.append(left, this.upgradeBox(id, m.next, 'This is the roomiest store you can build.'));
+    this.card.append(head, this.tierLadder(m.line, m.tier), body);
   }
 
   /** The workbench: every carried tool or weapon that wears, what mending it costs, and a Repair button. */

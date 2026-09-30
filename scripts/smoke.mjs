@@ -508,7 +508,22 @@ async function main() {
       await openStructure(binId);
       await waitFrames(3);
       const binMenu = await page.evaluate(() => ({ mode: window.__cozy.game.mode, store: document.querySelectorAll('.store-grid .slot').length, pack: !!document.querySelector('.pack-grid .slot[data-item="stick"]') }));
-      check('the storage bin opens with ten slots beside the pack', binMenu.mode === 'panel' && binMenu.store === 10 && binMenu.pack, JSON.stringify(binMenu));
+      check('the storage bin opens with ten slots and the pack', binMenu.mode === 'panel' && binMenu.store === 10 && binMenu.pack, JSON.stringify(binMenu));
+      const layout = await page.evaluate(() => {
+        const box = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+        const store = box('.storage-left > .store-col');
+        const pack = box('.storage-left > .pack-col');
+        const upgrade = box('.storage-body > .structure-upgrade');
+        const slots = [...document.querySelectorAll('.store-grid .slot, .pack-grid .slot')].map((s) => Math.round(s.getBoundingClientRect().width));
+        return {
+          stacked: !!store && !!pack && pack.top >= store.bottom - 1 && Math.abs(pack.left - store.left) < 1,
+          upgradeRight: !!upgrade && !!store && upgrade.left >= store.right,
+          title: document.querySelector('.storage-body > .structure-upgrade h3')?.textContent ?? '',
+          upgradeButton: !!document.querySelector('.storage-body > .structure-upgrade .btn.primary'),
+          minSlot: Math.min(...slots),
+        };
+      });
+      check('the bin menu stacks In storage over Your pack on the left, with the upgrade panel on the right and full-size slots', layout.stacked && layout.upgradeRight && /Upgrade to/.test(layout.title) && layout.upgradeButton && layout.minSlot >= 64, JSON.stringify(layout));
       await page.click('.pack-grid .slot[data-item="stick"]');
       await sleep(150);
       const stored = await page.evaluate((id) => {
@@ -526,7 +541,7 @@ async function main() {
       });
       await openStructure(binId);
       await waitFrames(3);
-      await page.click('.storage-foot .btn.primary');
+      await page.click('.storage-body > .structure-upgrade .btn.primary');
       await sleep(150);
       const grown = await page.evaluate((id) => {
         const st = window.__cozy.game.sim.state.structures.find((x) => x.id === id);

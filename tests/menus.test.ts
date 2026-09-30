@@ -316,3 +316,31 @@ describe('the workbench menu as an icon grid (round 9)', () => {
     expect(root.querySelector('.panel .detail-empty')!.textContent).toContain("You aren't carrying anything that wears.");
   });
 });
+
+describe('the storage bin menu layout (round 9)', () => {
+  it('stacks In storage over Your pack in the left column, with the upgrade panel on the right', () => {
+    const sim = quietSim();
+    const bin = placeStructure(sim, 'storageBin');
+    const { panels, root } = openPanels(sim);
+    panels.open('structure', { targetId: bin.id });
+    const body = root.querySelector<HTMLElement>('.panel .storage-body')!;
+    expect([...body.children].map((c) => c.className)).toEqual(['storage-left', 'structure-upgrade']);
+    const left = body.querySelector('.storage-left')!;
+    expect([...left.children].map((c) => c.querySelector('h3')!.textContent!.replace(/\d+\/\d+/, '').trim())).toEqual(['In storage', 'Your pack']);
+    expect(left.querySelectorAll('.store-grid .slot')).toHaveLength(10);
+    const upgrade = body.querySelector('.structure-upgrade')!;
+    expect(upgrade.querySelector('h3')!.textContent).toMatch(/^.*Upgrade to /);
+    expect(upgrade.querySelectorAll('.ingredient').length).toBeGreaterThan(0);
+    expect(upgrade.querySelector('.btn.primary')!.textContent).toBe('Upgrade');
+    expect(root.querySelector('.storage-foot')).toBeNull();
+  });
+
+  it('keeps slots at full size: the left column never narrows below five 64px slots, so the upgrade panel gives way first', async () => {
+    const css = (await import('node:fs')).readFileSync('src/styles.css', 'utf8');
+    const rule = (sel: string) => new RegExp(`\\n${sel.replace(/[.]/g, '\\.')} \\{([^}]*)\\}`).exec(css)![1];
+    const cols = /grid-template-columns: minmax\((\d+)px, [\d.]+fr\) minmax\(0, 1fr\);/.exec(rule('.storage-body'));
+    expect(cols).not.toBeNull();
+    expect(Number(cols![1])).toBeGreaterThanOrEqual(5 * 64 + 4 * 8 + 2 * 16 + 2);
+    expect(rule('.store-grid,\n.pack-grid')).toContain('minmax(64px, 1fr)');
+  });
+});
