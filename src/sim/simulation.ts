@@ -602,7 +602,8 @@ export class Simulation {
 
   /**
    * The spiny plant this player is pressing into, if any: within half a body width of a prickly pear's, cholla's or
-   * yucca's core (a picked yucca is just a stub), or right up against a saguaro. Picking them from arm's length is safe.
+   * agave's core or a yucca that's ready to harvest (a picked yucca is a harmless stub, a cut agave is gone), or right
+   * up against a saguaro. Picking them from arm's length is safe.
    */
   spinyPlantTouching(): { name: string; damage: number; x: number; z: number } | null {
     const p = this.state.player;
@@ -616,8 +617,8 @@ export class Simulation {
         const r = this.gen.resources[c.ref];
         const def = RESOURCES[r.kind];
         if (!def.spines) continue;
-        const stub = r.kind === 'yucca' && this.state.resources[c.ref].charges <= 0 ? 0.38 : 1;
-        if (Math.hypot(p.x - r.x, p.z - r.z) < def.spines.radius * r.scale * stub + body * S.touch) return { name: def.name, damage: def.spines.damage, x: r.x, z: r.z };
+        if (this.state.resources[c.ref].charges <= 0 && (def.spines.ripeOnly || !def.persistent)) continue;
+        if (Math.hypot(p.x - r.x, p.z - r.z) < def.spines.radius * r.scale + body * S.touch) return { name: def.name, damage: def.spines.damage, x: r.x, z: r.z };
       }
     }
     return null;
@@ -1252,6 +1253,11 @@ export class Simulation {
     if (added < def.yield) this.dropAt(def.item, def.yield - added, g.x + 0.4, g.z + 0.4);
     else if (this.roll(gatherBonusChance(s.skills.gathering)) && roomFor(s.inventory, def.item) > 0) {
       this.give(def.item, 1, g.x, gy + def.hitHeight, g.z, g.kind);
+    }
+    if (def.bonus && this.roll(def.bonus.chance)) {
+      const { item, count } = def.bonus;
+      const got = this.give(item, count, g.x, gy + def.hitHeight, g.z, g.kind);
+      if (got < count) this.dropAt(item, count - got, g.x + 0.4, g.z - 0.4);
     }
     spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
     this.emit({ type: 'swing', tool: 'hands', hit: true });

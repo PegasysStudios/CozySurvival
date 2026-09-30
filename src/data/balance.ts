@@ -172,9 +172,9 @@ export const BALANCE = {
   },
   gather: { cooldown: 0.4 },
   /**
-   * Cactus and yucca spines. You are pricked when your body presses into a spiny plant's core: half your width into a
-   * prickly pear, cholla or yucca (see `ResourceDef.spines`), or right up against a saguaro, at most once per
-   * `cooldown` seconds.
+   * Cactus, yucca and agave spines. You are pricked when your body presses into a spiny plant's core: half your width
+   * into a prickly pear, cholla, agave or a yucca that's ready to harvest (see `ResourceDef.spines`), or right up
+   * against a saguaro, at most once per `cooldown` seconds.
    */
   spines: { cooldown: 1.1, touch: 0.5, saguaro: 4, saguaroGap: 0.06 },
   /**
