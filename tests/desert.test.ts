@@ -56,7 +56,7 @@ describe('biome config', () => {
 });
 
 describe('desert water', () => {
-  it('fewer, smaller pools than the Pacific Northwest on every seed, and no big lakes', () => {
+  it('a fraction of the Pacific Northwest water on every seed: at most 3 small pools and no big lakes', () => {
     for (const seed of SEEDS) {
       const d = getTerrain(seed, 'desert').lakes;
       const p = getTerrain(seed, 'pnw').lakes;
