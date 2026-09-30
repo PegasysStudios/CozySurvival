@@ -43,7 +43,8 @@ export function localPose(sim: Simulation, act: number): Pose {
   let x = p.x;
   let y = p.y;
   let z = p.z;
-  let yaw = p.yaw;
+  // On a bench the body faces out from the seat while the head looks around.
+  let yaw = p.seat ? p.seat.yaw : p.yaw;
   if (sim.sleepingIn !== null) {
     flags |= F_SLEEP;
     const st = s.structures.find((q) => q.id === sim.sleepingIn);

@@ -198,7 +198,7 @@ describe('structure durability', () => {
     sim.perform({ kind: 'structure', id: bench.id, dist: 1 });
     expect(sim.state.player.sitting).toBe(true);
     expect(bench.wear!.max - bench.wear!.dur).toBe(D.structures.bench.useCost);
-    sim.state.player.sitting = false;
+    sim.standUp();
     bench.wear!.dur = 0.5;
     sim.perform({ kind: 'structure', id: bench.id, dist: 1 });
     expect(sim.state.structures).not.toContain(bench);

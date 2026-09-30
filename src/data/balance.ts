@@ -59,6 +59,8 @@ export const BALANCE = {
   player: {
     radius: 0.35,
     eyeHeight: 1.62,
+    /** Eye height sitting on a bench: hips on the seat, about half a metre up. */
+    seatedEyeHeight: 1.15,
     walkSpeed: 4.3,
     sprintSpeed: 6.8,
     wadeSpeedMul: 0.55,

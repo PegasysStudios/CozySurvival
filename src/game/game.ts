@@ -636,7 +636,7 @@ export class Game {
       return;
     }
     const dead = this.mode === 'dead';
-    const eye = dead ? 0.35 : p.sitting ? 1.02 : BALANCE.player.eyeHeight;
+    const eye = dead ? 0.35 : p.sitting ? BALANCE.player.seatedEyeHeight : BALANCE.player.eyeHeight;
     const target = p.y + eye;
     if (Math.abs(target - this.camY) > 1.5 && !dead) this.camY = target;
     else this.camY = damp(this.camY, target, dead ? 1.4 : 26, dt);
@@ -859,6 +859,8 @@ export class Game {
         this.panels.refresh();
         break;
       case 'sat':
+        this.yaw = e.yaw;
+        this.pitch = 0;
         this.hud.toast('You sit and rest. Energy recovers faster here.', 'good');
         break;
       case 'hurt': {

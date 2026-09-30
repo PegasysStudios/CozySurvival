@@ -32,7 +32,8 @@ export type SimEvent =
   | { type: 'upgraded'; tool: ToolId; level: number }
   | { type: 'upgraded'; structure: number; from: PrefabId; prefab: PrefabId }
   | { type: 'forageUnlocked'; id: ForageId }
-  | { type: 'sat' }
+  /** Sat down on a bench, now facing `yaw`. */
+  | { type: 'sat'; yaw: number }
   | { type: 'hurt'; amount: number; source: DamageSource; fromX: number; fromZ: number }
   | { type: 'death'; cause: DamageSource }
   | { type: 'dayStart'; day: number }

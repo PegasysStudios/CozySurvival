@@ -18,7 +18,7 @@ import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCa
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearResult } from './durability';
 import type { SimEvent } from './events';
 import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
-import { createPlayer, horizontalSpeed, lookDir, stepPlayer, type MoveEnv } from './movement';
+import { createPlayer, horizontalSpeed, lookDir, stepPlayer, surfaceAt, type MoveEnv } from './movement';
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
@@ -482,7 +482,8 @@ export class Simulation {
     p.yaw = input.yaw;
     p.pitch = clamp(input.pitch, -1.55, 1.55);
     p.hurtTimer = Math.max(0, p.hurtTimer - dt);
-    const move = stepPlayer(p, input, this.moveEnv, dt, { canSprint: s.needs.energy > 0, exhausted: s.needs.exhausted });
+    if (p.seat && (Math.hypot(input.moveX, input.moveZ) > 0.05 || input.jumpPressed)) this.standUp();
+    const move = p.seat ? STILL : stepPlayer(p, input, this.moveEnv, dt, { canSprint: s.needs.energy > 0, exhausted: s.needs.exhausted });
     if (move.jumped) {
       spendEnergy(s.needs, BALANCE.needs.energy.jumpCost);
       this.emit({ type: 'jump' });
@@ -549,6 +550,7 @@ export class Simulation {
     s.dead = true;
     s.deathCause = cause;
     s.needs.health = 0;
+    this.standUp();
     this.placement = null;
     this.bowDraw = -1;
     this.endFishing('reeled');
@@ -561,7 +563,7 @@ export class Simulation {
     const p = s.player;
     if (p.hurtTimer > 0) return;
     p.hurtTimer = BALANCE.combat.playerHurtInvuln;
-    p.sitting = false;
+    this.standUp();
     s.lastDamage = source;
     // small knockback away from the attacker
     const dx = p.x - fromX;
@@ -643,7 +645,7 @@ export class Simulation {
     const s = this.state;
     const p = s.player;
     const ex = p.x;
-    const ey = p.y + BALANCE.player.eyeHeight;
+    const ey = p.y + (p.sitting ? BALANCE.player.seatedEyeHeight : BALANCE.player.eyeHeight);
     const ez = p.z;
     const d = lookDir(p.yaw, p.pitch, this.look);
     const reach = Math.max(BALANCE.player.reach, this.toolReach());
@@ -784,7 +786,7 @@ export class Simulation {
         if (def.fire) return st.fuel > 0 ? { name: 'Campfire', action: 'Cook & add fuel', enabled: true } : { name: 'Campfire (out)', action: 'Add fuel to relight', enabled: true };
         const name = st.wear ? `${def.name} · ${conditionText(st.wear)}` : def.name;
         if (def.shelter) return { name, action: canSleepAt(this.hour) ? 'Sleep or upgrade' : 'Upgrade (sleep after 7 PM)', enabled: true };
-        if (def.seat) return { name, action: 'Sit and rest', enabled: true };
+        if (def.seat) return { name, action: s.player.seat?.id === st.id ? 'Stand up' : 'Sit and rest', enabled: true };
         return { name: def.name, action: '', enabled: false };
       }
       case 'animal': {
@@ -1265,7 +1267,7 @@ export class Simulation {
     const c = this.structureColliders.get(st.id);
     if (c) this.colliders.remove(c);
     this.structureColliders.delete(st.id);
-    if (s.player.sitting && PREFABS[st.prefab].seat) s.player.sitting = false;
+    if (s.player.seat?.id === st.id) this.standUp();
     this.worldVersion++;
   }
 
@@ -1343,12 +1345,46 @@ export class Simulation {
     } else if (def.shelter) {
       this.emit({ type: 'openStructure', structure: id });
     } else if (def.seat) {
-      this.state.player.sitting = true;
-      this.state.player.vx = 0;
-      this.state.player.vz = 0;
-      this.emit({ type: 'sat' });
+      if (this.state.player.seat?.id === st.id) {
+        this.standUp();
+        return;
+      }
+      const seat = seatFor(st, this.state.player);
+      this.sitOn(st, seat);
       if (prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     }
+  }
+
+  /** Move onto the bench's seat, facing out over the side you came from. */
+  private sitOn(st: StructureState, seat: Seat): void {
+    const p = this.state.player;
+    this.placement = null;
+    this.bowDraw = -1;
+    this.endFishing('reeled');
+    p.x = seat.x;
+    p.z = seat.z;
+    p.y = st.y;
+    p.vx = p.vy = p.vz = 0;
+    p.grounded = true;
+    p.sprinting = false;
+    p.yaw = seat.yaw;
+    p.sitting = true;
+    p.seat = { id: st.id, yaw: seat.yaw };
+    this.emit({ type: 'sat', yaw: seat.yaw });
+  }
+
+  /** Get off the bench: step forward off the seat, the way you were facing. */
+  standUp(): void {
+    const p = this.state.player;
+    const seat = p.seat;
+    p.sitting = false;
+    p.seat = undefined;
+    if (!seat) return;
+    const d = BENCH_STAND_OFF;
+    p.x -= Math.sin(seat.yaw) * d;
+    p.z -= Math.cos(seat.yaw) * d;
+    p.y = Math.max(p.y, surfaceAt(this.moveEnv, p.x, p.z));
+    p.vx = p.vy = p.vz = 0;
   }
 
   /** Servings a lake click would put in the canteen. */
@@ -1999,7 +2035,7 @@ export class Simulation {
       this.placement = null;
       this.bowDraw = -1;
       this.endFishing('reeled');
-      p.sitting = false;
+      this.standUp();
       p.vx = 0;
       p.vz = 0;
       this.netOut.push({ k: 'sleep', structure: st.id });
@@ -2015,7 +2051,7 @@ export class Simulation {
     applySleep(s.needs, rest, byFire);
     this.updateWear(elapsed, false);
     if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
-    p.sitting = false;
+    this.standUp();
     p.vx = 0;
     p.vz = 0;
     for (const a of s.animals) {
@@ -2358,6 +2394,39 @@ export class Simulation {
 }
 
 const NO_SHELTER = { warmthBonus: 0, healthBonus: 0 };
+
+const STILL = { jumped: false, landed: 0, distance: 0, splash: 0 };
+
+/** Where you sit on a bench and which way you face. */
+export interface Seat {
+  x: number;
+  z: number;
+  yaw: number;
+}
+
+/** How far along the bench you can sit from its middle, so you stay clear of the ends. */
+const BENCH_SEAT_REACH = 0.7;
+/** Hips sit this far in front of the bench's centre line, toward the side you face. */
+const BENCH_SEAT_FORWARD = 0.04;
+/** Standing up puts you clear of the bench's collider. */
+const BENCH_STAND_OFF = 0.3 + BALANCE.player.radius + 0.1;
+
+/**
+ * The seat a player at (p.x, p.z) takes on bench `st`: on the seat's centre line, level with where they stand along
+ * its length, facing out over the long side they walked up to (a bench runs along its local x axis).
+ */
+export function seatFor(st: StructureState, p: { x: number; z: number }): Seat {
+  const c = Math.cos(st.rot);
+  const sn = Math.sin(st.rot);
+  const dx = p.x - st.x;
+  const dz = p.z - st.z;
+  const lx = clamp(dx * c - dz * sn, -BENCH_SEAT_REACH, BENCH_SEAT_REACH);
+  const side = dx * sn + dz * c >= 0 ? 1 : -1;
+  const lz = side * BENCH_SEAT_FORWARD;
+  // Facing local +z (or -z) in world space is (sin rot, cos rot) times the side.
+  const yaw = Math.atan2(-side * sn, -side * c);
+  return { x: st.x + lx * c + lz * sn, z: st.z - lx * sn + lz * c, yaw };
+}
 
 /** What sleeping at a structure gives: a shelter's bonuses, nothing extra by a campfire, null where you can't sleep. */
 function restBonus(prefab: PrefabId): { warmthBonus: number; healthBonus: number } | null {
