@@ -1,6 +1,6 @@
 import { BALANCE } from '../data/balance';
 import { PREFABS } from '../data/prefabs';
-import { RECIPES, type Recipe } from '../data/recipes';
+import { recipesFor, type Recipe } from '../data/recipes';
 import { countItem } from '../sim/inventory';
 import type { Simulation } from '../sim/simulation';
 import { canSleepAt } from '../sim/time';
@@ -42,7 +42,7 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
     const have = countItem(s.inventory, item);
     return { item, hours: item === 'log' ? f.logFuelHours : f.stickFuelHours, have, enabled: have > 0 && !full };
   });
-  const recipes = RECIPES.filter(isCampfireRecipe);
+  const recipes = recipesFor(sim.biome).filter(isCampfireRecipe);
   const canSleep = canSleepAt(sim.hour);
   return {
     fuel: fire.fuel,

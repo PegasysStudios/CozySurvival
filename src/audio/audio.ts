@@ -13,7 +13,7 @@ export type Sfx =
   | 'gatherPlant' | 'gatherWood' | 'gatherStone' | 'chop' | 'treeFall' | 'craft' | 'learned' | 'objective'
   | 'place' | 'placeFail' | 'eat' | 'drink' | 'fill' | 'hurt' | 'death' | 'sleep' | 'dawn' | 'nightfall'
   | 'arrow' | 'hit' | 'growl' | 'howl' | 'jump' | 'land' | 'click' | 'fuel' | 'swing' | 'deny' | 'packFull'
-  | 'splash' | 'skillUp' | 'broke' | 'cast' | 'plop' | 'bite' | 'reel';
+  | 'splash' | 'skillUp' | 'broke' | 'cast' | 'plop' | 'bite' | 'reel' | 'rattle';
 
 export interface AmbienceInput {
   hour: number;
@@ -413,6 +413,9 @@ export class AudioSystem {
         break;
       case 'skillUp':
         [659, 880, 1175].forEach((f, i) => this.tone(f, 0.8, { type: 'triangle', gain: 0.06, delay: i * 0.08, attack: 0.02 }));
+        break;
+      case 'rattle':
+        for (let i = 0; i < 26; i++) this.burst(0.025, { type: 'highpass', freq: 5200 * r(), gain: (0.05 + 0.05 * strength) * (1 - i / 34), delay: i * 0.038 });
         break;
       case 'broke':
         this.burst(0.12, { freq: 1300, q: 2, gain: 0.3 });

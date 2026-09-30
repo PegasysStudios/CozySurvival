@@ -1,6 +1,6 @@
 import { BALANCE } from '../data/balance';
 import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
-import { FREEPLAY_OBJECTIVE, OBJECTIVES, type ObjectiveNeed } from '../data/objectives';
+import { FREEPLAY_OBJECTIVE, OBJECTIVES, objectiveText, type ObjectiveNeed } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
 import { toolWears, wearFraction } from '../sim/durability';
 import { toolLevel } from '../sim/upgrades';
@@ -264,8 +264,9 @@ export class Hud {
     setText(this.devBadge, `DEV ×${timeScale}`);
 
     const o = sim.currentObjective();
-    setText(this.objTitle, o ? o.title : FREEPLAY_OBJECTIVE.title);
-    setText(this.objHint, o ? o.hint : FREEPLAY_OBJECTIVE.hint);
+    const text = o ?? objectiveText(FREEPLAY_OBJECTIVE, sim.biome);
+    setText(this.objTitle, text.title);
+    setText(this.objHint, text.hint);
     setHtml(this.objNeeds, o ? objectiveNeedsHtml(o.needs) : '', this.objNeedsKey);
     setText(this.objStep, o ? `${s.objective + 1}/${OBJECTIVES.length}` : '');
 

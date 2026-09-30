@@ -1,6 +1,6 @@
 import { GEAR, TOOLS, type GearId, type ToolId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
-import { RECIPES, type Recipe, type RecipeCategory } from '../data/recipes';
+import { RECIPES, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { LEVEL_NUMERALS, SHELTER_TIERS, SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../data/upgrades';
 import { hasAll } from '../sim/inventory';
 import type { Simulation } from '../sim/simulation';
@@ -103,7 +103,7 @@ export function shelterTile(sim: Simulation, p: PrefabId): Tile {
 /** A crafting tab's tiles: every recipe in it, with the upgrade-only shelter tiers right after the lean-to. */
 export function craftTiles(sim: Simulation, tab: 'all' | RecipeCategory): Tile[] {
   const tiles: Tile[] = [];
-  for (const r of RECIPES) {
+  for (const r of recipesFor(sim.biome)) {
     if (tab !== 'all' && r.category !== tab) continue;
     tiles.push(recipeTile(sim, r));
     if (r.id === 'leanTo') tiles.push(...UPGRADE_ONLY_SHELTERS.map((p) => shelterTile(sim, p)));

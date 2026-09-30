@@ -1,10 +1,11 @@
 import { clamp, damp } from '../core/math';
 import { BALANCE } from '../data/balance';
-import { ITEMS, TOOLS, itemName, type ItemId } from '../data/items';
-import { OBJECTIVES } from '../data/objectives';
+import { BIOME_IDS, BIOMES, biomeDef, speciesName, type BiomeId } from '../data/biomes';
+import { ITEMS, TOOLS, getDisplayBiome, itemName, setDisplayBiome, type ItemId } from '../data/items';
+import { OBJECTIVES, objectiveText } from '../data/objectives';
 import { PLACE_ROTATE_BIG_STEP, PLACE_ROTATE_STEP, PREFABS } from '../data/prefabs';
 import { RECIPE_BY_ID } from '../data/recipes';
-import { SPECIES } from '../data/species';
+import type { SpeciesId } from '../data/species';
 import { AudioSystem, type Sfx } from '../audio/audio';
 import { volumePercent } from '../audio/mix';
 import { randomSeed } from '../core/rng';
@@ -44,6 +45,29 @@ const BACKGROUND_TICK_MS = 250;
 function errText(err: unknown): string {
   return err instanceof Error && err.message ? err.message : 'Check your connection and try again.';
 }
+
+/** Banner lines that differ per map; the Pacific Northwest keeps its original wording. */
+const COPY: Record<BiomeId, { start: string; dawn: string; dawnLater: string; nightfall: string }> = {
+  pnw: {
+    start: 'Stranded, but the forest provides. Start by gathering sticks and stones.',
+    dawn: 'A new morning in the forest.',
+    dawnLater: 'Morning mist over the lake. Bears wander these woods now.',
+    nightfall: 'Stay close to your fire. Wolves hunt in the dark; a torch keeps them at bay.',
+  },
+  desert: {
+    start: 'Stranded, but the desert provides. Start by gathering sticks and stones, and find the spring.',
+    dawn: 'Sunrise over the red rock. The day will be hot; the evening turns cold fast.',
+    dawnLater: 'Dawn light on the mesas. A black bear roams the juniper high country now.',
+    nightfall: 'The desert sheds its heat fast after dark. Stay by your fire; a mountain lion hunts at dusk and a torch keeps it at bay.',
+  },
+};
+
+const FUR: Partial<Record<SpeciesId, string>> = {
+  bear: '#2a2420', wolf: '#8e8a83', fish: '#cfe6f2', cougar: '#b48d5f', javelina: '#4a4039', jackrabbit: '#a58d6c',
+  quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360',
+};
+
+const MAP_FADE_MS = 900;
 
 /** Wires the simulation to rendering, audio, UI, input and persistence. */
 export class Game {
@@ -131,6 +155,7 @@ export class Game {
       onRetryDay: () => this.retryDay(),
       onRestartDay1: () => this.beginPlay(this.run.restartFromDay1(), true),
       onStartFromScratch: () => this.beginPlay(this.run.startFromScratch(), true),
+      onSelectMap: (step) => this.selectMap(step),
       onSettings: (s) => this.applySettings(s),
       onLeaveServer: () => this.leaveMp(null),
       onRespawn: () => this.respawnMp(),
@@ -193,7 +218,7 @@ export class Game {
     }, BACKGROUND_TICK_MS);
 
     const current = this.run.loadCurrent();
-    this.sim = current ?? Simulation.newGame(this.run.meta.worldSeed);
+    this.sim = current ?? Simulation.newGame(this.run.record.worldSeed, this.run.biome);
     this.isPreview = !current;
     this.view.setWorld(this.sim);
     this.syncCameraToPlayer();
@@ -202,11 +227,11 @@ export class Game {
     if (current && current.state.dead) {
       this.isPreview = false;
       const hours = hoursSurvived(current.state.totalHours);
-      this.death = { cause: current.state.deathCause ?? 'unknown', hours, day: current.day, best: this.run.meta.best, newBest: false };
+      this.death = { cause: current.state.deathCause ?? 'unknown', hours, day: current.day, best: this.run.record.best, newBest: false };
       this.mode = 'dead';
       this.deathT = 10;
       this.deathShown = true;
-      this.screens.showDeath(this.death, this.run.snapshotDay() ?? current.day);
+      this.screens.showDeath(this.death, this.run.snapshotDay() ?? current.day, biomeDef(current.biome).place);
     } else {
       this.showTitle();
     }
@@ -229,12 +254,55 @@ export class Game {
     this.mode = 'title';
     this.hud.setVisible(false);
     const alive = !this.isPreview && !this.sim.state.dead;
+    const def = BIOMES[this.run.biome];
+    const rec = this.run.record;
     this.screens.showTitle({
       continueLabel: alive ? `Day ${this.sim.day} · ${formatClock(this.sim.hour)}` : null,
-      best: this.run.meta.best,
-      deaths: this.run.meta.deaths,
+      best: rec.best,
+      deaths: rec.deaths,
+      map: { id: def.id, name: def.name, tagline: def.tagline, place: def.place, index: BIOME_IDS.indexOf(def.id), count: BIOME_IDS.length },
     });
+    this.mpMenu.setMap(def.id);
     this.refreshLobby(false);
+  }
+
+  /** Title-screen map arrows: each map keeps its own save, so switching shows that map's run (or a fresh preview). */
+  private selectMap(step: -1 | 1): void {
+    if (this.mode !== 'title' || this.mp) return;
+    const i = BIOME_IDS.indexOf(this.run.biome);
+    const next = BIOME_IDS[(i + step + BIOME_IDS.length) % BIOME_IDS.length];
+    if (next === this.run.biome) return;
+    this.saveNow();
+    this.crossFade();
+    this.run.selectBiome(next);
+    const current = this.run.loadCurrent();
+    const alive = !!current && !current.state.dead;
+    this.sim = alive ? current! : Simulation.newGame(this.run.record.worldSeed, next);
+    this.isPreview = !alive;
+    this.sim.timeScale = this.timeScale;
+    this.view.setWorld(this.sim);
+    this.syncCameraToPlayer();
+    this.showTitle();
+  }
+
+  /** Freeze the current picture over the canvas and fade it out while the next map renders underneath. */
+  private crossFade(): void {
+    const canvas = this.view.renderer.domElement;
+    let url: string;
+    try {
+      // Without preserveDrawingBuffer the canvas only holds a picture within the task that drew it.
+      this.view.frame(this.sim, 0, this.time, this.pose, null);
+      url = canvas.toDataURL('image/jpeg', 0.86);
+    } catch {
+      return;
+    }
+    const img = document.createElement('img');
+    img.className = 'map-fade';
+    img.alt = '';
+    img.src = url;
+    canvas.after(img);
+    requestAnimationFrame(() => requestAnimationFrame(() => img.classList.add('out')));
+    setTimeout(() => img.remove(), MAP_FADE_MS + 200);
   }
 
   private continueRun(): void {
@@ -269,14 +337,14 @@ export class Game {
     this.input.requestLock();
     if (fresh) {
       this.hud.showControlsHint();
-      this.hud.showBanner(`Day ${sim.day}`, 'Stranded, but the forest provides. Start by gathering sticks and stones.');
+      this.hud.showBanner(`Day ${sim.day}`, COPY[sim.biome].start);
     }
   }
 
   private retryDay(): void {
     const sim = this.run.retryDay();
     this.beginPlay(sim, false);
-    this.hud.showBanner(`Day ${sim.day}`, 'Back to this morning. The forest remembers nothing.');
+    this.hud.showBanner(`Day ${sim.day}`, `Back to this morning. The ${biomeDef(sim.biome).place} remembers nothing.`);
   }
 
   private pause(): void {
@@ -348,6 +416,12 @@ export class Game {
       if (action === 'closeMenu') this.closePanel(false);
       else if (action === 'resume') this.resume();
       else if (action === 'pause') this.pause();
+      return;
+    }
+    if (this.mode === 'title' && (code === 'ArrowLeft' || code === 'ArrowRight') && this.screens.titleShown && !this.mpMenu.overlayOpen) {
+      this.audio.start();
+      this.sfx('click');
+      this.selectMap(code === 'ArrowLeft' ? -1 : 1);
       return;
     }
     if (code === 'KeyM') {
@@ -444,6 +518,7 @@ export class Game {
     if (rawDt > 0) this.fpsAvg = this.fpsAvg * 0.95 + (1 / Math.max(rawDt, 1e-3)) * 0.05;
     let sim = this.sim;
     const input = this.input;
+    if (getDisplayBiome() !== sim.biome) setDisplayBiome(sim.biome);
 
     const chatting = this.mpHud.chatting;
     const playing = this.mode === 'playing' && input.locked && !chatting;
@@ -531,7 +606,7 @@ export class Game {
       if (!this.deathShown && this.deathT > 1.8 && (this.death || this.mpDeathCause !== null)) {
         this.deathShown = true;
         this.hud.setVisible(false);
-        if (this.death) this.screens.showDeath(this.death, this.run.snapshotDay() ?? sim.day);
+        if (this.death) this.screens.showDeath(this.death, this.run.snapshotDay() ?? sim.day, biomeDef(sim.biome).place);
         else this.screens.showMpDeath(this.mpDeathCause!, this.mp?.role === 'host');
       }
     }
@@ -735,9 +810,9 @@ export class Game {
         break;
       case 'objective': {
         this.sfx('objective');
-        const done = OBJECTIVES[e.index];
+        const done = objectiveText(OBJECTIVES[e.index], sim.biome);
         const next = OBJECTIVES[e.index + 1];
-        this.hud.showBanner(`${done.title}`, next ? `Next: ${next.title}` : 'You have the basics. Now: survive as many days as you can.');
+        this.hud.showBanner(`${done.title}`, next ? `Next: ${objectiveText(next, sim.biome).title}` : 'You have the basics. Now: survive as many days as you can.');
         break;
       }
       case 'ate':
@@ -800,13 +875,14 @@ export class Game {
         if (e.day !== this.lastDay) {
           this.lastDay = e.day;
           if (this.mode !== 'sleeping') {
-            this.hud.showBanner(`Day ${e.day}`, e.day >= 2 ? 'Morning mist over the lake. Bears wander these woods now.' : 'A new morning in the forest.');
+            const copy = COPY[sim.biome];
+            this.hud.showBanner(`Day ${e.day}`, e.day >= (sim.biome === 'desert' ? 3 : 2) ? copy.dawnLater : copy.dawn);
             this.sfx('dawn');
           }
         }
         break;
       case 'nightfall':
-        this.hud.showBanner('Night falls', 'Stay close to your fire. Wolves hunt in the dark; a torch keeps them at bay.');
+        this.hud.showBanner('Night falls', COPY[sim.biome].nightfall);
         this.sfx('nightfall');
         break;
       case 'slept':
@@ -823,21 +899,31 @@ export class Game {
         break;
       case 'animalHit': {
         this.sfx('hit');
-        const col = e.species === 'bear' ? '#2a2420' : e.species === 'wolf' ? '#8e8a83' : e.species === 'fish' ? '#cfe6f2' : '#8a6d52';
+        const col = FUR[e.species] ?? '#8a6d52';
         if (e.species === 'fish') fx.splash(e.x, 0, e.z, 16);
         else fx.fur(e.x, e.y, e.z, col, e.killed ? 18 : 8);
-        if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${SPECIES[e.species].name}. Click it to butcher.`, 'good');
+        if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
         break;
       }
       case 'animalFlee':
         if (e.species === 'deer') this.throttledToast('deer', 'The deer bolted. They spook from far away; try a bow.', 'info', 60);
+        else if (e.species === 'javelina') this.throttledToast('javelina', 'The javelina scattered. They see poorly but smell you from far off; try a bow.', 'info', 60);
         break;
+      case 'rattle': {
+        const k = clamp(1 - Math.hypot(e.x - p.x, e.z - p.z) / 20, 0.3, 1);
+        this.sfx('rattle', k);
+        this.throttledToast('rattle', 'A rattlesnake is coiled and buzzing. Back away slowly; it strikes if you step closer.', 'warn', 20);
+        break;
+      }
       case 'predatorAlert': {
         const d = Math.hypot(e.x - p.x, e.z - p.z);
         const k = clamp(1 - d / 40, 0.2, 1);
         if (e.species === 'wolf') {
           this.sfx('howl', k);
           this.throttledToast('wolf', 'A grey wolf is stalking you. Stand by your fire or raise a torch.', 'warn', 25);
+        } else if (e.species === 'cougar') {
+          this.sfx('growl', k * 0.6);
+          this.throttledToast('cougar', 'A mountain lion is stalking you from cover. Face it, stand by your fire or raise a torch.', 'warn', 25);
         } else {
           this.sfx('growl', k);
           this.throttledToast('bear', 'A black bear rears up! Back away slowly or keep a fire between you.', 'warn', 25);
@@ -982,14 +1068,15 @@ export class Game {
       const t = await this.transport();
       if (gen !== this.joinGen) return;
       this.stopLobby();
-      const host = new HostSession(t, Simulation.newGame(randomSeed()), profile, serverName);
+      const biome = this.run.biome;
+      const host = new HostSession(t, Simulation.newGame(randomSeed(), biome), profile, serverName);
       await host.start();
       if (gen !== this.joinGen) {
         host.leave();
         return;
       }
       this.mp = host;
-      this.enterMp(host, serverName, 'A brand-new world. Friends can join from their main menu.');
+      this.enterMp(host, serverName, `A brand-new ${BIOMES[biome].name} world. Friends can join from their main menu.`);
     } catch (err) {
       if (gen !== this.joinGen) return;
       this.mpMenu.showError(`Couldn't open the server. ${errText(err)}`);
