@@ -86,11 +86,17 @@ export const MISC_ICONS = {
   leaf: svg('<path d="M6 26C6 14 13 6 27 5c0 13-8 21-20 21z" fill="#6f9a4a"/><path d="M7 25 21 11" stroke="#3f6a30" stroke-width="2" stroke-linecap="round"/>'),
   moonBed: svg('<path d="M4 22h24v5H4z" fill="#8a6038"/><path d="M6 22c0-3 3-5 7-5h9c3 0 5 2 5 5z" fill="#c9a172"/><path d="M22 4a6 6 0 1 0 5 9 5 5 0 0 1-5-9z" fill="#dfe6ff"/>'),
   bench: svg('<rect x="4" y="12" width="24" height="6" rx="3" fill="#c9a172"/><path d="M8 18v8M24 18v8" stroke="#5e4330" stroke-width="4" stroke-linecap="round"/>'),
+  workbench: svg('<rect x="3" y="12" width="26" height="5" rx="1.5" fill="#b58b5c"/><path d="M7 17v10M25 17v10M7 23h18" stroke="#5e4330" stroke-width="3" stroke-linecap="round"/><path d="M12 12V7h5l2 5" fill="#8e9398"/><path d="M21 5l-4 7" stroke="#6e4a30" stroke-width="2.4" stroke-linecap="round"/>'),
+  storageBin: svg('<path d="M6 11h20l-2 16H8z" fill="#c9a86a"/><path d="M7 16h18M8 21h16M11 11l1.5 16M16 11v16M21 11l-1.5 16" stroke="#9a7a44" stroke-width="1.4"/><rect x="5" y="8" width="22" height="4" rx="2" fill="#a88650"/>'),
+  storageCrate: svg('<rect x="4" y="10" width="24" height="17" rx="1.5" fill="#9a7048"/><path d="M4 16h24M4 22h24" stroke="#6e4a30" stroke-width="1.6"/><rect x="3" y="7" width="26" height="4" rx="1" fill="#b58b5c"/><path d="M7 7v20M25 7v20" stroke="#5e4330" stroke-width="2.4"/>'),
+  storageChest: svg('<path d="M4 15a12 7 0 0 1 24 0z" fill="#b58b5c"/><rect x="4" y="15" width="24" height="12" rx="1.5" fill="#8a5a33"/><path d="M10 8v19M22 8v19" stroke="#c9a06a" stroke-width="2.6"/><rect x="14" y="14" width="4" height="5" rx="1" fill="#8e9398"/>'),
 };
 
-export function iconImg(file: string): string {
-  return `<img class="icon-img" src="${import.meta.env.BASE_URL}${ICON_DIR}${file}" alt="" draggable="false">`;
+export function iconImg(file: string, dir = ICON_DIR): string {
+  return `<img class="icon-img" src="${import.meta.env.BASE_URL}${dir}${file}" alt="" draggable="false">`;
 }
+
+export const CRAFT_TAB_ICON_DIR = 'icons/crafting-tabs/';
 
 function pick(id: IconId, builtIn: string, tier = 1): string {
   const file = iconFile(id, tier);

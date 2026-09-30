@@ -1,13 +1,17 @@
 import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import { forageGuideFor, type ForageId } from '../data/forage';
-import type { ToolId } from '../data/items';
+import { ITEMS, type ItemId, type ToolId } from '../data/items';
 import { advanceObjectives, LEGACY_OBJECTIVE_COUNT, OBJECTIVES } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
 import { RESOURCES, TREES } from '../data/resources';
 import { isUpgradable, MAX_TOOL_LEVEL } from '../data/upgrades';
-import { newStructureWear, prefabWears } from './durability';
+import { BALANCE } from '../data/balance';
+import { canteenServings, emptyCanteen, migratePackWater } from './canteen';
+import { newStructureWear, prefabWears, toolWears } from './durability';
+import { addItem } from './inventory';
+import { parseStore } from './storage';
 import { createSkills, SKILL_IDS } from './skills';
-import { STATE_VERSION, type GameState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
+import { STATE_VERSION, type GameState, type RepairState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
 import { freshTree } from './trunks';
 import { getWorldGen } from './worldgen';
 
@@ -60,6 +64,7 @@ function parseWear(v: unknown): Wear | null {
  * Version 2 saves (before round 5) are migrated too: tools start at upgrade level 0, lean-tos and hide tents are
  * simply the first and last shelter tiers, the Foraging guide unlocks every plant already harvested, and the
  * onboarding position is replayed against the new track (a finished old track stays finished).
+ * Version 3 saves (before round 8) carried water in pack slots: it is poured into the canteen, up to its capacity.
  */
 export function deserializeState(json: string | null): GameState | null {
   if (!json) return null;
@@ -71,7 +76,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) return null;
   const version = raw.version;
-  if (version !== 1 && version !== 2 && version !== STATE_VERSION) return null;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== STATE_VERSION) return null;
   if (typeof raw.seed !== 'number' || typeof raw.totalHours !== 'number') return null;
   for (const k of REQUIRED_OBJECTS) if (!isObj(raw[k])) return null;
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
@@ -129,20 +134,61 @@ export function deserializeState(json: string | null): GameState | null {
     ? (raw.forage as unknown[]).filter((f): f is ForageId => typeof f === 'string' && forageIds.has(f))
     : guide.filter((f) => (isObj(stats.gathered) ? num(stats.gathered[f.item], 0) : 0) > 0).map((f) => f.id);
   const structures = (raw.structures as StructureState[]).filter((st) => isObj(st) && st.prefab in PREFABS).map((st) => {
+    if (PREFABS[st.prefab].storage) return { ...st, store: parseStore(st.store, st.prefab) };
     if (!prefabWears(st.prefab)) return st;
     const wear = version === 1 ? newStructureWear(st.prefab, 0) : parseWear(st.wear);
     return wear ? { ...st, wear } : st;
   });
-  const player = { ...(raw.player as Record<string, unknown>), swimming: (raw.player as Record<string, unknown>).swimming === true };
+  const rawPlayer = raw.player as Record<string, unknown>;
+  const player = { ...rawPlayer, swimming: rawPlayer.swimming === true };
+  const seat = parseSeat(rawPlayer.seat, structures);
+  // Before round 8 sitting only lowered the camera where you stood; stand those players up.
+  if (seat) Object.assign(player, { sitting: true, seat });
+  else Object.assign(player, { sitting: false, seat: undefined });
+  const rawCanteen = isObj(raw.canteen) ? raw.canteen : {};
+  const canteen = { lakeWater: servings(rawCanteen.lakeWater), boiledWater: servings(rawCanteen.boiledWater) };
 
-  const state = { ...raw, version: STATE_VERSION, player, skills, toolWear, toolLevels, forage, structures, trees, resources } as unknown as GameState & { format?: string; known?: unknown };
+  const state = { ...raw, version: STATE_VERSION, player, canteen, skills, toolWear, toolLevels, forage, structures, trees, resources } as unknown as GameState & { format?: string; known?: unknown };
   delete state.format;
   // Saves from before round 6 list learned recipes; every recipe is available now.
   delete state.known;
-  if (version < STATE_VERSION) {
+  if (version < 3) {
     const wasDone = num(raw.objective, 0) >= LEGACY_OBJECTIVE_COUNT;
     state.objective = wasDone ? OBJECTIVES.length : 0;
     if (!wasDone) advanceObjectives(state);
   }
+  // Water used to ride in pack slots; it lives in the canteen now.
+  if (!state.gear.includes('canteen')) state.canteen = emptyCanteen();
+  const extra = canteenServings(state) - BALANCE.carry.canteenCapacity;
+  if (extra > 0) state.canteen.lakeWater = Math.max(0, state.canteen.lakeWater - extra);
+  migratePackWater(state);
+  const repair = parseRepair(raw.repair, state);
+  if (repair) state.repair = repair;
+  else delete state.repair;
   return state;
+}
+
+/** A repair saved part-way through resumes if its tool and workbench are still there; otherwise its materials come back. */
+function parseRepair(v: unknown, s: GameState): RepairState | null {
+  if (!isObj(v)) return null;
+  const paid = Array.isArray(v.paid)
+    ? (v.paid as unknown[]).filter((c): c is { item: ItemId; count: number } => isObj(c) && typeof c.item === 'string' && c.item in ITEMS && typeof c.count === 'number' && c.count > 0)
+    : [];
+  const tool = v.tool as ToolId;
+  const ok = typeof tool === 'string' && toolWears(tool) && s.tools.includes(tool) && s.structures.some((st) => st.id === v.structure && PREFABS[st.prefab].workbench);
+  if (!ok) {
+    for (const c of paid) addItem(s.inventory, c.item, Math.floor(c.count));
+    return null;
+  }
+  const duration = Math.max(0.1, num(v.duration, 1));
+  return { tool, structure: v.structure as number, elapsed: Math.min(duration, Math.max(0, num(v.elapsed, 0))), duration, paid: paid.map((c) => ({ item: c.item, count: Math.floor(c.count) })) };
+}
+
+const servings = (v: unknown) => Math.max(0, Math.floor(num(v, 0)));
+
+function parseSeat(v: unknown, structures: StructureState[]): { id: number; yaw: number } | null {
+  if (!isObj(v) || typeof v.id !== 'number') return null;
+  const st = structures.find((s) => s.id === v.id);
+  if (!st || !PREFABS[st.prefab].seat) return null;
+  return { id: v.id, yaw: num(v.yaw, st.rot) };
 }

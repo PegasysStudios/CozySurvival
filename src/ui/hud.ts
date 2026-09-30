@@ -77,6 +77,7 @@ export class Hud {
   private readonly pack = el('div', 'pack-count');
   private readonly crosshair = el('div', 'crosshair');
   private readonly charge = el('div', 'bow-charge');
+  private readonly repairRing = el('div', 'repair-ring');
   private readonly prompt = el('div', 'prompt');
   private readonly promptKey: { last?: string } = {};
   private readonly placeHelp = el('div', 'place-help');
@@ -128,7 +129,7 @@ export class Hud {
     bottom.append(this.belt, packWrap);
 
     const center = el('div', 'hud-center');
-    center.append(this.crosshair, this.charge, this.prompt, this.placeHelp);
+    center.append(this.crosshair, this.charge, this.repairRing, this.prompt, this.placeHelp);
 
     this.hint.innerHTML = `
       <div><b>WASD</b> move and swim · <b>Shift</b> run · <b>Space</b> jump</div>
@@ -295,6 +296,16 @@ export class Hud {
     const drawing = sim.bowDraw >= 0 || winding;
     toggle(this.charge, 'show', drawing);
     if (drawing) this.charge.style.setProperty('--p', String(winding ? sim.fishing!.power : Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw)));
+    const repair = sim.state.repair;
+    toggle(this.repairRing, 'show', !!repair);
+    if (repair) {
+      this.repairRing.style.setProperty('--p', (sim.repairProgress ?? 0).toFixed(3));
+      const left = Math.max(0, repair.duration - repair.elapsed).toFixed(1);
+      setHtml(this.prompt, `<span class="prompt-name">Repairing ${escapeHtml(TOOLS[repair.tool].name)}</span><span class="prompt-action">${left} s left · look around, but stay put</span>`, this.promptKey);
+      toggle(this.prompt, 'show', true);
+      toggle(this.crosshair, 'active', false);
+      return;
+    }
     if (sim.state.player.sitting) {
       setHtml(this.prompt, '<span class="prompt-name">Resting on the bench</span><span class="prompt-action">Move to stand up</span>', this.promptKey);
       toggle(this.prompt, 'show', true);

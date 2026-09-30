@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
-import { ITEMS } from '../src/data/items';
+import { ITEMS, type ItemId } from '../src/data/items';
 import { OBJECTIVES } from '../src/data/objectives';
 import { RECIPE_BY_ID, RECIPES } from '../src/data/recipes';
+import { fillCanteen, inCanteen } from '../src/sim/canteen';
 import { canCraft, craft } from '../src/sim/crafting';
 import { addItem, countItem } from '../src/sim/inventory';
 import { createNewState } from '../src/sim/simulation';
@@ -13,8 +14,11 @@ function fresh(): GameState {
   return createNewState(42);
 }
 
-function stock(s: GameState, items: Record<string, number>) {
-  for (const [k, v] of Object.entries(items)) addItem(s.inventory, k as never, v);
+function stock(s: GameState, items: Partial<Record<ItemId, number>>) {
+  for (const [k, v] of Object.entries(items) as [ItemId, number][]) {
+    if (inCanteen(k)) fillCanteen(s, k, v);
+    else addItem(s.inventory, k, v);
+  }
 }
 
 const noFire = { nearFire: false };
@@ -44,7 +48,7 @@ describe('every recipe is available from the start (round 6)', () => {
     for (const r of RECIPES) {
       const s = fresh();
       s.gear.push('basket', 'backpack', 'canteen');
-      for (const i of r.inputs) addItem(s.inventory, i.item, i.count);
+      stock(s, Object.fromEntries(r.inputs.map((i) => [i.item, i.count])));
       const check = canCraft(s, r, atFire);
       expect(check.reason === null || check.reason === 'owned', `${r.id}: ${check.reason}`).toBe(true);
     }
@@ -94,7 +98,7 @@ describe('crafting', () => {
     stock(s, { boiledWater: 1, rawMeat: 2, mushroom: 1, onion: 1 });
     expect(craft(s, 'stew', atFire).ok).toBe(true);
     expect(countItem(s.inventory, 'stew')).toBe(1);
-    expect(countItem(s.inventory, 'boiledWater')).toBe(0);
+    expect(s.canteen.boiledWater).toBe(0);
     expect(countItem(s.inventory, 'rawMeat')).toBe(1);
   });
 

@@ -29,13 +29,17 @@ export function pnwFingerprint(seed: number): Record<string, string> {
   const heights: number[] = [];
   for (let i = 0; i < t.heights.length; i += 7) heights.push(t.heights[i]);
   const sim = Simulation.newGame(seed);
-  const start = { ...sim.state, runId: '' };
+  // Round 8 added the canteen and bumped the save version; neither changes the world or how it plays.
+  const start: Partial<typeof sim.state> = { ...sim.state, version: 3, runId: '' };
+  delete start.canteen;
   run(sim, 20, { moveZ: -1 });
   run(sim, 20, { moveX: 1, sprint: true });
   sim.state.totalHours = Math.floor(sim.state.totalHours / 24) * 24 + 16.5;
   run(sim, 40);
   const after = JSON.parse(serializeState(sim.state)) as Record<string, unknown>;
   after.runId = '';
+  after.version = 3;
+  delete after.canteen;
   return {
     heights: hash(stable(heights)),
     lakes: hash(stable(t.lakes)),
@@ -44,6 +48,6 @@ export function pnwFingerprint(seed: number): Record<string, string> {
     rocksLogs: hash(stable([g.rocks, g.logs])),
     start: hash(stable(start)),
     afterPlay: hash(stable(after)),
-    counts: `${g.trees.length}/${g.resources.length}/${g.rocks.length}/${g.logs.length}/${start.animals.length}`,
+    counts: `${g.trees.length}/${g.resources.length}/${g.rocks.length}/${g.logs.length}/${start.animals!.length}`,
   };
 }

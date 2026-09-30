@@ -162,6 +162,7 @@ describe('cooking skill and burnt meals', () => {
       expect(sim.craft(recipe).ok).toBe(true);
       if (drain(sim).some((e) => e.type === 'crafted' && e.burnt)) burnt++;
       sim.state.inventory.slots = sim.state.inventory.slots.map(() => null);
+      sim.state.canteen = { lakeWater: 0, boiledWater: 0 };
     }
     return burnt;
   }

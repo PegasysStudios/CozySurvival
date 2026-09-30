@@ -1,6 +1,6 @@
 import { PREFABS } from '../data/prefabs';
 import type { Simulation } from '../sim/simulation';
-import { CHAT_MAX, cleanName, cleanText, F_AIR, F_DEAD, F_SIT, F_SLEEP, F_SPRINT, F_SWIM, F_WADE, type ChatLine, type ChatMsg, type EmoteMsg, type Pose, type Profile } from './protocol';
+import { CHAT_MAX, cleanName, cleanText, F_AIR, F_DEAD, F_SIT, F_SLEEP, F_SPRINT, F_SWIM, F_WADE, F_WORK, type ChatLine, type ChatMsg, type EmoteMsg, type Pose, type Profile } from './protocol';
 import { newPeer, peerDead, updatePeer, type Peer } from './peers';
 import type { NetChannel, Transport } from './transport';
 
@@ -40,10 +40,12 @@ export function localPose(sim: Simulation, act: number): Pose {
   if (s.dead) flags |= F_DEAD;
   if (!p.grounded && !p.swimming) flags |= F_AIR;
   if (p.wading) flags |= F_WADE;
+  if (s.repair) flags |= F_WORK;
   let x = p.x;
   let y = p.y;
   let z = p.z;
-  let yaw = p.yaw;
+  // On a bench the body faces out from the seat while the head looks around.
+  let yaw = p.seat ? p.seat.yaw : p.yaw;
   if (sim.sleepingIn !== null) {
     flags |= F_SLEEP;
     const st = s.structures.find((q) => q.id === sim.sleepingIn);

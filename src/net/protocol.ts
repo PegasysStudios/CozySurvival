@@ -40,6 +40,8 @@ export const F_SLEEP = 8;
 export const F_DEAD = 16;
 export const F_AIR = 32;
 export const F_WADE = 64;
+/** Standing at a workbench mending a tool. */
+export const F_WORK = 128;
 
 /** A player's pose on the wire: positions and velocities in cm, yaw/pitch in centiradians. */
 export interface Pose {

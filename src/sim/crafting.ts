@@ -1,14 +1,14 @@
 import { BALANCE } from '../data/balance';
 import { RECIPE_BY_ID, type Recipe } from '../data/recipes';
-import { ITEMS } from '../data/items';
-import { addItem, cloneInventory, countItem, hasAll, removeAll, roomFor, setCapacity, waterUnits } from './inventory';
+import { addItem, cloneInventory, removeItem, roomFor, setCapacity } from './inventory';
+import { canteenCapacity, canteenRoom, canteenUse, fillCanteen, hasItems, haveItem, inCanteen, takeItems } from './canteen';
 import type { GameState } from './state';
 
 export interface CraftContext {
   nearFire: boolean;
 }
 
-export type CraftFailure = 'unknown' | 'missing' | 'station' | 'noRoom' | 'owned' | 'noCanteen';
+export type CraftFailure = 'unknown' | 'missing' | 'station' | 'noRoom' | 'owned' | 'noCanteen' | 'canteenFull';
 
 export interface CraftCheck {
   ok: boolean;
@@ -22,6 +22,7 @@ export const CRAFT_FAILURE_TEXT: Record<CraftFailure, string> = {
   noRoom: 'No room in your pack.',
   owned: 'You already have one.',
   noCanteen: 'You need a canteen to carry water.',
+  canteenFull: 'Your canteen is full.',
 };
 
 export function slotsFor(state: GameState): number {
@@ -37,15 +38,16 @@ export function canCraft(state: GameState, recipe: Recipe, ctx: CraftContext): C
   const out = recipe.output;
   if (out.kind === 'tool' && state.tools.includes(out.tool)) return fail('owned');
   if (out.kind === 'gear' && state.gear.includes(out.gear)) return fail('owned');
-  if (!hasAll(state.inventory, recipe.inputs)) return fail('missing');
+  if (!hasItems(state, recipe.inputs)) return fail('missing');
   if (recipe.station === 'fire' && !ctx.nearFire) return fail('station');
   if (out.kind === 'item') {
-    const trial = cloneInventory(state.inventory);
-    removeAll(trial, recipe.inputs);
-    if (roomFor(trial, out.item) < out.count) return fail('noRoom');
-    if (ITEMS[out.item].water && !state.gear.includes('canteen')) {
-      const consumedWater = recipe.inputs.some((i) => ITEMS[i.item].water);
-      if (!consumedWater) return fail('noCanteen');
+    if (inCanteen(out.item)) {
+      if (canteenCapacity(state) === 0) return fail('noCanteen');
+      if (canteenRoom(state) + canteenUse(recipe.inputs) < out.count) return fail('canteenFull');
+    } else {
+      const trial = cloneInventory(state.inventory);
+      for (const i of recipe.inputs) if (!inCanteen(i.item)) removeItem(trial, i.item, i.count);
+      if (roomFor(trial, out.item) < out.count) return fail('noRoom');
     }
   }
   return { ok: true, reason: null };
@@ -62,9 +64,10 @@ export function craft(state: GameState, recipeId: string, ctx: CraftContext): Cr
   if (!check.ok) return check;
   const out = recipe.output;
   if (out.kind === 'place') return check;
-  removeAll(state.inventory, recipe.inputs);
+  takeItems(state, recipe.inputs);
   if (out.kind === 'item') {
-    addItem(state.inventory, out.item, out.count);
+    if (inCanteen(out.item)) fillCanteen(state, out.item, out.count);
+    else addItem(state.inventory, out.item, out.count);
     state.stats.gathered[out.item] = (state.stats.gathered[out.item] ?? 0) + out.count;
   } else if (out.kind === 'tool') {
     state.tools.push(out.tool);
@@ -76,14 +79,9 @@ export function craft(state: GameState, recipeId: string, ctx: CraftContext): Cr
   return check;
 }
 
-export function canteenRoom(state: GameState): number {
-  if (!state.gear.includes('canteen')) return 0;
-  return Math.max(0, BALANCE.carry.canteenCapacity - waterUnits(state.inventory));
-}
-
-/** How many times the recipe could be made from current inventory. */
+/** How many times the recipe could be made from what you carry. */
 export function craftableCount(state: GameState, recipe: Recipe): number {
   let n = Infinity;
-  for (const i of recipe.inputs) n = Math.min(n, Math.floor(countItem(state.inventory, i.item) / i.count));
+  for (const i of recipe.inputs) n = Math.min(n, Math.floor(haveItem(state, i.item) / i.count));
   return n === Infinity ? 0 : n;
 }

@@ -236,7 +236,8 @@ describe('water', () => {
     expect(sim.state.stats.events.drankByHand).toBe(1);
     sim.state.gear.push('canteen');
     sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(BALANCE.carry.canteenCapacity);
+    expect(sim.state.canteen.lakeWater).toBe(BALANCE.carry.canteenCapacity);
+    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(0);
     expect(sim.describeTarget()).toBeNull();
     // full canteen: clicking the lake drinks instead
     sim.state.needs.thirst = 50;
@@ -244,16 +245,15 @@ describe('water', () => {
     expect(sim.state.needs.thirst).toBeGreaterThan(50);
   });
 
-  it('with a full pack, clicking the lake still lets you drink by hand', () => {
+  it('a full pack does not stop the canteen filling, since water takes no pack slot', () => {
     const sim = quietSim();
     sim.state.gear.push('canteen');
     for (let k = 0; k < sim.state.inventory.slots.length; k++) sim.state.inventory.slots[k] = { item: 'stone', count: 10 };
-    sim.state.needs.thirst = 20;
     sim.target = { kind: 'water', dist: 1, x: 0, z: 0 };
-    expect(sim.describeTarget()).toMatchObject({ action: 'Drink', enabled: true });
+    expect(sim.describeTarget()).toMatchObject({ action: 'Fill canteen', enabled: true });
     sim.perform(sim.target);
-    expect(sim.state.needs.thirst).toBeCloseTo(20 + BALANCE.needs.handDrink.thirst);
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(0);
+    expect(sim.state.canteen.lakeWater).toBe(BALANCE.carry.canteenCapacity);
+    expect(sim.state.inventory.slots.every((s) => s?.item === 'stone')).toBe(true);
   });
 
   it('picking dropped water back up never overfills the canteen', () => {
@@ -261,18 +261,18 @@ describe('water', () => {
     sim.state.gear.push('canteen');
     const cap = BALANCE.carry.canteenCapacity;
     sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
-    sim.dropSlot(sim.state.inventory.slots.findIndex((s) => s?.item === 'lakeWater'));
-    sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(cap);
+    // Water spilled by an old save or an older client lies on the ground as a drop.
+    const p = sim.state.player;
+    sim.state.drops.push({ id: 999, item: 'lakeWater', count: cap, x: p.x, y: p.y, z: p.z });
     const drop = sim.state.drops[0];
     sim.perform({ kind: 'drop', id: drop.id, dist: 1 });
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(cap);
+    expect(sim.state.canteen.lakeWater).toBe(cap);
     expect(drop.count).toBe(cap);
     expect(drain(sim).some((e) => e.type === 'message' && /canteen is full/.test(e.text))).toBe(true);
     // drink one serving, then only one fits back in
-    sim.useSlot(sim.state.inventory.slots.findIndex((s) => s?.item === 'lakeWater'));
+    expect(sim.drinkCanteen()).toBe(true);
     sim.perform({ kind: 'drop', id: drop.id, dist: 1 });
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(cap);
+    expect(sim.state.canteen.lakeWater).toBe(cap);
     expect(drop.count).toBe(cap - 1);
   });
 
@@ -283,11 +283,15 @@ describe('water', () => {
     expect(sim.craft('boilWater').reason).toBe('station');
     placeCampfire(sim);
     expect(sim.craft('boilWater').ok).toBe(true);
-    expect(countItem(sim.state.inventory, 'boiledWater')).toBe(1);
+    expect(sim.state.canteen).toEqual({ lakeWater: 1, boiledWater: 1 });
     sim.state.needs.thirst = 40;
-    const slot = sim.state.inventory.slots.findIndex((s) => s?.item === 'boiledWater');
-    expect(sim.useSlot(slot)).toBe(true);
-    expect(sim.state.needs.thirst).toBeCloseTo(68);
+    // raw water is drunk first, saving the boiled water for cooking
+    expect(sim.drinkCanteen()).toBe(true);
+    expect(sim.state.canteen).toEqual({ lakeWater: 0, boiledWater: 1 });
+    expect(sim.state.needs.thirst).toBeCloseTo(58);
+    expect(sim.drinkCanteen()).toBe(true);
+    expect(sim.state.needs.thirst).toBeCloseTo(86);
+    expect(sim.drinkCanteen()).toBe(false);
   });
 });
 

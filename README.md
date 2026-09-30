@@ -37,18 +37,20 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | Jump | Space (also climbs onto boulders and fallen trunks) |
 | Swim | W A S D in deep water (no running or jumping while swimming) |
 | Look | Mouse |
-| Gather, use tool, interact (fires, benches, shelters, carcasses) | Left-click (hold to repeat) |
+| Gather, use tool, interact (fires, benches, shelters, workbenches, storage, carcasses) | Left-click (hold to repeat) |
+| Sit on a bench / stand up | Left-click the bench / click it again or press a move key |
+| Drink from the canteen | Tab, click the canteen, then **Drink** (or F) |
 | Campfire menu (fuel meter, add a stick or log, cook) | Left-click a lit campfire (an unlit one takes fuel straight away) |
 | Draw and release the bow | Hold and release left-click |
 | Fish (fishing pole) | Hold left-click to wind up, release to cast, click when the float dips |
 | Select tool | 1–6 or mouse wheel |
-| Crafting | C |
+| Crafting (icon tabs along the top) | C |
 | Pack (inventory) | Tab |
 | Quick eat or drink whatever you need most | F |
 | Rotate placement ghost | R (Shift+R the other way) or mouse wheel |
 | Cancel placement | Right-click or Q |
 | Mute / unmute all sound (your volume settings are kept) | M |
-| Close the open menu (pack, crafting, campfire, dev panel) | Esc |
+| Close the open menu (pack, crafting, campfire, workbench, storage, dev panel) | Esc |
 | Pause when no menu is open, settings (master, music and effects volume, mouse sensitivity, invert Y) | Esc |
 
 ## What's in the demo
@@ -84,7 +86,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 
   Beyond the track:
   - tools: axe, spear, bow and arrows, torch, fishing pole
-  - water: drink by hand, fill a canteen, boil it at a fire
+  - water: drink by hand, or carry up to 4 servings in the canteen (never in pack slots), boiling them at a fire
   - multi-ingredient meals: Forager's Skewer, Forest Stew, Mushroom Skewer, Salmonberry Tea, Bark-Baked Trout, Trout Chowder, Trout & Berry Skewer, Smoked Trout
   - gear, tools, structures and cordage cost about 5× what they did in round 3 (a workbench is 10 logs). Arrows, fuel and food recipes are unchanged. The comment above `RECIPES` in `src/data/recipes.ts` lists the few recipes kept below 5× and why.
   - carry upgrades: Grass Basket, Hide Backpack
@@ -297,11 +299,12 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 447 tests covering:
+`npm test` runs 486 tests covering:
 
 - the Arizona Desert (`tests/desert.test.ts`): the biome config, water across 40 seeds (always a drinkable spring near the spawn, no big lakes, far less water than the Pacific Northwest map), the alkali pool (first taste, refusal, no canteen fill), evening and night warmth against the Pacific Northwest map, a fire holding warmth, small-tree against big-tree wood, big trees only in the high country, scrub and cactus instead of forest plants, day-1 spawns, the cougar and upland-only bear schedule, the cougar's stalk and the torch, the rattlesnake strike, and the small prey bolting
 - per-map saves (`tests/maps.test.ts`): an old save loading unchanged as a Pacific Northwest run, a desert run leaving the Pacific Northwest save untouched, **Continue** on both maps, per-map records, Start from scratch and Retry the day on the desert, and a desert multiplayer server carrying its map through the lobby to a joining guest
 - the title map picker (`tests/title.test.ts`): arrow order and clicks, the map copy and the dots
+- round 8: the canteen (`tests/canteen.test.ts`: filling, the fill bar, each Drink taking one serving until empty, boiling inside it, F, pack water migrating on both maps, save round-trip), benches (`tests/bench.test.ts`: seat position and facing from either side, clamping to the ends, standing up, the seated pose for other players, saves), repairs (`tests/repair.test.ts`: cost as a share of the crafting cost that rises with level and never reaches it, time rising with level, walking locked but looking free, full condition when done, refunds on hurt or a removed bench, saves), the storage bin (`tests/storage.test.ts`: 10/15/20 slots, moving stacks and single items in and out, full bin or pack, saves), the axe's blade direction (`tests/axe.test.ts`) and the tabbed menu (`tests/menus.test.ts`: tab order, icons, tooltips, the active tab, badges, the shared column and the CSS that keeps icons full size)
 - the Pacific Northwest map unchanged (`tests/pnw-unchanged.test.ts`): a golden fingerprint of the terrain, world gen, starting state and early play on several seeds
 
 - inventory stacking and carry limits
@@ -344,8 +347,9 @@ Rendering is built for 60 fps:
   - shelter upgrades syncing guest to host to guests and host to guests, and simultaneous upgrades settling on one tier
   - tool upgrades and the Foraging guide staying personal, and guest spear kills counting for onboarding
   - a guest leaving, and the host closing the server
+  - round 8: storing and taking from a shared bin across three players, simultaneous deposits, a guest's bin upgrade, and a guest repairing at the host's workbench (others see the working pose, and the mended tool survives a resync)
 
-`npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, the campfire menu and Esc, save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
+`npm run smoke` boots the real build in headless Chrome as an end-to-end check of the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair (the ring, locked walking, full condition after), a storage bin (moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
 It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. The multiplayer part runs on a desert server, and the guest's server list shows "Arizona Desert". Along the way it saves four screenshots: each map's title screen and each map in first person.
 
@@ -356,6 +360,34 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - **Jon's icons.** Hand-made 64×64 PNGs live in `public/icons/jon/`. `src/data/icons.ts` holds the only mapping from item id and tier to file (tool tier = upgrade level + 1); anything unmapped keeps its built-in SVG. The first upload lost its filenames, so the mapping is a best guess until named files arrive.
 - **Ferns.** Sword ferns grow on 48% of their map-wide spots (was 40%), so fiber is a little easier to find.
 - **Fiber stacks.** Plant fiber stacks to 30 per pack slot (was 16). Every other item keeps its stack size.
+
+## Round 8
+
+- **Canteen water.** Water only travels in the Bark Canteen, never in pack slots. It holds 4 servings, filled at the lake or by boiling at a fire. Its tile in the Pack shows a blue fill bar, like a tool's durability bar. Clicking it opens an info panel with a **Drink** button: each click takes one serving (raw water first, then boiled) until the canteen is empty. A lake water serving gives +18 thirst; boiled water gives +28 and a little warmth and energy. Teas are still meals carried in the pack. Old saves pour any pack water into the canteen, and anything past its capacity (or all of it, with no canteen) is poured out.
+- **Benches.** Clicking a bench seats you on it, on the side you approached from and facing out that way; your eye height drops to 1.38 m. Other players see you seated with your body facing out. Click the bench again, press a move key or jump to stand up in front of it. Getting hurt, sleeping or the bench going away also stands you up.
+- **Repair workbench** (8 logs, 12 sticks, 10 stones, 4 cordage; in the Build tab). Clicking it lists every carried tool or weapon that wears, with its condition, what mending it costs and how long it takes. **Repair** pays up front and starts a timed repair with a circular progress ring: you can look around but can't walk, jump or use tools until it's done, and the tool comes back to full condition. Getting hurt, dying, or losing the workbench or the tool drops the work and hands the materials back. Anyone in multiplayer can use any workbench, and other players see you working at it. The cost is 15 / 20 / 25 / 30% of the tool's crafting cost at upgrade levels 0 / I / II / III, rounded up, always at least one short of the full cost:
+
+  | Tool | Crafting cost | Level 0 | Level I | Level II | Level III |
+  |---|---|---|---|---|---|
+  | Stone Axe | 6 stick, 6 stone, 6 fiber (18) | 3 (1, 1, 1) | 4 (2, 1, 1) | 5 (2, 2, 1) | 6 (2, 2, 2) |
+  | Spear | 15 stick, 5 stone, 5 cordage (25) | 4 (2, 1, 1) | 5 (3, 1, 1) | 7 (4, 2, 1) | 8 (5, 2, 1) |
+  | Bow | 15 stick, 10 cordage (25) | 4 (2, 2) | 5 (3, 2) | 7 (4, 3) | 8 (5, 3) |
+  | Torch | 5 stick, 10 fiber, 5 bark (20) | 3 (1, 1, 1) | 4 (1, 2, 1) | 5 (1, 3, 1) | 6 (2, 3, 1) |
+  | Fishing Pole | 10 stick, 5 stone, 5 cordage (20) | 3 (1, 1, 1) | 4 (2, 1, 1) | 5 (3, 1, 1) | 6 (3, 2, 1) |
+
+  Repairs take 4 / 5.5 / 7 / 8.5 s at levels 0 / I / II / III. The numbers live in `BALANCE.repair`.
+- **Storage bin** (24 sticks, 20 fiber, 3 cordage; in the Build tab). Clicking it opens its slots beside your pack: click a stack to move all of it across, right-click to move one. Any pack item fits (water stays in the canteen). It upgrades in place from its own menu, keeping what's inside:
+
+  | Tier | Slots | Materials |
+  |---|---|---|
+  | 1. Storage Bin | 10 | crafting menu |
+  | 2. Storage Crate | 15 | 8 logs, 16 sticks, 6 cordage |
+  | 3. Storage Chest | 20 | 12 logs, 8 cordage, 6 hides, 10 birch bark |
+
+  In multiplayer anyone can open any bin, and its contents sync to everyone. Deposits made at the same moment by two players are both kept.
+- **Axe.** The held axe's blade points forward in first person (it pointed right), and other players see the axe gripped square to the fist with the blade leading the chop. Upgrade levels share the same model.
+- **Tabbed crafting menu.** Six icon tabs run along the top of the grid: Tools, Build, Cooking, Upgrades, Gear and Materials (Jon's PNGs in `public/icons/crafting-tabs/`; there's no foraging-supplies category, so that icon isn't used, and the old All tab is gone). Hovering a tab names it, the active tab is highlighted, and a badge counts what you can make there now. The tabs and the grid share the left column, which never gets narrower than the tab row; when space is tight the detail panel on the right narrows instead. Everything from round 6 stays: square tiles, greyed tiles, hover names and the ingredient tracker.
+- **Saves.** Round 8 saves are version 4. Older saves on both maps still load, with pack water moved into the canteen and a pre-round-8 "sitting" player standing up.
 
 ## Known gaps
 
@@ -370,7 +402,7 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - One or two mountain lions and a bear on a 9-hectare map is far above real territory density. That's a deliberate game choice, as it is for the wolves.
 - Saguaros are scenery and can't be chopped or harvested.
 - The title cross-fade fades out a snapshot of the old map's canvas, so the menu itself doesn't fade.
-- Multiplayer protocol version 4 carries the map, so older clients can't join newer servers (and the other way round).
+- Multiplayer protocol version 5 (round 8: storage contents and the working pose), so older clients can't join newer servers (and the other way round).
 - Hunger, thirst, fire fuel and resource regrowth are still tuned per game hour, so with 24-minute days they tick 2.5× faster in real time than before. Cold and warmth are unchanged per game hour.
 - Trunk and boulder surfaces approximate the rendered meshes (a flat-topped slab and a half-ellipsoid dome).
 - Predators don't follow you into the water.
@@ -386,7 +418,12 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - Round 4 pacing (5× costs against sparse forage, faster energy drain) and the fishing timings are tuned from the numbers only, not a playtest.
 - Round 5 upgrade costs and day estimates are from the numbers only. The campfire (25 stones, 20 sticks, 5 fiber) is now the second onboarding step and is likely the slowest part of day 1.
 - Upgrades must be carried in one go: there's no way to deliver materials to a shelter in batches, so the bark hut and hide tent need a Hide Backpack's room.
-- The bench still sits you down on click; only shelters have a structure menu.
+- Two players can sit on the same spot of a bench.
+- The seated pose has no knee bend: the legs swing forward straight.
+- If two players take the same stack from a bin at the same moment, both may get it (deposits never collide).
+- Teas and other drinks still ride in the pack; only plain and boiled water go in the canteen.
+- Workbenches and storage don't wear out. Repairs don't need you to stay near the bench once started, since you can't walk away anyway.
+- Round 8 has had no visual review: the workbench and storage models, the seated pose, the axe angle and the tab layout are checked by tests and the headless smoke run only.
 - If two players upgrade the same shelter at the same moment, both spend their materials and it only goes up one tier.
 - Bow upgrades improve accuracy through faster, flatter arrows; there's no aim spread to tighten.
 - Saves from before round 5 load with every tool at level 0, lean-tos and hide tents as the first and last tiers, the Foraging guide unlocked for every plant already harvested, and onboarding replayed against the new track (a finished old track stays finished).

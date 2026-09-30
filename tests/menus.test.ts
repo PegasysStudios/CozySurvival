@@ -6,7 +6,7 @@ import { hasAll } from '../src/sim/inventory';
 import type { Simulation } from '../src/sim/simulation';
 import { campfireTiles, craftTiles, UPGRADE_ONLY_SHELTERS, upgradeTiles } from '../src/ui/catalog';
 import { attachTooltip, el } from '../src/ui/dom';
-import { Panels } from '../src/ui/panels';
+import { CRAFT_TABS, Panels } from '../src/ui/panels';
 import { buildFresh, give, quietSim } from './helpers';
 
 const RECIPES = recipesFor('pnw');
@@ -73,15 +73,23 @@ describe('all recipes visible from the start (round 6)', () => {
     const sim = quietSim();
     give(sim, { stick: 6, stone: 6, fiber: 6 });
     const { panels, root } = openPanels(sim);
-    panels.open('crafting', { tab: 'all' });
-    const recipeTiles = tiles(root, '.tile.recipe');
-    expect(recipeTiles.length).toBe(RECIPES.length);
-    const expectedGreyed = craftTiles(sim, 'all').filter((t) => t.kind === 'recipe' && t.greyed).length;
-    expect(tiles(root, '.tile.recipe.greyed').length).toBe(expectedGreyed);
+    panels.open('crafting');
+    let recipeCount = 0;
+    let greyed = 0;
+    for (const tab of CRAFT_TABS.filter((t) => t.id !== 'upgrades')) {
+      root.querySelector<HTMLElement>(`.craft-tab[data-tab="${tab.id}"]`)!.click();
+      recipeCount += tiles(root, '.tile.recipe').length;
+      greyed += tiles(root, '.tile.recipe.greyed').length;
+    }
+    expect(recipeCount).toBe(RECIPES.length);
+    expect(greyed).toBe(craftTiles(sim, 'all').filter((t) => t.kind === 'recipe' && t.greyed).length);
     expect(root.querySelector('.panel .recipe-list')).toBeNull();
     // the first ready tile starts selected
+    root.querySelector<HTMLElement>('.craft-tab[data-tab="materials"]')!.click();
     expect(root.querySelector('.tile.selected')!.getAttribute('data-key')).toBe('r:cordage');
-    tiles(root, '.tile.recipe').find((t) => t.dataset.key === 'r:axe')!.click();
+    root.querySelector<HTMLElement>('.craft-tab[data-tab="tools"]')!.click();
+    const recipeTiles = tiles(root, '.tile.recipe');
+    recipeTiles.find((t) => t.dataset.key === 'r:axe')!.click();
     const detail = root.querySelector('.recipe-detail')!;
     expect(detail.querySelector('h3')!.textContent).toBe('Stone Axe');
     expect(detail.querySelectorAll('.ingredient.ok').length).toBe(3);
@@ -159,5 +167,66 @@ describe('tile tooltip (round 6)', () => {
     const ms = Number(/transition: opacity ([\d.]+)s/.exec(rule)![1]) * 1000;
     expect(ms).toBeGreaterThan(0);
     expect(ms).toBeLessThanOrEqual(200);
+  });
+});
+
+describe('tabbed crafting menu (round 8)', () => {
+  const tabs = (root: HTMLElement) => [...root.querySelectorAll<HTMLElement>('.panel .craft-tab')];
+
+  it('opens on Tools with one icon tab per category, named on hover, the active one highlighted', () => {
+    const sim = quietSim();
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting');
+    const row = tabs(root);
+    expect(row.map((t) => t.dataset.tab)).toEqual(['tools', 'structures', 'cooking', 'upgrades', 'gear', 'materials']);
+    expect(row.map((t) => t.dataset.tip)).toEqual(['Tools', 'Build', 'Cooking', 'Upgrades', 'Gear', 'Materials']);
+    expect(row.map((t) => t.querySelector('img')!.getAttribute('src')!.split('/').slice(-2).join('/'))).toEqual(
+      ['tools', 'building', 'cooking', 'upgrades', 'gear', 'materials'].map((f) => `crafting-tabs/${f}.png`),
+    );
+    expect(row.filter((t) => t.classList.contains('active')).map((t) => t.dataset.tab)).toEqual(['tools']);
+    expect(row[0].getAttribute('aria-selected')).toBe('true');
+    const tip = root.querySelector<HTMLElement>('.tile-tip')!;
+    hover(row[2]);
+    expect([tip.textContent, tip.classList.contains('show')]).toEqual(['Cooking', true]);
+
+    row[1].click();
+    expect(tabs(root).filter((t) => t.classList.contains('active')).map((t) => t.dataset.tab)).toEqual(['structures']);
+    expect(tiles(root, '.tile.recipe').map((t) => t.dataset.key)).toEqual(RECIPES.filter((r) => r.category === 'structures').map((r) => `r:${r.id}`));
+    expect(tiles(root).some((t) => t.dataset.key === 'r:workbench') && tiles(root).some((t) => t.dataset.key === 'r:storageBin')).toBe(true);
+    tabs(root)[3].click();
+    expect(tiles(root).length).toBe(upgradeTiles(sim).length);
+  });
+
+  it('keeps the tab row and the grid together in the left column, apart from the detail panel', () => {
+    const sim = quietSim();
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting', { tab: 'cooking' });
+    const left = root.querySelector('.panel .craft-body > .craft-left')!;
+    expect([...left.children].map((c) => c.className)).toEqual(['craft-tabs', 'tile-grid']);
+    expect(root.querySelector('.panel .craft-body > .recipe-detail')).not.toBeNull();
+    expect(root.querySelector('.recipe-detail .craft-tab')).toBeNull();
+    expect(root.querySelector('.panel > .tabs')).toBeNull();
+  });
+
+  it('badges a tab with how many of its recipes you can make now', () => {
+    const sim = quietSim();
+    give(sim, { stick: 6, stone: 6, fiber: 6 });
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting');
+    const badge = (id: string) => root.querySelector(`.craft-tab[data-tab="${id}"] .tab-badge`)?.textContent ?? null;
+    expect(badge('tools')).toBe(String(RECIPES.filter((r) => r.category === 'tools' && sim.canCraft(r.id).ok).length));
+    expect(badge('gear')).toBeNull();
+  });
+
+  it('the CSS never shrinks the tab icons, and sizes the left column to fit the whole row', async () => {
+    const css = (await import('node:fs')).readFileSync('src/styles.css', 'utf8');
+    const rule = (sel: string) => new RegExp(`\\n${sel.replace(/[.]/g, '\\.')} \\{([^}]*)\\}`).exec(css)![1];
+    const tab = rule('.craft-tab');
+    expect(tab).toContain('flex: none');
+    const w = Number(/width: (\d+)px/.exec(tab)![1]);
+    const gap = Number(/gap: (\d+)px/.exec(rule('.craft-tabs'))![1]);
+    const min = Number(/minmax\((\d+)px/.exec(rule('.craft-tabbed'))![1]);
+    expect(min).toBeGreaterThanOrEqual(CRAFT_TABS.length * w + (CRAFT_TABS.length - 1) * gap);
+    expect(rule('.craft-tab .icon-img')).toContain('flex: none');
   });
 });

@@ -3,8 +3,9 @@ import type { ForageId } from '../data/forage';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
+import type { WearingTool } from './durability';
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
@@ -29,6 +30,8 @@ export interface PlayerState {
   wading: boolean;
   swimming: boolean;
   sitting: boolean;
+  /** While sitting: the bench and the way you face on it (outward, toward the side you sat down from). */
+  seat?: { id: number; yaw: number };
   /** Seconds since the last hit (brief invulnerability window). */
   hurtTimer: number;
 }
@@ -52,6 +55,12 @@ export interface Slot {
 
 export interface InventoryState {
   slots: (Slot | null)[];
+}
+
+/** Servings of water in the canteen, by kind. */
+export interface CanteenState {
+  lakeWater: number;
+  boiledWater: number;
 }
 
 export interface StatsState {
@@ -90,6 +99,17 @@ export interface StructureState {
   fuel: number;
   /** Shelters and benches only: they weather over time and wear with use. */
   wear?: Wear;
+  /** Storage bins only: shared slots anyone can put things in or take them out of. */
+  store?: (Slot | null)[];
+}
+
+/** A tool being mended at a workbench. Its materials are paid up front and refunded if the repair is interrupted. */
+export interface RepairState {
+  tool: WearingTool;
+  structure: number;
+  elapsed: number;
+  duration: number;
+  paid: { item: ItemId; count: number }[];
 }
 
 export interface DropState {
@@ -164,6 +184,8 @@ export interface GameState {
   player: PlayerState;
   needs: NeedsState;
   inventory: InventoryState;
+  /** Water lives here, not in the pack; it only holds anything while `gear` includes the canteen. */
+  canteen: CanteenState;
   tools: ToolId[];
   activeTool: ToolId;
   /** Durability of each owned tool (hands never wear). */
@@ -191,4 +213,6 @@ export interface GameState {
   lastDamage: DamageSource | null;
   /** Day index of the most recent start-of-day snapshot. */
   snapshotDay: number;
+  /** Set while standing at a workbench mending a tool: you can look around but not move. */
+  repair?: RepairState;
 }

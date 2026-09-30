@@ -4,9 +4,12 @@ import { GEAR, ITEMS, TOOLS, TOOL_ORDER, itemName, type GearId, type ToolId } fr
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { CATEGORY_LABELS, RECIPE_BY_ID, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { isUpgradable, LEVEL_NUMERALS, MAX_TOOL_LEVEL, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier, TOOL_UPGRADES, UPGRADABLE_TOOLS, type Cost, type UpgradableTool } from '../data/upgrades';
+import { CANTEEN_ITEMS, canteenFill, canteenServings, nextServing } from '../sim/canteen';
 import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
 import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } from '../sim/durability';
 import { usedSlots } from '../sim/inventory';
+import { REPAIR_FAILURE_TEXT } from '../sim/repair';
+import type { Slot } from '../sim/state';
 import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skillProgress } from '../sim/skills';
 import type { Simulation } from '../sim/simulation';
 import { nextToolUpgrade, toolBreakdown, toolEffectLines, toolLevel, UPGRADE_FAILURE_TEXT } from '../sim/upgrades';
@@ -15,11 +18,11 @@ import { campfireTiles, craftTiles, recipeFor, recipeIcon, recipeTile, toolTile,
 import { attachTooltip, button, el, escapeHtml } from './dom';
 import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
-import { itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
-import { ingredients, packRoomNote, restText, shelterMenu, type Ingredient } from './structure';
+import { CRAFT_TAB_ICON_DIR, gearIcon, iconImg, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
+import { ingredients, packRoomNote, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type ShelterMenu } from './structure';
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
-export type CraftTab = 'all' | RecipeCategory | 'upgrades';
+export type CraftTab = RecipeCategory | 'upgrades';
 export type InventoryView = 'pack' | 'forage';
 
 export interface PanelHost {
@@ -29,7 +32,15 @@ export interface PanelHost {
   toast(text: string, tone?: 'info' | 'good' | 'warn'): void;
 }
 
-const TABS: CraftTab[] = ['all', 'tools', 'gear', 'materials', 'cooking', 'structures', 'upgrades'];
+/** The crafting menu's icon tabs, in order. There is no foraging-supplies category, so that icon goes unused. */
+export const CRAFT_TABS: { id: CraftTab; name: string; icon: string }[] = [
+  { id: 'tools', name: CATEGORY_LABELS.tools, icon: 'tools.png' },
+  { id: 'structures', name: CATEGORY_LABELS.structures, icon: 'building.png' },
+  { id: 'cooking', name: CATEGORY_LABELS.cooking, icon: 'cooking.png' },
+  { id: 'upgrades', name: 'Upgrades', icon: 'upgrades.png' },
+  { id: 'gear', name: CATEGORY_LABELS.gear, icon: 'gear.png' },
+  { id: 'materials', name: CATEGORY_LABELS.materials, icon: 'materials.png' },
+];
 
 function ingredientsHtml(list: Ingredient[]): string {
   return `<div class="ingredients">${list.map((i) => `<div class="ingredient ${i.have >= i.need ? 'ok' : 'missing'}">${itemIcon(i.item)}<span>${escapeHtml(i.name)}</span><b>${Math.min(i.have, 99)}/${i.need}</b></div>`).join('')}</div>`;
@@ -67,7 +78,7 @@ export class Panels {
   private readonly card = el('div', 'panel');
   private readonly tip = el('div', 'tile-tip');
   private readonly host: PanelHost;
-  private tab: CraftTab = 'all';
+  private tab: CraftTab = 'tools';
   private view: InventoryView = 'pack';
   /** The selected tile in the crafting, upgrades and campfire grids. */
   private selected: string | null = null;
@@ -213,7 +224,10 @@ export class Panels {
     const gearGrid = el('div', 'tile-grid small');
     for (const g of ['basket', 'backpack', 'canteen'] as const) {
       const r = recipeFor.gear(g)!;
-      const b = tileButton({ ...recipeTile(sim, r), greyed: !s.gear.includes(g), ready: false, badge: null }, this.selectedGear === g);
+      const tile = { ...recipeTile(sim, r), greyed: !s.gear.includes(g), ready: false, badge: null };
+      if (g === 'canteen' && s.gear.includes(g)) tile.name = `${GEAR.canteen.name} · ${canteenServings(s)}/${BALANCE.carry.canteenCapacity} water`;
+      const b = tileButton(tile, this.selectedGear === g);
+      if (g === 'canteen' && s.gear.includes(g)) b.insertAdjacentHTML('beforeend', `<span class="dur water ${canteenServings(s) === 0 ? 'empty' : ''}"><i style="transform:scaleX(${canteenFill(s).toFixed(3)})"></i></span>`);
       b.addEventListener('click', () => select(null, g));
       gearGrid.append(b);
     }
@@ -231,6 +245,8 @@ export class Panels {
     const slot = this.selectedSlot >= 0 ? s.inventory.slots[this.selectedSlot] : null;
     if (this.selectedTool) {
       right = this.toolDetail(this.selectedTool);
+    } else if (this.selectedGear === 'canteen' && s.gear.includes('canteen')) {
+      right = this.canteenDetail();
     } else if (this.selectedGear) {
       right = this.recipeDetail(recipeFor.gear(this.selectedGear)!);
     } else if (slot) {
@@ -253,6 +269,33 @@ export class Panels {
     right.classList.add('inv-detail');
     body.append(left, right);
     return body;
+  }
+
+  /** The canteen's info panel: how full it is, what the next drink is, and a Drink button. */
+  private canteenDetail(): HTMLElement {
+    const sim = this.host.sim();
+    const s = sim.state;
+    const cap = BALANCE.carry.canteenCapacity;
+    const n = canteenServings(s);
+    const next = nextServing(s);
+    const d = el('div', 'canteen-detail');
+    const kinds = CANTEEN_ITEMS.filter((i) => s.canteen[i] > 0).map((i) => `${s.canteen[i]} ${itemName(i, s.canteen[i]).toLowerCase()}`);
+    const source = sim.biome === 'desert' ? 'a spring or a rock pool' : 'the lake';
+    d.innerHTML = `<div class="detail-icon big">${gearIcon('canteen')}</div><h3>${escapeHtml(GEAR.canteen.name)}</h3><p>${escapeHtml(GEAR.canteen.description)}</p>`
+      + `<div class="fuel-meter canteen-meter"><span>Water</span><div class="fuel-track"><div class="fuel-fill water" style="transform:scaleX(${canteenFill(s).toFixed(3)})"></div></div><b>${n} / ${cap}</b></div>`
+      + `<div class="effects">${n ? escapeHtml(`Holds ${kinds.join(' and ')}.`) : 'Empty.'}</div>`
+      + (next ? `<div class="effects muted">${escapeHtml(`Next sip: ${ITEMS[next].name} · ${effectSummary(next)}`)}</div>` : `<div class="effects muted">${escapeHtml(`Click ${source} to fill it, or boil water at a campfire.`)}</div>`);
+    const actions = el('div', 'detail-actions');
+    const drink = button('Drink', `btn primary ${next ? '' : 'disabled'}`, () => {
+      if (sim.drinkCanteen()) this.host.sfx('drink');
+      else this.host.sfx('deny');
+      this.render();
+    });
+    drink.disabled = !next;
+    actions.append(drink);
+    d.append(actions);
+    d.append(el('div', 'effects muted', 'Water only travels in the canteen, one serving per sip. Raw water goes first; boiled water is saved for teas and stews.'));
+    return d;
   }
 
   private useSlot(i: number): void {
@@ -404,25 +447,35 @@ export class Panels {
   private renderCrafting(): void {
     const sim = this.host.sim();
     const head = this.head('Crafting', this.tab === 'upgrades'
-      ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters come from upgrading the one you have.'
+      ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have.'
       : 'Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name.');
 
-    const tabs = el('div', 'tabs');
-    for (const t of TABS) {
-      const ready = t === 'upgrades'
+    const recipes = recipesFor(sim.biome);
+    const shown = CRAFT_TABS.filter((t) => t.id === 'upgrades' || recipes.some((r) => r.category === t.id));
+    if (!shown.some((t) => t.id === this.tab)) this.tab = shown[0].id;
+    const tabs = el('div', 'craft-tabs');
+    tabs.setAttribute('role', 'tablist');
+    for (const t of shown) {
+      const ready = t.id === 'upgrades'
         ? UPGRADABLE_TOOLS.filter((tool) => sim.canUpgradeTool(tool).ok).length
-        : recipesFor(sim.biome).filter((r) => (t === 'all' || r.category === t) && sim.canCraft(r.id).ok).length;
-      const label = t === 'all' ? 'All' : t === 'upgrades' ? `${MISC_ICONS.upgrade} Upgrades` : CATEGORY_LABELS[t];
-      tabs.append(button(`${label}${ready ? ` <span class="tab-badge">${ready}</span>` : ''}`, `tab ${t === 'upgrades' ? 'tab-upgrades' : ''} ${this.tab === t ? 'active' : ''}`, () => {
-        this.tab = t;
+        : recipes.filter((r) => r.category === t.id && sim.canCraft(r.id).ok).length;
+      const active = this.tab === t.id;
+      const b = button(`${iconImg(t.icon, CRAFT_TAB_ICON_DIR)}${ready ? `<span class="tab-badge">${ready}</span>` : ''}`, `craft-tab ${active ? 'active' : ''}`, () => {
+        this.tab = t.id;
         this.selected = null;
         this.host.sfx('click');
         this.render();
-      }));
+      });
+      b.dataset.tab = t.id;
+      b.dataset.tip = t.name;
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(active));
+      b.setAttribute('aria-label', t.name);
+      tabs.append(b);
     }
 
     const tiles = this.tab === 'upgrades' ? upgradeTiles(sim) : craftTiles(sim, this.tab);
-    this.card.append(head, tabs, this.gridBody(tiles));
+    this.card.append(head, this.gridBody(tiles, tabs));
   }
 
   /** The campfire's own menu: fuel meter, adding fuel, sleeping beside it, and only the recipes cooked over a fire. */
@@ -463,8 +516,51 @@ export class Panels {
 
   // ------------------------------------------------------------------ structures
 
-  /** A shelter's own menu: sleep in it, or upgrade it into the next tier in place. */
+  /** A placed structure's own menu: a shelter's, a storage bin's or a workbench's. */
   private renderStructure(): void {
+    const sim = this.host.sim();
+    const st = this.targetId !== null ? sim.state.structures.find((x) => x.id === this.targetId) : undefined;
+    const def = st ? PREFABS[st.prefab] : null;
+    if (def?.workbench) return this.renderWorkbench();
+    if (def?.storage) return this.renderStorage();
+    this.renderShelter();
+  }
+
+  /** The tier ladder of an upgradable structure, with the current tier highlighted. */
+  private tierLadder(line: PrefabId[], tier: number): HTMLElement {
+    const ladder = el('div', 'tier-ladder');
+    ladder.innerHTML = line.map((p, i) => `<div class="tier ${i + 1 < tier ? 'done' : i + 1 === tier ? 'current' : ''}">${prefabIcon(p)}<span>${escapeHtml(PREFABS[p].name)}</span></div>`).join('<i class="tier-arrow">›</i>');
+    return ladder;
+  }
+
+  /** Upgrade-in-place box shared by shelters and storage. */
+  private upgradeBox(id: number, n: ShelterMenu['next'], maxedText: string): HTMLElement {
+    const sim = this.host.sim();
+    const upg = el('div', 'structure-upgrade');
+    if (!n) {
+      upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Fully upgraded</h3><p class="muted">${escapeHtml(maxedText)}</p>`;
+      return upg;
+    }
+    upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h3><p>${escapeHtml(n.text)}</p>${n.rest ? `<div class="effects">${escapeHtml(n.rest)}</div>` : ''}${ingredientsHtml(n.inputs)}`;
+    const ua = el('div', 'detail-actions');
+    const go = button('Upgrade', `btn primary ${n.check.ok ? '' : 'disabled'}`, () => {
+      const res = sim.upgradeStructure(id);
+      if (!res.ok) {
+        this.host.sfx('deny');
+        this.host.toast(n.reason ?? UPGRADE_FAILURE_TEXT[res.reason!], 'warn');
+      }
+      this.render();
+    });
+    go.disabled = !n.check.ok;
+    ua.append(go);
+    upg.append(ua);
+    if (n.reason) upg.append(el('div', 'craft-reason', escapeHtml(n.reason)));
+    if (n.room) upg.append(el('div', 'effects muted', escapeHtml(n.room)));
+    return upg;
+  }
+
+  /** A shelter's own menu: sleep in it, or upgrade it into the next tier in place. */
+  private renderShelter(): void {
     const sim = this.host.sim();
     const id = this.targetId;
     const m = id !== null ? shelterMenu(sim, id) : null;
@@ -473,8 +569,7 @@ export class Panels {
       return;
     }
     const head = this.head(`${prefabIcon(m.prefab)} ${escapeHtml(m.name)}`, `Tier ${m.tier} of ${m.tiers}${m.condition !== null ? ` · condition ${m.condition}%` : ''}`);
-    const ladder = el('div', 'tier-ladder');
-    ladder.innerHTML = SHELTER_TIERS.map((p, i) => `<div class="tier ${i + 1 < m.tier ? 'done' : i + 1 === m.tier ? 'current' : ''}">${prefabIcon(p)}<span>${escapeHtml(PREFABS[p].name)}</span></div>`).join('<i class="tier-arrow">›</i>');
+    const ladder = this.tierLadder(SHELTER_TIERS, m.tier);
 
     const body = el('div', 'panel-body structure-body');
     const rest = el('div', 'structure-rest');
@@ -489,36 +584,114 @@ export class Panels {
     rest.append(ra);
     if (sim.authority !== 'solo') rest.append(el('div', 'effects muted', 'The night passes once everyone is asleep.'));
 
-    const upg = el('div', 'structure-upgrade');
-    const n = m.next;
-    if (!n) {
-      upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Fully upgraded</h3><p class="muted">This is the finest shelter you can build in these woods.</p>`;
-    } else {
-      upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h3><p>${escapeHtml(n.text)}</p><div class="effects">${escapeHtml(n.rest)}</div>${ingredientsHtml(n.inputs)}`;
-      const ua = el('div', 'detail-actions');
-      const go = button('Upgrade', `btn primary ${n.check.ok ? '' : 'disabled'}`, () => {
-        const res = sim.upgradeShelter(id);
+    body.append(rest, this.upgradeBox(id, m.next, 'This is the finest shelter you can build in these woods.'));
+    this.card.append(head, ladder, body);
+  }
+
+  /** A pack or storage slot: click moves the stack across, right-click moves one. */
+  private slotCell(slot: Slot | null, move: (count: number) => void): HTMLButtonElement {
+    const cell = el('button', `slot ${slot ? '' : 'empty'}`);
+    cell.type = 'button';
+    if (!slot) return cell;
+    const def = ITEMS[slot.item];
+    cell.innerHTML = `${itemIcon(slot.item)}<span class="count">${slot.count}</span>${def.meal ? '<span class="meal-dot"></span>' : ''}`;
+    cell.dataset.tip = def.name;
+    cell.dataset.item = slot.item;
+    cell.setAttribute('aria-label', `${slot.count} ${itemName(slot.item, slot.count)}`);
+    cell.addEventListener('click', () => move(Infinity));
+    cell.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      move(1);
+    });
+    return cell;
+  }
+
+  /** A storage bin: its shared slots beside your pack, and the next, roomier tier. */
+  private renderStorage(): void {
+    const sim = this.host.sim();
+    const id = this.targetId!;
+    const m = storageMenu(sim, id);
+    const st = sim.state.structures.find((x) => x.id === id);
+    if (!m || !st) {
+      this.card.append(this.head('Storage', 'This storage is gone.'));
+      return;
+    }
+    const shared = sim.authority !== 'solo' ? ' · shared with everyone in camp' : '';
+    const head = this.head(`${prefabIcon(m.prefab)} ${escapeHtml(m.name)}`, `Tier ${m.tier} of ${m.tiers} · ${m.used}/${m.slots} slots used${shared}`);
+    const moved = (n: number) => {
+      this.host.sfx(n > 0 ? 'click' : 'deny');
+      this.render();
+    };
+    const body = el('div', 'panel-body storage-body');
+    const binCol = el('div', 'storage-col store-col');
+    binCol.innerHTML = `<h3>${prefabIcon(m.prefab)} In storage <span class="muted">${m.used}/${m.slots}</span></h3>`;
+    const binGrid = el('div', 'inv-grid store-grid');
+    (st.store ?? []).forEach((slot, i) => binGrid.append(this.slotCell(slot, (n) => moved(sim.takeItem(id, i, n)))));
+    binCol.append(binGrid);
+    const packCol = el('div', 'storage-col pack-col');
+    const s = sim.state;
+    packCol.innerHTML = `<h3>Your pack <span class="muted">${usedSlots(s.inventory)}/${s.inventory.slots.length}</span></h3>`;
+    const packGrid = el('div', 'inv-grid pack-grid');
+    s.inventory.slots.forEach((slot, i) => packGrid.append(this.slotCell(slot, (n) => moved(sim.storeItem(id, i, n)))));
+    packCol.append(packGrid, el('div', 'effects muted storage-hint', 'Click a stack to move it across, right-click to move just one.'));
+    body.append(binCol, packCol);
+    const foot = el('div', 'storage-foot');
+    foot.append(this.upgradeBox(id, m.next, 'This is the roomiest store you can build.'));
+    this.card.append(head, this.tierLadder(m.line, m.tier), body, foot);
+  }
+
+  /** The workbench: every carried tool or weapon that wears, what mending it costs, and a Repair button. */
+  private renderWorkbench(): void {
+    const sim = this.host.sim();
+    const id = this.targetId!;
+    const m = workbenchMenu(sim, id);
+    if (!m) {
+      this.card.append(this.head('Repair Workbench', 'This workbench is gone.'));
+      return;
+    }
+    const head = this.head(`${prefabIcon('workbench')} Repair Workbench`, 'Mend worn tools and weapons for a small share of what they cost to make. Anyone in camp can use this bench.');
+    const body = el('div', 'panel-body workbench-body');
+    const list = el('div', 'repair-list');
+    if (!m.rows.length) {
+      list.innerHTML = '<div class="detail-empty"><p>You aren\'t carrying anything that wears.</p><p class="muted">The axe, spear, bow, torch and fishing pole lose condition as you use them. Bring them here to mend them.</p></div>';
+    }
+    const low = BALANCE.durability.lowFraction * 100;
+    for (const r of m.rows) {
+      const row = el('div', `repair-row ${r.check.ok ? 'ready' : ''}`);
+      row.dataset.tool = r.tool;
+      const status = r.condition >= 100 ? 'In perfect condition' : `Back to 100% after ${r.seconds} s at the bench`;
+      row.innerHTML = `<div class="repair-icon">${toolIcon(r.tool, r.level)}</div><div class="repair-info"><b>${escapeHtml(r.name)}</b><div class="repair-cond ${r.condition <= low ? 'low' : ''}"><div class="repair-track"><i style="transform:scaleX(${(r.condition / 100).toFixed(3)})"></i></div><span>${r.condition}%</span></div><div class="repair-meta muted">${escapeHtml(status)}</div></div>`;
+      const side = el('div', 'repair-side');
+      if (r.condition < 100) side.insertAdjacentHTML('beforeend', ingredientsHtml(r.cost));
+      const go = button('Repair', `btn primary ${r.check.ok ? '' : 'disabled'}`, () => {
+        const res = sim.startRepair(r.tool, id);
         if (!res.ok) {
           this.host.sfx('deny');
-          this.host.toast(n.reason ?? UPGRADE_FAILURE_TEXT[res.reason!], 'warn');
+          this.host.toast(REPAIR_FAILURE_TEXT[res.reason!], 'warn');
+          this.render();
+          return;
         }
-        this.render();
+        this.host.sfx('craft');
+        this.host.close();
       });
-      go.disabled = !n.check.ok;
-      ua.append(go);
-      upg.append(ua);
-      if (n.reason) upg.append(el('div', 'craft-reason', escapeHtml(n.reason)));
-      if (n.room) upg.append(el('div', 'effects muted', escapeHtml(n.room)));
+      go.disabled = !r.check.ok;
+      side.append(go);
+      if (r.reason && r.check.reason !== 'full') side.append(el('div', 'craft-reason', escapeHtml(r.reason)));
+      row.append(side);
+      list.append(row);
     }
-    body.append(rest, upg);
-    this.card.append(head, ladder, body);
+    const info = el('div', 'workbench-info');
+    const R = BALANCE.repair;
+    info.innerHTML = `<h3>${MISC_ICONS.upgrade} How repairs work</h3><p>A repair takes a small share of the materials the tool was made from, a little more for each upgrade it carries, and brings it back to full condition.</p><div class="repair-table">${R.costFraction.map((f, lv) => `<div><b>${lv ? `Level ${LEVEL_NUMERALS[lv]}` : 'Unupgraded'}</b><span>${Math.round(f * 100)}% of the cost</span><span>${R.seconds[lv]} s</span></div>`).join('')}</div><p class="muted">Stand still while you work: you can look around, but you can't walk off until the tool is done. Getting hurt drops the work and gives your materials back.</p>`;
+    body.append(list, info);
+    this.card.append(head, body);
   }
 
   // ------------------------------------------------------------------ grids
 
-  /** A grid of tiles with the selected tile's materials and action beside it. */
-  private gridBody(tiles: Tile[]): HTMLElement {
-    const body = el('div', 'panel-body craft-body');
+  /** A grid of tiles with the selected tile's materials and action beside it; `tabs` go above the grid, in its column. */
+  private gridBody(tiles: Tile[], tabs?: HTMLElement): HTMLElement {
+    const body = el('div', `panel-body craft-body ${tabs ? 'craft-tabbed' : ''}`);
     const grid = el('div', 'tile-grid');
     if (!this.selected || !tiles.some((t) => t.key === this.selected)) this.selected = (tiles.find((t) => t.ready) ?? tiles[0])?.key ?? null;
     for (const t of tiles) {
@@ -537,7 +710,13 @@ export class Panels {
         : sel.kind === 'tool' ? this.toolDetail(sel.id as ToolId)
           : this.shelterDetail(sel.id as PrefabId);
     detail.classList.add('recipe-detail');
-    body.append(grid, detail);
+    if (tabs) {
+      const left = el('div', 'craft-left');
+      left.append(tabs, grid);
+      body.append(left, detail);
+    } else {
+      body.append(grid, detail);
+    }
     return body;
   }
 

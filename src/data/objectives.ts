@@ -1,3 +1,4 @@
+import { haveItem } from '../sim/canteen';
 import { countItem } from '../sim/inventory';
 import type { BiomeId } from './biomes';
 import type { GameState } from '../sim/state';
@@ -45,7 +46,7 @@ function ingredients(s: GameState, recipes: string[]): ObjectiveNeed[] {
     if (made(s, id) >= 1) continue;
     for (const i of RECIPE_BY_ID[id].inputs) total.set(i.item, (total.get(i.item) ?? 0) + i.count);
   }
-  return [...total].map(([item, n]) => goal(itemName(item, n), item, countItem(s.inventory, item), n));
+  return [...total].map(([item, n]) => goal(itemName(item, n), item, haveItem(s, item), n));
 }
 
 /** `kill:<tool>` counts every kill made with that tool, `kill:<tool>:<species>` kills of one species. */
