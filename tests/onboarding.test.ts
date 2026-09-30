@@ -14,12 +14,7 @@ import { aimAt, buildFresh, drain, give, giveRecipe, keepAlive, nearestResource,
 
 const F = BALANCE.fishing;
 
-function learn(sim: Simulation, ...ids: string[]): void {
-  for (const id of ids) if (!sim.state.known.includes(id)) sim.state.known.push(id);
-}
-
 function craftFresh(sim: Simulation, id: string): void {
-  learn(sim, id);
   giveRecipe(sim, id);
   const res = sim.craft(id);
   if (!res.ok) throw new Error(`could not craft ${id}: ${res.reason}`);
@@ -109,7 +104,6 @@ describe('onboarding track', () => {
     expectStep(3);
 
     // 4. a skewer from foraged food, cooked at the fire
-    expect(sim.state.known).toContain('forageSkewer');
     give(sim, { onion: 1, stick: 1 });
     expect(sim.craft('forageSkewer').ok).toBe(true);
     expectStep(4);
@@ -139,7 +133,6 @@ describe('onboarding track', () => {
     expectStep(6);
     teleport(sim, fire.x + 1.6, fire.z);
     fire.fuel = Math.max(fire.fuel, 4);
-    expect(sim.state.known).toContain('grilledTrout');
     expect(sim.craft('grilledTrout').ok).toBe(true);
     expectStep(7);
 

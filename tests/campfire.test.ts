@@ -92,8 +92,7 @@ describe('campfire menu', () => {
     expect(m.recipes.map((r) => r.id)).not.toContain('axe');
     expect(m.recipes.map((r) => r.id)).not.toContain('campfire');
     expect(m.recipes.map((r) => r.id)).toContain('berryTea');
-    expect(m.recipes[0].id).toBe('berryTea');
-    expect(m.undiscovered).toBe(RECIPES.filter((r) => r.station === 'fire').length - m.recipes.length);
+    expect(m.recipes.map((r) => r.id)).toEqual(RECIPES.filter((r) => r.station === 'fire').map((r) => r.id));
     expect(sim.craft('berryTea').ok).toBe(true);
     expect(countItem(sim.state.inventory, 'berryTea') + countItem(sim.state.inventory, 'charredMeal')).toBe(1);
   });

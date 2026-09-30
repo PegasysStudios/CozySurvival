@@ -67,9 +67,9 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 - **Durability.** Crafted tools, shelters and benches wear out.
   - Tools lose a point per use and a little over time, and a lit torch burns down while you hold it. The HUD shows a bar under each tool, and the bow's slot shows how many arrows you carry (red at zero).
   - Shelters weather slowly and wear a little each night you sleep in them. Benches wear a little each time you sit.
-  - You get a warning at 25%. At zero the item breaks: a tool is gone, a structure falls apart. Craft or build a new one; your recipes stay known.
+  - You get a warning at 25%. At zero the item breaks: a tool is gone, a structure falls apart. Craft or build a new one.
   - Campfires, gear (basket, backpack, canteen) and bare hands don't wear.
-- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Recipes are learned by doing (for example, gathering sticks and stones teaches the Stone Axe). A 9-step onboarding track leads through the basics:
+- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Every recipe and upgrade is visible from the start, greyed out until your pack holds the materials. A 9-step onboarding track leads through the basics, and the tracker lists each step's ingredients and goals in a column with have/need counts:
   1. Drink from the lake.
   2. Build a campfire.
   3. Forage food (3 berries, onions or chanterelles).
@@ -107,7 +107,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   - spear and bow: damage × (1 + Hunting (up to +0.4) + weapon (+0.15 / +0.3 / +0.45)), so up to ×1.85. Bow upgrades also shoot faster, flatter arrows (up to +25% speed), which is how they improve accuracy.
   - fishing pole: landing chance = 35% + Fishing (up to +35%) + pole (+7 / +14 / +20%), capped at 95%.
   - torch: no skill. Upgrades cut its burn rate (by 20 / 40 / 60%) and add warmth while held (+3 / +6 / +9).
-- **Foraging guide.** The Pack (Tab) has a **Foraging** tab: a numbered guide of every harvestable plant (salmonberry, sword fern, chanterelle, nodding onion, paper birch). Each page unlocks the first time you harvest that plant and shows its effects and hunger when eaten, the recipes you know that use it (and how many are still to discover), where it grows, how fast it regrows, and field notes. Locked pages hint at where to look. Unlocks are saved with your run.
+- **Foraging guide.** The Pack (Tab) has a **Foraging** tab: a numbered guide of every harvestable plant (salmonberry, sword fern, chanterelle, nodding onion, paper birch). Each page unlocks the first time you harvest that plant and shows its effects and hunger when eaten, the recipes that use it, where it grows, how fast it regrows, and field notes. Locked pages hint at where to look. Unlocks are saved with your run.
 - **Wildlife.**
   - Rabbits, deer and fish each have their own fear radius and flee behaviour. Deer spook from far away, so a bow helps.
   - Predators are rare early. Day 1 has a single distant grey wolf, black bears appear from day 2, and numbers grow slowly after that. Wolves spot you from farther away at night.
@@ -167,7 +167,7 @@ Available on the dev server, or on any build with `?dev=1` in the URL.
   - set the time scale
   - jump to a time of day
   - give item kits
-  - unlock all recipes, tools and gear
+  - unlock all tools and gear
   - spawn a wolf, bear, deer or rabbit nearby
   - refill needs, take damage, or die
   - show an FPS counter
@@ -214,14 +214,15 @@ Rendering is built for 60 fps:
 `npm test` runs 380 tests covering:
 
 - inventory stacking and carry limits
-- crafting, recipe unlocks, and ingredients consumed only on success
+- crafting, every recipe available from the start, and ingredients consumed only on success
+- round 6 menus: every recipe and upgrade shown with the right greyed state, the tile tooltip, the icon mapping and fallback, the tracker rows for each onboarding step, and the fern share
 - round 4 costs: the 5× rule against the round 3 table, the listed exceptions, unchanged arrows, fuel and food, and every recipe fitting a 6-slot pack
 - round 5 shelters: the tier order, upgrading in place with every material, refusals for missing materials, a blocked spot or the top tier, collider swaps, better sleep per tier, and old saves keeping their shelters
 - round 5 tool upgrades: owning the tool, materials and the level cap, steep costs, persistence, and skill and upgrade bonuses adding up (chop swings, spear damage, landing chance, torch burn and warmth)
 - campfire sleep: the menu option, the normal sleep cycle, warmth by a burning or dead fire, and the usual refusals
 - the 9-step onboarding track walked with real actions, out-of-order progress, spear-only hare kills, old-save migration, and the lake-near spawn across 10 worlds
 - the Foraging guide: first-harvest unlocks, page contents, save/load and old-save unlocks
-- fishing: the pole recipe and unlock, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals
+- fishing: the pole recipe, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals
 - placement validity against trees, rocks, felled trunks, structures, water, slope and reach, plus rotation
 - needs, energy drain for movement, swimming, tasks and every tool action, regen and sleep restore
 - stripped birches: the bare-trunk state, its survival through save and load, and regrowth
@@ -255,6 +256,14 @@ Rendering is built for 60 fps:
 
 `npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, the campfire menu and Esc, save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
+## Menus and icons (round 6)
+
+- **Grid menus.** Crafting, the campfire, Upgrades and the Pack (tool belt, gear, Foraging guide) are square icon tiles like the pack slots. Hovering a tile fades in its name; selecting one shows its materials and the Craft, Cook or Upgrade button. Greyed tiles need more materials.
+- **Upgrade-only tiers.** The A-frame, bark hut and hide tent appear in the Build and Upgrades tabs with how to reach them (upgrade the tier below in place). Every tool's three upgrade levels are listed with their costs, even before the tool is made.
+- **Jon's icons.** Hand-made 64×64 PNGs live in `public/icons/jon/`. `src/data/icons.ts` holds the only mapping from item id and tier to file (tool tier = upgrade level + 1); anything unmapped keeps its built-in SVG. The first upload lost its filenames, so the mapping is a best guess until named files arrive.
+- **Ferns.** Sword ferns grow on 48% of their map-wide spots (was 40%), so fiber is a little easier to find.
+- **Fiber stacks.** Plant fiber stacks to 30 per pack slot (was 16). Every other item keeps its stack size.
+
 ## Known gaps
 
 - Desktop only: it needs a mouse and keyboard with pointer lock. The layout adapts to small screens, but there are no touch controls yet.
@@ -279,6 +288,7 @@ Rendering is built for 60 fps:
 - If two players upgrade the same shelter at the same moment, both spend their materials and it only goes up one tier.
 - Bow upgrades improve accuracy through faster, flatter arrows; there's no aim spread to tighten.
 - Saves from before round 5 load with every tool at level 0, lean-tos and hide tents as the first and last tiers, the Foraging guide unlocked for every plant already harvested, and onboarding replayed against the new track (a finished old track stays finished).
+- Saves from before round 6 load as before; the list of learned recipes they carry is simply dropped, since every recipe is available now.
 - A birch only shows bare wood once all its bark is peeled; with one of its two strips left it still looks whole.
 - Other players see your fishing pole but not your line or float, and fishing makes no sound for them.
 - The lake loop measures distance to each lake's round outline (centre and radius), so on irregular shores it can be a few metres off. It keeps streaming silently when you are far from water.

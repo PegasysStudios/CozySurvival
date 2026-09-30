@@ -269,7 +269,7 @@ describe('spawning and rarity', () => {
 });
 
 describe('wildlife in the running simulation', () => {
-  it('spooking a deer teaches the bow', () => {
+  it('walking up on a deer spooks it', () => {
     const sim = quietSim();
     const p = sim.state.player;
     let ang = 0;
@@ -279,7 +279,6 @@ describe('wildlife in the running simulation', () => {
     sim.state.animals.push(deer);
     run(sim, 1);
     expect(sim.state.stats.events.deerSpooked).toBeGreaterThanOrEqual(1);
-    expect(sim.state.known).toContain('bow');
   });
 
   it('a wolf attack can end the run', () => {

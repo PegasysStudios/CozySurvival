@@ -53,7 +53,7 @@ export interface ItemDef {
 export const ITEMS: Record<ItemId, ItemDef> = {
   stick: { id: 'stick', name: 'Stick', plural: 'Sticks', stack: 12, color: '#a0703e', description: 'Dry fir branch. Handles, kindling, and fuel.', fuelHours: 1.5 },
   stone: { id: 'stone', name: 'Stone', plural: 'Stones', stack: 10, color: '#9aa0a6', description: 'A fist-sized river stone.' },
-  fiber: { id: 'fiber', name: 'Plant Fiber', plural: 'Plant Fiber', stack: 16, color: '#7fae5a', description: 'Stripped from sword ferns. Twist it into cordage.' },
+  fiber: { id: 'fiber', name: 'Plant Fiber', plural: 'Plant Fiber', stack: 30, color: '#7fae5a', description: 'Stripped from sword ferns. Twist it into cordage.' },
   berries: { id: 'berries', name: 'Salmonberries', plural: 'Salmonberries', stack: 12, color: '#f08a3c', description: 'Sweet and a little tart.', food: { hunger: 5, thirst: 3, energy: 2 } },
   mushroom: { id: 'mushroom', name: 'Chanterelle', plural: 'Chanterelles', stack: 10, color: '#f2b441', description: 'Golden forest mushroom. Much better cooked.', food: { hunger: 4, health: -2 } },
   onion: { id: 'onion', name: 'Wild Onion', plural: 'Wild Onions', stack: 10, color: '#d9c2e6', description: 'Nodding onion from the meadow.', food: { hunger: 3, thirst: 1 } },

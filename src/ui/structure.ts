@@ -65,7 +65,7 @@ export function packRoomNote(s: GameState, inputs: readonly { item: ItemId; coun
   return `Needs ${need} pack slots at once and you have ${have}${gear.length ? `: make room with ${gear.join(' and ')}` : ''}.`;
 }
 
-function restText(prefab: PrefabId): string {
+export function restText(prefab: PrefabId): string {
   const sh = PREFABS[prefab].shelter!;
   return `+${sh.warmthBonus} warmth nearby${sh.healthBonus ? ` · +${sh.healthBonus} health when you wake` : ''}`;
 }

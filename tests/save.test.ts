@@ -10,7 +10,6 @@ import { give, giveRecipe, placeStructure, quietSim, run } from './helpers';
 function playedSim(): Simulation {
   const sim = Simulation.newGame(42);
   run(sim, 2, { moveZ: 1 });
-  sim.state.known.push('axe', 'campfire');
   giveRecipe(sim, 'axe');
   give(sim, { berries: 4 });
   sim.craft('axe');
@@ -134,6 +133,19 @@ describe('save / load', () => {
     expect(loaded.state.toolWear.axe).toEqual({ dur: BALANCE.durability.tools.axe.uses - 1, max: BALANCE.durability.tools.axe.uses });
     // and it saves forward as version 2
     expect(JSON.parse(serializeState(loaded.state)).version).toBe(STATE_VERSION);
+  });
+
+  it('loads saves from before round 6 that still list learned recipes, and every recipe stays craftable', () => {
+    const sim = quietSim();
+    const raw = JSON.parse(serializeState(sim.state));
+    raw.known = ['cordage'];
+    const loaded = deserializeState(JSON.stringify(raw))!;
+    expect(loaded).not.toBeNull();
+    expect('known' in loaded).toBe(false);
+    const again = new Simulation(loaded);
+    giveRecipe(again, 'rod');
+    expect(again.canCraft('rod').ok).toBe(true);
+    expect(JSON.parse(serializeState(loaded)).known).toBeUndefined();
   });
 
   it('rejects corrupt or incompatible saves', () => {

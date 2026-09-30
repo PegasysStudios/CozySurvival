@@ -95,3 +95,42 @@ describe('worldgen', () => {
     }
   });
 });
+
+describe('fern spawn share (round 6)', () => {
+  const withFernScatter = <T>(p: number, fn: () => T): T => {
+    const was = RESOURCES.fern.scatter;
+    RESOURCES.fern.scatter = p;
+    try {
+      return fn();
+    } finally {
+      RESOURCES.fern.scatter = was;
+    }
+  };
+  const key = (r: { kind: string; x: number; z: number }) => `${r.kind}@${r.x.toFixed(3)},${r.z.toFixed(3)}`;
+
+  it('grows ferns on 48% of their scatter spots, 1.2x the earlier 40%', () => {
+    expect(RESOURCES.fern.scatter).toBeCloseTo(0.4 * 1.2, 10);
+  });
+
+  it('only adds ferns: every other spawn and every earlier fern stays exactly where it was', () => {
+    let before = 0;
+    let after = 0;
+    for (const seed of SEEDS) {
+      const old = withFernScatter(0.4, () => generateWorld(seed));
+      const now = generateWorld(seed);
+      expect(now.resourceSpots).toBe(old.resourceSpots);
+      expect(now.trees).toEqual(old.trees);
+      expect(now.rocks).toEqual(old.rocks);
+      const others = (w: typeof now) => w.resources.filter((r) => r.kind !== 'fern').map(key);
+      expect(others(now)).toEqual(others(old));
+      const nowFerns = new Set(now.resources.filter((r) => r.kind === 'fern').map(key));
+      const oldFerns = old.resources.filter((r) => r.kind === 'fern').map(key);
+      for (const f of oldFerns) expect(nowFerns.has(f)).toBe(true);
+      before += oldFerns.length - RESOURCES.fern.starter;
+      after += nowFerns.size - RESOURCES.fern.starter;
+    }
+    // map-wide ferns rise by about a fifth (random rolls, so not exactly 1.2x)
+    expect(after / before).toBeGreaterThan(1.1);
+    expect(after / before).toBeLessThan(1.3);
+  });
+});

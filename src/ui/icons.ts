@@ -1,4 +1,6 @@
+import { ICON_DIR, iconFile, toolTier, type IconId } from '../data/icons';
 import type { GearId, ItemId, ToolId } from '../data/items';
+import type { PrefabId } from '../data/prefabs';
 
 const svg = (body: string) => `<svg viewBox="0 0 32 32" aria-hidden="true">${body}</svg>`;
 
@@ -70,14 +72,36 @@ export const MISC_ICONS = {
   bench: svg('<rect x="4" y="12" width="24" height="6" rx="3" fill="#c9a172"/><path d="M8 18v8M24 18v8" stroke="#5e4330" stroke-width="4" stroke-linecap="round"/>'),
 };
 
-export function itemIcon(id: ItemId): string {
-  return ITEM_ICONS[id];
+export function iconImg(file: string): string {
+  return `<img class="icon-img" src="${import.meta.env.BASE_URL}${ICON_DIR}${file}" alt="" draggable="false">`;
 }
 
-export function toolIcon(id: ToolId): string {
-  return TOOL_ICONS[id];
+function pick(id: IconId, builtIn: string, tier = 1): string {
+  const file = iconFile(id, tier);
+  return file ? iconImg(file) : builtIn;
+}
+
+export function itemIcon(id: ItemId): string {
+  return pick(id, ITEM_ICONS[id]);
+}
+
+/** `level` is the tool's upgrade level (0 = freshly crafted); upgraded tools show that tier's icon when Jon made one. */
+export function toolIcon(id: ToolId, level = 0): string {
+  return pick(id, TOOL_ICONS[id], toolTier(level));
 }
 
 export function gearIcon(id: GearId): string {
-  return GEAR_ICONS[id];
+  return pick(id, GEAR_ICONS[id]);
+}
+
+export function prefabIcon(id: PrefabId): string {
+  return pick(id, MISC_ICONS[id]);
+}
+
+/** The icon for any item, tool, gear or prefab id. */
+export function anyIcon(id: IconId): string {
+  if (id in ITEM_ICONS) return itemIcon(id as ItemId);
+  if (id in TOOL_ICONS) return toolIcon(id as ToolId);
+  if (id in GEAR_ICONS) return gearIcon(id as GearId);
+  return prefabIcon(id as PrefabId);
 }

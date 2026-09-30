@@ -10,9 +10,8 @@ export interface ForagePage {
   unlocked: boolean;
   /** Food effects as short labels ("+5 hunger"), empty when it isn't food. */
   effects: string[];
-  /** Known recipes that use it, and how many recipes using it are still undiscovered. */
+  /** Every recipe that uses it. */
   recipes: string[];
-  undiscovered: number;
   /** How many tool and shelter upgrades use it. */
   upgrades: number;
   regrowHours: number;
@@ -25,14 +24,12 @@ export function foragePage(s: GameState, entry: ForageEntry): ForagePage {
   const food = ITEMS[item].food;
   const effects = food ? (Object.keys(EFFECT_LABELS) as (keyof typeof EFFECT_LABELS)[]).filter((k) => food[k]).map((k) => `${food[k]! > 0 ? '+' : ''}${food[k]} ${EFFECT_LABELS[k]}`) : [];
   const using = RECIPES.filter((r) => r.inputs.some((i) => i.item === item));
-  const known = using.filter((r) => s.known.includes(r.id));
   const ups = [...Object.values(TOOL_UPGRADES).flat().map((u) => u.inputs), ...Object.values(SHELTER_UPGRADES)];
   return {
     entry,
     unlocked: s.forage.includes(entry.id),
     effects,
-    recipes: known.map((r) => r.name),
-    undiscovered: using.length - known.length,
+    recipes: using.map((r) => r.name),
     upgrades: ups.filter((inputs) => inputs!.some((i) => i.item === item)).length,
     regrowHours: entry.id === 'birch' ? TREES.birch.barkRespawnHours : RESOURCES[entry.id].respawnHours,
   };

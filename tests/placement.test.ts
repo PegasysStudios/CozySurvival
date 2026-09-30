@@ -86,7 +86,6 @@ describe('placement in the real world', () => {
 
   it('consumes ingredients only when placement succeeds', () => {
     const sim = quietSim();
-    sim.state.known.push('campfire');
     giveRecipe(sim, 'campfire');
     give(sim, { stick: 2 });
     expect(sim.beginPlacement('campfire')).toBe(true);
@@ -139,7 +138,6 @@ describe('placement in the real world', () => {
     expect(sim.state.resources[i].charges).toBe(0);
     expect(checkPlacement(env, 'campfire', r.x, r.z, 0).valid).toBe(true);
 
-    sim.state.known.push('campfire');
     giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.setPlacementAt(r.x, r.z);
@@ -168,7 +166,6 @@ describe('placement in the real world', () => {
 
   it('cancelling placement keeps every ingredient', () => {
     const sim = quietSim();
-    sim.state.known.push('campfire');
     giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.cancelPlacement();
@@ -178,7 +175,6 @@ describe('placement in the real world', () => {
 
   it('reports missing ingredients if they disappear mid-placement', () => {
     const sim = quietSim();
-    sim.state.known.push('campfire');
     giveRecipe(sim, 'campfire');
     sim.beginPlacement('campfire');
     sim.state.inventory.slots.fill(null);

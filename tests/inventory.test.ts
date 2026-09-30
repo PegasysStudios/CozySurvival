@@ -75,3 +75,44 @@ describe('inventory', () => {
     expect(waterUnits(inv)).toBe(4);
   });
 });
+
+describe('plant fiber stack size (round 6)', () => {
+  const ROUND_5_STACKS: Record<string, number> = {
+    stick: 12, stone: 10, fiber: 16, berries: 12, mushroom: 10, onion: 10, bark: 10, log: 4, cordage: 10,
+    rawMeat: 6, rawFish: 6, hide: 6, lakeWater: 4, boiledWater: 4, cookedMeat: 6, grilledTrout: 6, skewer: 6,
+    forageSkewer: 6, berryTea: 4, stew: 4, cedarTrout: 4, troutChowder: 4, troutSkewer: 6, smokedTrout: 8,
+    charredMeal: 6, arrow: 16,
+  };
+
+  it('fiber stacks to 30 per slot, up from 16', () => {
+    expect(ROUND_5_STACKS.fiber).toBe(16);
+    expect(ITEMS.fiber.stack).toBe(30);
+  });
+
+  it('every other item keeps its stack size', () => {
+    expect(Object.keys(ITEMS).sort()).toEqual(Object.keys(ROUND_5_STACKS).sort());
+    for (const def of Object.values(ITEMS)) {
+      if (def.id === 'fiber') continue;
+      expect([def.id, def.stack]).toEqual([def.id, ROUND_5_STACKS[def.id]]);
+    }
+  });
+
+  it('30 fiber fill one slot and the 31st starts a second', () => {
+    const inv = createInventory(3);
+    expect(addItem(inv, 'fiber', 30)).toBe(30);
+    expect(usedSlots(inv)).toBe(1);
+    expect(inv.slots[0]).toEqual({ item: 'fiber', count: 30 });
+    expect(addItem(inv, 'fiber', 1)).toBe(1);
+    expect(usedSlots(inv)).toBe(2);
+    expect(inv.slots[1]).toEqual({ item: 'fiber', count: 1 });
+  });
+
+  it('a 16-fiber stack from an old save tops up to 30', () => {
+    const inv = createInventory(2);
+    inv.slots[0] = { item: 'fiber', count: 16 };
+    expect(roomFor(inv, 'fiber')).toBe(14 + 30);
+    expect(addItem(inv, 'fiber', 14)).toBe(14);
+    expect(inv.slots[0]).toEqual({ item: 'fiber', count: 30 });
+    expect(usedSlots(inv)).toBe(1);
+  });
+});

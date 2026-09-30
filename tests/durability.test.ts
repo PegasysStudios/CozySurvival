@@ -41,7 +41,6 @@ describe('wear math', () => {
 });
 
 function withAxe(sim: Simulation) {
-  if (!sim.state.known.includes('axe')) sim.state.known.push('axe');
   giveRecipe(sim, 'axe');
   expect(sim.craft('axe').ok).toBe(true);
   drain(sim);

@@ -3,7 +3,7 @@ import { BALANCE } from '../src/data/balance';
 import { ITEMS } from '../src/data/items';
 import { OBJECTIVES } from '../src/data/objectives';
 import { RECIPE_BY_ID, RECIPES } from '../src/data/recipes';
-import { canCraft, checkUnlocks, craft, ruleMet } from '../src/sim/crafting';
+import { canCraft, craft } from '../src/sim/crafting';
 import { addItem, countItem } from '../src/sim/inventory';
 import { createNewState } from '../src/sim/simulation';
 import type { GameState } from '../src/sim/state';
@@ -21,14 +21,12 @@ const noFire = { nearFire: false };
 const atFire = { nearFire: true };
 
 describe('recipe data', () => {
-  it('every recipe references known items and has a reachable unlock rule', () => {
+  it('every recipe has a unique id and at least one known ingredient', () => {
     const ids = new Set(RECIPES.map((r) => r.id));
     expect(ids.size).toBe(RECIPES.length);
     for (const r of RECIPES) {
       expect(r.inputs.length).toBeGreaterThan(0);
-      for (const c of [...(r.unlock.all ?? []), ...(r.unlock.any ?? [])]) {
-        if ('crafted' in c) expect(ids.has(c.crafted)).toBe(true);
-      }
+      for (const i of r.inputs) expect(ITEMS[i.item]).toBeDefined();
     }
   });
 
@@ -41,53 +39,20 @@ describe('recipe data', () => {
   });
 });
 
-describe('learn-by-doing unlocks', () => {
-  it('starts knowing nothing', () => {
-    const s = fresh();
-    expect(checkUnlocks(s)).toEqual([]);
-    expect(s.known).toEqual([]);
+describe('every recipe is available from the start (round 6)', () => {
+  it('a brand-new character can make anything it has the materials for', () => {
+    for (const r of RECIPES) {
+      const s = fresh();
+      s.gear.push('basket', 'backpack', 'canteen');
+      for (const i of r.inputs) addItem(s.inventory, i.item, i.count);
+      const check = canCraft(s, r, atFire);
+      expect(check.reason === null || check.reason === 'owned', `${r.id}: ${check.reason}`).toBe(true);
+    }
   });
 
-  it('gathering sticks and stones teaches the stone axe', () => {
+  it('without materials, every recipe reports missing ingredients rather than being hidden', () => {
     const s = fresh();
-    s.stats.gathered.stick = 2;
-    s.stats.gathered.stone = 1;
-    expect(checkUnlocks(s)).not.toContain('axe');
-    s.stats.gathered.stone = 2;
-    expect(checkUnlocks(s)).toContain('axe');
-    expect(s.known).toContain('axe');
-    // learned only once
-    expect(checkUnlocks(s)).not.toContain('axe');
-  });
-
-  it('hitting the carry limit teaches the basket; bark teaches the canteen', () => {
-    const s = fresh();
-    s.stats.events.packFull = 1;
-    s.stats.gathered.bark = 1;
-    const learned = checkUnlocks(s);
-    expect(learned).toEqual(expect.arrayContaining(['basket', 'canteen']));
-  });
-
-  it('spooking a deer (or crafting a spear) teaches the bow', () => {
-    const s = fresh();
-    expect(ruleMet(s.stats, RECIPE_BY_ID.bow.unlock)).toBe(false);
-    s.stats.events.deerSpooked = 1;
-    expect(ruleMet(s.stats, RECIPE_BY_ID.bow.unlock)).toBe(true);
-  });
-
-  it('progression chain unlocks in order: axe -> campfire & spear -> leanTo after logs', () => {
-    const s = fresh();
-    Object.assign(s.stats.gathered, { stick: 3, stone: 3, fiber: 3 });
-    checkUnlocks(s);
-    expect(s.known).toEqual(expect.arrayContaining(['axe', 'cordage']));
-    expect(s.known).not.toContain('campfire');
-    s.stats.crafted.axe = 1;
-    checkUnlocks(s);
-    expect(s.known).toEqual(expect.arrayContaining(['campfire', 'spear']));
-    expect(s.known).not.toContain('leanTo');
-    s.stats.gathered.log = 1;
-    checkUnlocks(s);
-    expect(s.known).toContain('leanTo');
+    for (const r of RECIPES) expect(canCraft(s, r, atFire).reason, r.id).toBe('missing');
   });
 });
 
@@ -95,8 +60,7 @@ describe('crafting', () => {
   it('fails for unknown recipes and missing ingredients without side effects', () => {
     const s = fresh();
     stock(s, { stick: 2, stone: 2, fiber: 2 });
-    expect(craft(s, 'axe', noFire)).toEqual({ ok: false, reason: 'unknown' });
-    s.known.push('axe');
+    expect(craft(s, 'noSuchThing', noFire)).toEqual({ ok: false, reason: 'unknown' });
     s.inventory.slots.fill(null);
     stock(s, { stick: 2, stone: 1, fiber: 2 });
     expect(craft(s, 'axe', noFire).reason).toBe('missing');
@@ -105,7 +69,6 @@ describe('crafting', () => {
 
   it('consumes exact inputs and grants a tool once', () => {
     const s = fresh();
-    s.known.push('axe');
     stock(s, { stick: 9, stone: 6, fiber: 6 });
     expect(craft(s, 'axe', noFire).ok).toBe(true);
     expect(s.tools).toContain('axe');
@@ -118,7 +81,6 @@ describe('crafting', () => {
 
   it('cooking requires a lit fire nearby', () => {
     const s = fresh();
-    s.known.push('skewer');
     stock(s, { mushroom: 2, onion: 1, stick: 1 });
     expect(canCraft(s, RECIPE_BY_ID.skewer, noFire).reason).toBe('station');
     expect(craft(s, 'skewer', atFire).ok).toBe(true);
@@ -128,7 +90,6 @@ describe('crafting', () => {
 
   it('forest stew consumes all four ingredients', () => {
     const s = fresh();
-    s.known.push('stew');
     s.gear.push('canteen');
     stock(s, { boiledWater: 1, rawMeat: 2, mushroom: 1, onion: 1 });
     expect(craft(s, 'stew', atFire).ok).toBe(true);
@@ -139,7 +100,6 @@ describe('crafting', () => {
 
   it('refuses when the output would not fit, consuming nothing', () => {
     const s = fresh();
-    s.known.push('cordage');
     const items = ['stone', 'berries', 'onion', 'mushroom', 'bark'] as const;
     for (const it of items) addItem(s.inventory, it, 1);
     addItem(s.inventory, 'fiber', 4);
@@ -147,14 +107,13 @@ describe('crafting', () => {
     expect(craft(s, 'cordage', noFire).ok).toBe(true);
     // now fill every slot with full stacks and try again
     s.inventory.slots = s.inventory.slots.map(() => ({ item: 'stone' as const, count: 10 }));
-    s.inventory.slots[0] = { item: 'fiber', count: 16 };
+    s.inventory.slots[0] = { item: 'fiber', count: ITEMS.fiber.stack };
     expect(craft(s, 'cordage', noFire).reason).toBe('noRoom');
-    expect(countItem(s.inventory, 'fiber')).toBe(16);
+    expect(countItem(s.inventory, 'fiber')).toBe(ITEMS.fiber.stack);
   });
 
   it('gear expands carry capacity', () => {
     const s = fresh();
-    s.known.push('basket');
     stock(s, { fiber: 30, stick: 10 });
     expect(s.inventory.slots.length).toBe(BALANCE.carry.baseSlots);
     expect(craft(s, 'basket', noFire).ok).toBe(true);
@@ -163,7 +122,6 @@ describe('crafting', () => {
 
   it('placeable recipes do not consume ingredients when selected (only on placement)', () => {
     const sim = quietSim();
-    sim.state.known.push('campfire');
     giveRecipe(sim, 'campfire');
     const res = sim.craft('campfire');
     expect(res.ok).toBe(true);
@@ -235,12 +193,12 @@ describe('round 4 crafting costs', () => {
     expect(RECIPE_BY_ID.rod.output).toEqual({ kind: 'tool', tool: 'rod' });
   });
 
-  it('the campfire objective counts toward the 5x campfire cost', () => {
+  it('the campfire objective counts the pack against the 5x campfire cost', () => {
     const s = fresh();
-    s.stats.gathered.stone = 9;
-    s.stats.gathered.stick = 30;
+    s.gear.push('basket', 'backpack');
+    stock(s, { stone: 9, stick: 30 });
     const camp = OBJECTIVES.find((o) => o.id === 'camp')!;
-    expect(camp.progress!(s)).toBe('Stones 9/25 · Sticks 20/20 · Fiber 0/5');
+    expect(camp.needs(s).map((n) => `${n.label} ${n.have}/${n.need}`)).toEqual(['Stones 9/25', 'Sticks 20/20', 'Plant Fiber 0/5', 'Campfire built 0/1']);
   });
 
   it('the hide tent is no longer a recipe: it is only reached by upgrading a shelter', () => {

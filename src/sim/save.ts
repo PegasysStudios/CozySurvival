@@ -40,7 +40,7 @@ function isObj(v: unknown): v is Record<string, unknown> {
 }
 
 const REQUIRED_OBJECTS = ['player', 'needs', 'inventory', 'stats'] as const;
-const REQUIRED_ARRAYS = ['tools', 'gear', 'known', 'structures', 'drops', 'carcasses', 'animals', 'trees', 'resources'] as const;
+const REQUIRED_ARRAYS = ['tools', 'gear', 'structures', 'drops', 'carcasses', 'animals', 'trees', 'resources'] as const;
 
 const num = (v: unknown, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
 
@@ -130,8 +130,10 @@ export function deserializeState(json: string | null): GameState | null {
   });
   const player = { ...(raw.player as Record<string, unknown>), swimming: (raw.player as Record<string, unknown>).swimming === true };
 
-  const state = { ...raw, version: STATE_VERSION, player, skills, toolWear, toolLevels, forage, structures, trees, resources } as unknown as GameState & { format?: string };
+  const state = { ...raw, version: STATE_VERSION, player, skills, toolWear, toolLevels, forage, structures, trees, resources } as unknown as GameState & { format?: string; known?: unknown };
   delete state.format;
+  // Saves from before round 6 list learned recipes; every recipe is available now.
+  delete state.known;
   if (version < STATE_VERSION) {
     const wasDone = num(raw.objective, 0) >= LEGACY_OBJECTIVE_COUNT;
     state.objective = wasDone ? OBJECTIVES.length : 0;
