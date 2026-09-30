@@ -61,6 +61,7 @@ const TILE_BADGES: Record<NonNullable<Tile['badge']>, string> = {
   upgrade: `<span class="tile-badge up">${MISC_ICONS.upgrade}</span>`,
   max: '<span class="tile-badge max">MAX</span>',
   full: '<span class="tile-badge owned">✓</span>',
+  locked: `<span class="tile-badge locked">${MISC_ICONS.lock}</span>`,
 };
 
 const lowCondition = (pct: number) => pct <= BALANCE.durability.lowFraction * 100;
@@ -498,11 +499,14 @@ export class Panels {
 
   private renderCrafting(): void {
     const sim = this.host.sim();
+    const recipes = recipesFor(sim.biome);
+    const dayOne = recipes.some((r) => sim.canCraft(r.id).reason === 'tomorrow');
     const head = this.head('Crafting', this.tab === 'upgrades'
       ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have.'
-      : `Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist to your screen (up to ${MAX_PINS}).`);
+      : dayOne
+        ? `Day 1: only what your onboarding steps have reached so far can be made; locked tiles unlock tomorrow. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist (up to ${MAX_PINS}).`
+        : `Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist to your screen (up to ${MAX_PINS}).`);
 
-    const recipes = recipesFor(sim.biome);
     const shown = CRAFT_TABS.filter((t) => t.id === 'upgrades' || recipes.some((r) => r.category === t.id));
     if (!shown.some((t) => t.id === this.tab)) this.tab = shown[0].id;
     const tabs = el('div', 'craft-tabs');

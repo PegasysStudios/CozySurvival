@@ -21,9 +21,11 @@ export interface ResourceDef {
   persistent?: boolean;
   /**
    * Spiny plants prick you for `damage` if you push into their core (`radius` metres at full size), which sits well
-   * inside the reach you pick them from.
+   * inside the reach you pick them from. `ripeOnly`: only while it's ready to harvest (a picked yucca is a harmless stub).
    */
-  spines?: { radius: number; damage: number };
+  spines?: { radius: number; damage: number; ripeOnly?: boolean };
+  /** Each harvest also has `chance` to give `count` of `item` (agave leaves give a little fiber). */
+  bonus?: { item: ItemId; chance: number; count: number };
   /** How many grow in the starter patch around the spawn (out of the patch's candidate spots). */
   starter: number;
   /** Share of this kind's map-wide scatter spots that actually grow. */
@@ -35,7 +37,8 @@ export interface ResourceDef {
  * (gathering, fiber, stone axe and most of a campfire), and the rest needs roaming further out and waiting on regrowth.
  * Ferns grow on 48% of their scatter spots (1.2x the earlier 40%), since fiber feeds cordage and most recipes.
  * Desert plants mirror the PNW roles: yucca is the fiber plant, prickly pear the berry bush, cholla buds the
- * cook-me-first mushroom; agave hearts are big meals that take days to regrow.
+ * cook-me-first mushroom; agave hearts are big meals that take days to regrow, and cutting one sometimes frees a
+ * little leaf fiber (a 30% chance of 1, against the yucca's sure 2 per harvest).
  */
 export const RESOURCES: Record<ResourceKind, ResourceDef> = {
   stickPile: { kind: 'stickPile', name: 'Fallen Branches', verb: 'Gather sticks', item: 'stick', yield: 1, charges: 3, respawnHours: 12, hitRadius: 0.6, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
@@ -44,10 +47,10 @@ export const RESOURCES: Record<ResourceKind, ResourceDef> = {
   fern: { kind: 'fern', name: 'Sword Fern', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.35, blockRadius: 0.55, persistent: true, starter: 2, scatter: 0.48 },
   mushroom: { kind: 'mushroom', name: 'Chanterelles', verb: 'Pick mushrooms', item: 'mushroom', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.1, blockRadius: 0.35, starter: 1, scatter: 0.5 },
   onion: { kind: 'onion', name: 'Nodding Onion', verb: 'Pull onions', item: 'onion', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.15, blockRadius: 0.35, starter: 1, scatter: 0.5 },
-  yucca: { kind: 'yucca', name: 'Banana Yucca', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.4, blockRadius: 0.6, persistent: true, spines: { radius: 0.3, damage: 2 }, starter: 2, scatter: 0.5 },
+  yucca: { kind: 'yucca', name: 'Banana Yucca', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.4, blockRadius: 0.6, persistent: true, spines: { radius: 0.3, damage: 2, ripeOnly: true }, starter: 2, scatter: 0.5 },
   pricklyPear: { kind: 'pricklyPear', name: 'Prickly Pear', verb: 'Pick fruit', item: 'pricklyPear', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.75, persistent: true, spines: { radius: 0.45, damage: 3 }, starter: 2, scatter: 0.5 },
   cholla: { kind: 'cholla', name: 'Buckhorn Cholla', verb: 'Pick buds', item: 'chollaBuds', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.6, hitHeight: 0.8, blockRadius: 0.6, persistent: true, spines: { radius: 0.4, damage: 5 }, starter: 1, scatter: 0.45 },
-  agave: { kind: 'agave', name: "Parry's Agave", verb: 'Cut the heart', item: 'agaveHeart', yield: 1, charges: 1, respawnHours: 72, hitRadius: 0.75, hitHeight: 0.35, blockRadius: 0.7, starter: 0, scatter: 0.4 },
+  agave: { kind: 'agave', name: "Parry's Agave", verb: 'Cut the heart', item: 'agaveHeart', yield: 1, charges: 1, respawnHours: 72, hitRadius: 0.75, hitHeight: 0.35, blockRadius: 0.7, spines: { radius: 0.4, damage: 3 }, bonus: { item: 'fiber', chance: 0.3, count: 1 }, starter: 0, scatter: 0.4 },
   chia: { kind: 'chia', name: 'Desert Chia', verb: 'Shake seeds', item: 'chiaSeeds', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.18, blockRadius: 0.35, starter: 0, scatter: 0.5 },
   wolfberry: { kind: 'wolfberry', name: 'Wolfberry', verb: 'Pick berries', item: 'wolfberries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.7, persistent: true, starter: 1, scatter: 0.5 },
 };

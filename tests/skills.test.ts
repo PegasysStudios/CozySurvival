@@ -53,7 +53,7 @@ describe('skill levels', () => {
 
   it('addSkillXp returns the new level only when it goes up', () => {
     const sim = quietSim();
-    expect(sim.state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0 });
+    expect(sim.state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0, skinning: 0 });
     expect(addSkillXp(sim.state, 'cooking', K.thresholds[0] - 1)).toBeNull();
     expect(addSkillXp(sim.state, 'cooking', 1)).toBe(2);
     expect(addSkillXp(sim.state, 'cooking', 1)).toBeNull();
@@ -125,7 +125,12 @@ describe('hunting skill', () => {
     sim.state.animals.push(hare);
     sim.hitAnimal(hare, 5);
     expect(sim.state.skills.hunting).toBe(K.xp.hit + K.xp.kill);
-    sim.perform({ kind: 'carcass', id: sim.state.carcasses[0].id, dist: 1 });
+    sim.state.tools.push('knife');
+    sim.selectTool('knife');
+    const id = sim.state.carcasses[0].id;
+    sim.perform({ kind: 'carcass', id, dist: 1 });
+    expect(sim.state.skills.hunting).toBe(K.xp.hit + K.xp.kill);
+    sim.perform({ kind: 'carcass', id, dist: 1 });
     expect(sim.state.skills.hunting).toBe(K.xp.hit + K.xp.kill + K.xp.butcher);
   });
 

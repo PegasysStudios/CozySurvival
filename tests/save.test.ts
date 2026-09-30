@@ -95,7 +95,7 @@ describe('save / load', () => {
     obj.skills = { gathering: -5, hunting: 'lots', cooking: 12 };
     const loaded = deserializeState(JSON.stringify(obj))!;
     expect(loaded.toolWear).toEqual({ axe: { dur: 40, max: 40 } });
-    expect(loaded.skills).toEqual({ gathering: 0, hunting: 0, cooking: 12, crafting: 0, fishing: 0 });
+    expect(loaded.skills).toEqual({ gathering: 0, hunting: 0, cooking: 12, crafting: 0, fishing: 0, skinning: 0 });
   });
 
   it('migrates version-1 saves from before skills, durability, trunks and swimming', () => {
@@ -113,7 +113,7 @@ describe('save / load', () => {
     const state = deserializeState(JSON.stringify(v1))!;
     expect(state).not.toBeNull();
     expect(state.version).toBe(STATE_VERSION);
-    expect(state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0 });
+    expect(state.skills).toEqual({ gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0, skinning: 0 });
     expect(state.toolWear).toEqual({});
     expect(state.player.swimming).toBe(false);
     expect(state.structures.find((s) => s.prefab === 'campfire')!.wear).toBeUndefined();

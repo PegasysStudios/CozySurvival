@@ -23,7 +23,7 @@ export interface Tile {
   greyed: boolean;
   /** It can be crafted, cooked or upgraded right now. */
   ready: boolean;
-  badge: 'owned' | 'fire' | 'upgrade' | 'max' | 'full' | null;
+  badge: 'owned' | 'fire' | 'upgrade' | 'max' | 'full' | 'locked' | null;
   /** Upgrade level, for tools and upgrade lines, drawn as tier diamonds. */
   level: number | null;
   /** How many diamonds (upgrades above the base tier); tools have `MAX_TOOL_LEVEL`. */
@@ -59,15 +59,18 @@ export function recipeTile(sim: Simulation, r: Recipe): Tile {
   const o = r.output;
   const owned = (o.kind === 'tool' && s.tools.includes(o.tool)) || (o.kind === 'gear' && s.gear.includes(o.gear));
   const missing = !hasItems(s, r.inputs);
+  // Day 1: visible, but locked until tomorrow (see `lockedToday`).
+  const locked = check.reason === 'tomorrow';
+  const name = o.kind === 'gear' ? GEAR[o.gear].name : r.name;
   return {
     key: `r:${r.id}`,
     kind: 'recipe',
     id: r.id,
-    name: o.kind === 'gear' ? GEAR[o.gear].name : r.name,
+    name: locked ? `${name} · Unlocks tomorrow` : name,
     icon: recipeIcon(r, s),
-    greyed: missing,
+    greyed: missing || locked,
     ready: check.ok,
-    badge: owned ? 'owned' : !missing && check.reason === 'station' ? 'fire' : null,
+    badge: owned ? 'owned' : locked ? 'locked' : !missing && check.reason === 'station' ? 'fire' : null,
     level: null,
   };
 }

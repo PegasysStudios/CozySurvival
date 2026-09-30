@@ -67,6 +67,7 @@ const FUR: Partial<Record<SpeciesId, string>> = {
   quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360', scorpion: '#c9a45c',
 };
 
+const SKINNED_RED = '#b8463c';
 const MAP_FADE_MS = 900;
 const JAVELINA_TIP = 'Javelinas guard their patch and charge anyone who comes in. Sprint away, or fight back with a weapon.';
 
@@ -788,6 +789,16 @@ export class Game {
       case 'needTool':
         this.throttledToast('needTool', e.message, 'warn', 2.5);
         this.sfx('deny');
+        break;
+      case 'skinned':
+        // A whole hide already sounds as it goes into the pack; a torn one still makes the cut heard.
+        if (e.hides === 0) this.sfx('gatherPlant');
+        fx.pop(e.x, e.y + 0.3, e.z, SKINNED_RED);
+        this.panels.refresh();
+        break;
+      case 'butchered':
+        fx.pop(e.x, e.y + 0.3, e.z, SKINNED_RED);
+        this.panels.refresh();
         break;
       case 'crafted': {
         const r = RECIPE_BY_ID[e.recipe];

@@ -128,7 +128,7 @@ describe('all recipes visible from the start (round 6)', () => {
     panels.open('inventory', { view: 'pack' });
     const names = tiles(root, '.inv-section .tile').map((t) => [t.dataset.tip, t.classList.contains('greyed')]);
     expect(names).toEqual([
-      ['Hands', false], ['Stone Axe II', false], ['Spear', true], ['Bow', true], ['Torch', true], ['Fishing Pole', true],
+      ['Hands', false], ['Stone Axe II', false], ['Spear', true], ['Bow', true], ['Torch', true], ['Fishing Pole', true], ['Stone Knife', true],
       ['Grass Basket', true], ['Hide Backpack', true], ['Bark Canteen', true],
     ]);
     expect(root.textContent).not.toContain('???');

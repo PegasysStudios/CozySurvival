@@ -56,6 +56,10 @@ export type SimEvent =
   | { type: 'rattle'; id: number; x: number; z: number }
   /** The stone this player just gathered had a scorpion under it. */
   | { type: 'scorpion'; x: number; z: number }
+  /** A skinning cut: `hides` taken whole (0 when the hide tore). The carcass now shows skinned either way. */
+  | { type: 'skinned'; id: number; species: SpeciesId; hides: number; x: number; y: number; z: number }
+  /** A carcass was butchered for its meat and cleared away. */
+  | { type: 'butchered'; id: number; species: SpeciesId; x: number; y: number; z: number }
   | { type: 'arrowFired'; power: number }
   | { type: 'arrowHit'; x: number; y: number; z: number; target: 'ground' | 'tree' | 'water' | 'animal' }
   | { type: 'cast'; power: number }

@@ -3,7 +3,7 @@ import { BALANCE } from '../data/balance';
 import type { ToolId } from '../data/items';
 import { isUpgradable, MAX_TOOL_LEVEL, TOOL_UPGRADES, type ToolUpgrade } from '../data/upgrades';
 import { hasAll, removeAll } from './inventory';
-import { catchBonus, chopPowerBonus, huntDamageBonus } from './skills';
+import { catchBonus, chopPowerBonus, huntDamageBonus, skinBonus } from './skills';
 import type { GameState } from './state';
 
 const U = BALANCE.upgrades;
@@ -66,9 +66,9 @@ export function chopPower(s: GameState, level = toolLevel(s, 'axe')): number {
   return round2(1 + chopPowerBonus(s.skills.gathering) + levelBonus(U.axe.chopPower, level));
 }
 
-/** Damage multiplier for a hit on an animal: the Hunting bonus, plus the spear's or bow's upgrade bonus. */
+/** Damage multiplier for a hit on an animal: the Hunting bonus, plus the spear's, bow's or knife's upgrade bonus. */
 export function weaponDamageMultiplier(s: GameState, tool: ToolId, level = toolLevel(s, tool)): number {
-  const up = tool === 'spear' ? levelBonus(U.spear.damage, level) : tool === 'bow' ? levelBonus(U.bow.damage, level) : 0;
+  const up = tool === 'spear' || tool === 'bow' || tool === 'knife' ? levelBonus(U[tool].damage, level) : 0;
   return round2(1 + huntDamageBonus(s.skills.hunting) + up);
 }
 
@@ -76,6 +76,12 @@ export function weaponDamageMultiplier(s: GameState, tool: ToolId, level = toolL
 export function landChance(s: GameState, level = toolLevel(s, 'rod')): number {
   const K = BALANCE.skills;
   return Math.min(K.maxCatchChance, round2(K.baseCatchChance + catchBonus(s.skills.fishing) + levelBonus(U.rod.catch, level)));
+}
+
+/** Chance that a skinning cut takes the hide whole. */
+export function skinChance(s: GameState, level = toolLevel(s, 'knife')): number {
+  const K = BALANCE.skills;
+  return Math.min(K.maxSkinChance, round2(K.baseSkinChance + skinBonus(s.skills.skinning) + levelBonus(U.knife.skin, level)));
 }
 
 /** Arrow launch speed multiplier: faster, flatter arrows land closer to where you aim. */
@@ -111,6 +117,8 @@ export function toolEffectLines(s: GameState, tool: ToolId, level = toolLevel(s,
       return [`${pct(landChance(s, level))} chance to land a hooked fish`];
     case 'torch':
       return [`Burns ${pct(torchBurnMultiplier(s, level))} as fast`, `+${torchWarmth(s, level)} warmth while held`];
+    case 'knife':
+      return [`${pct(skinChance(s, level))} chance to take a hide whole`, `Damage ${(b.knife.damage * weaponDamageMultiplier(s, 'knife', level)).toFixed(2)} per slash`];
     default:
       return [];
   }
@@ -128,6 +136,8 @@ export function toolBreakdown(s: GameState, tool: ToolId): string {
       return `×(1 base + ${n(huntDamageBonus(s.skills.hunting))} Hunting + ${n(levelBonus(U[tool].damage, lv))} upgrade)`;
     case 'rod':
       return `${pct(BALANCE.skills.baseCatchChance)} base + ${pct(catchBonus(s.skills.fishing))} Fishing + ${pct(levelBonus(U.rod.catch, lv))} upgrade`;
+    case 'knife':
+      return `${pct(BALANCE.skills.baseSkinChance)} base + ${pct(skinBonus(s.skills.skinning))} Skinning + ${pct(levelBonus(U.knife.skin, lv))} upgrade`;
     case 'torch':
       return 'No skill: torch upgrades alone make it last longer and burn warmer.';
     default:

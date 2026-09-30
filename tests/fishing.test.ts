@@ -56,8 +56,7 @@ function until(sim: Simulation, type: SimEvent['type'], limit = 12): SimEvent[] 
 describe('fishing pole', () => {
   it('is a tool on key 6, added after the others so multiplayer tool indices stay put', () => {
     expect(TOOLS.rod.slot).toBe(6);
-    expect(TOOL_ORDER.indexOf('rod')).toBe(TOOL_ORDER.length - 1);
-    expect(TOOL_ORDER.slice(0, 5)).toEqual(['hands', 'axe', 'spear', 'bow', 'torch']);
+    expect(TOOL_ORDER.slice(0, 6)).toEqual(['hands', 'axe', 'spear', 'bow', 'torch', 'rod']);
   });
 
   it('is available from the start and crafts from sticks, stone and cordage', () => {

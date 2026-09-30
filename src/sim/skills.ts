@@ -4,7 +4,7 @@ import type { GameState, SkillId } from './state';
 
 const K = BALANCE.skills;
 
-export const SKILL_IDS: SkillId[] = ['gathering', 'hunting', 'cooking', 'crafting', 'fishing'];
+export const SKILL_IDS: SkillId[] = ['gathering', 'hunting', 'cooking', 'crafting', 'fishing', 'skinning'];
 export const MAX_SKILL_LEVEL = K.thresholds.length + 1;
 
 export const SKILL_INFO: Record<SkillId, { name: string; how: string }> = {
@@ -13,10 +13,11 @@ export const SKILL_INFO: Record<SkillId, { name: string; how: string }> = {
   cooking: { name: 'Cooking', how: 'Cook at a campfire.' },
   crafting: { name: 'Crafting', how: 'Craft tools, gear and materials, and build structures.' },
   fishing: { name: 'Fishing', how: 'Cast a fishing pole into lakes and ponds and strike when a fish bites.' },
+  skinning: { name: 'Skinning', how: 'Skin your kills with a knife. Every try teaches you something, torn hides included.' },
 };
 
 export function createSkills(): Record<SkillId, number> {
-  return { gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0 };
+  return { gathering: 0, hunting: 0, cooking: 0, crafting: 0, fishing: 0, skinning: 0 };
 }
 
 export function skillLevel(xp: number): number {
@@ -54,6 +55,10 @@ export const durabilityMultiplier = (xp: number) => curve(K.durabilityMultiplier
 export const catchBonus = (xp: number) => curve(K.catchBonus, xp);
 /** Chance to land a hooked fish with an unupgraded pole. */
 export const catchChance = (xp: number) => Math.min(K.maxCatchChance, K.baseCatchChance + catchBonus(xp));
+/** Added to the base skinning chance, alongside the knife upgrade bonus. */
+export const skinBonus = (xp: number) => curve(K.skinBonus, xp);
+/** Chance to take a hide whole with an unupgraded knife. */
+export const skinChance = (xp: number) => Math.min(K.maxSkinChance, K.baseSkinChance + skinBonus(xp));
 
 /** One-line description of what the current level does, for the UI. */
 export function skillEffect(id: SkillId, xp: number): string {
@@ -69,6 +74,8 @@ export function skillEffect(id: SkillId, xp: number): string {
       return `Crafted tools and shelters last ×${durabilityMultiplier(xp).toFixed(1)}`;
     case 'fishing':
       return `+${pct(catchBonus(xp))} catch chance (${pct(catchChance(xp))} with a plain pole)`;
+    case 'skinning':
+      return `+${pct(skinBonus(xp))} skinning chance (${pct(skinChance(xp))} with a plain knife)`;
   }
 }
 

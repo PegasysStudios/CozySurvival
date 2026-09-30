@@ -345,7 +345,7 @@ describe('fire and cooking', () => {
 });
 
 describe('hunting', () => {
-  it('a spear kills a hare; butchering yields meat and hide', () => {
+  it('a spear kills a hare; the knife skins it, then butchers it for meat', () => {
     const sim = quietSim();
     sim.state.tools.push('spear');
     sim.selectTool('spear');
@@ -358,9 +358,16 @@ describe('hunting', () => {
     expect(sim.state.animals).toHaveLength(0);
     expect(sim.state.stats.kills.rabbit).toBe(1);
     const carcass = sim.state.carcasses[0];
+    sim.state.tools.push('knife');
+    sim.selectTool('knife');
+    sim.perform({ kind: 'carcass', id: carcass.id, dist: 1 });
+    const skinned = drain(sim).find((e) => e.type === 'skinned');
+    expect(skinned).toMatchObject({ species: 'rabbit' });
+    expect(countItem(sim.state.inventory, 'hide')).toBe(skinned?.type === 'skinned' ? skinned.hides : -1);
+    expect(countItem(sim.state.inventory, 'rawMeat')).toBe(0);
+    expect(sim.state.carcasses[0]).toMatchObject({ id: carcass.id, skinned: true });
     sim.perform({ kind: 'carcass', id: carcass.id, dist: 1 });
     expect(countItem(sim.state.inventory, 'rawMeat')).toBe(1);
-    expect(countItem(sim.state.inventory, 'hide')).toBe(1);
     expect(sim.state.carcasses).toHaveLength(0);
   });
 

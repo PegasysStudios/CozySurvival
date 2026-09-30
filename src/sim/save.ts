@@ -1,21 +1,24 @@
 import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import { forageGuideFor, type ForageId } from '../data/forage';
 import { ITEMS, type ItemId, type ToolId } from '../data/items';
-import { advanceObjectives, LEGACY_OBJECTIVE_COUNT, OBJECTIVES } from '../data/objectives';
+import { advanceObjectives, LEGACY_OBJECTIVE_COUNT, NIGHT_FROM, NIGHT_STEP, OBJECTIVES } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
 import { RESOURCES, TREES } from '../data/resources';
+import { SPECIES } from '../data/species';
 import { isUpgradable, MAX_TOOL_LEVEL } from '../data/upgrades';
 import { BALANCE } from '../data/balance';
 import { canteenServings, emptyCanteen, migratePackWater } from './canteen';
+import { normalizeCarcass } from './carcass';
 import { parsePins } from './checklist';
 import { newStructureWear, prefabWears, toolWears } from './durability';
 import { addItem } from './inventory';
 import { seatHeight } from './placement';
 import { parseStore } from './storage';
 import { createSkills, SKILL_IDS } from './skills';
-import { STATE_VERSION, type GameState, type RepairState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
+import { STATE_VERSION, type CarcassState, type GameState, type RepairState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
 import { freshTree } from './trunks';
 import { getTerrain } from './terrain';
+import { dayOf } from './time';
 import { getWorldGen } from './worldgen';
 
 export const SAVE_FORMAT = 'cozysurvival-save';
@@ -35,7 +38,9 @@ export function serializeState(s: GameState): string {
   const resources: number[][] = [];
   s.resources.forEach((r, i) => {
     const def = RESOURCES[gen.resources[i].kind];
-    if (r.charges !== def.charges) resources.push([gen.resources[i].spot, r.charges, r.respawnAt]);
+    // A fourth entry of 1 marks a stone pile that has already turned up its scorpion.
+    if (r.scorpion) resources.push([gen.resources[i].spot, r.charges, r.respawnAt, 1]);
+    else if (r.charges !== def.charges) resources.push([gen.resources[i].spot, r.charges, r.respawnAt]);
   });
   const out: Record<string, unknown> = { ...s, format: SAVE_FORMAT };
   out.trees = trees;
@@ -70,6 +75,9 @@ function parseWear(v: unknown): Wear | null {
  * Version 3 saves (before round 8) carried water in pack slots: it is poured into the canteen, up to its capacity.
  * Version 4 desert saves (before round 9) were made on the old desert: its trees and plants start fresh, and
  * structures, drops and carcasses settle onto the new ground. Pacific Northwest saves load unchanged.
+ * Version 5 saves (before round 10) come forward too: their onboarding position moves past the new "Survive the
+ * night" step (a finished track lands on the new knife step), a save already past day 1 counts its night as survived,
+ * and carcasses whose hide was already taken count as skinned.
  */
 export function deserializeState(json: string | null): GameState | null {
   if (!json) return null;
@@ -81,7 +89,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) return null;
   const version = raw.version;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== STATE_VERSION) return null;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== STATE_VERSION) return null;
   if (typeof raw.seed !== 'number' || typeof raw.totalHours !== 'number') return null;
   for (const k of REQUIRED_OBJECTS) if (!isObj(raw[k])) return null;
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
@@ -112,12 +120,12 @@ export function deserializeState(json: string | null): GameState | null {
   const bySpot = new Map(gen.resources.map((r, i) => [r.spot, i]));
   if (!regrown) for (const e of raw.resources as unknown[]) {
     if (!Array.isArray(e) || e.length < 3) return null;
-    const [spot, charges, respawnAt] = e as number[];
+    const [spot, charges, respawnAt, scorpion] = e as number[];
     if (!Number.isInteger(spot) || spot < 0 || spot >= gen.resourceSpots) return null;
     const i = bySpot.get(spot);
     // Saves from before forage was thinned can mention spots where nothing grows any more.
     if (i === undefined) continue;
-    resources[i] = { charges, respawnAt };
+    resources[i] = scorpion === 1 && gen.resources[i].kind === 'stonePile' ? { charges, respawnAt, scorpion: true } : { charges, respawnAt };
   }
   const skills = createSkills();
   if (isObj(raw.skills)) for (const id of SKILL_IDS) skills[id] = Math.max(0, num(raw.skills[id], 0));
@@ -156,14 +164,24 @@ export function deserializeState(json: string | null): GameState | null {
   const rawCanteen = isObj(raw.canteen) ? raw.canteen : {};
   const canteen = { lakeWater: servings(rawCanteen.lakeWater), boiledWater: servings(rawCanteen.boiledWater) };
 
-  const state = { ...raw, version: STATE_VERSION, player, canteen, skills, toolWear, toolLevels, forage, structures, trees, resources } as unknown as GameState & { format?: string; known?: unknown };
+  const carcasses = (raw.carcasses as CarcassState[]).filter((c) => isObj(c) && c.species in SPECIES && Array.isArray(c.remaining)).map(normalizeCarcass);
+  const state = { ...raw, version: STATE_VERSION, player, canteen, skills, toolWear, toolLevels, forage, structures, trees, resources, carcasses } as unknown as GameState & { format?: string; known?: unknown };
   delete state.format;
   // Saves from before round 6 list learned recipes; every recipe is available now.
   delete state.known;
+  // Round 10: a save already past day 1 has survived its night, so the new night step never holds it back.
+  if (version < 6 && dayOf(state.totalHours) > 1 && !num(state.stats.events?.[NIGHT_FROM], 0)) {
+    state.stats.events = { ...(state.stats.events ?? {}), [NIGHT_FROM]: 1 };
+  }
   if (version < 3) {
     const wasDone = num(raw.objective, 0) >= LEGACY_OBJECTIVE_COUNT;
     state.objective = wasDone ? OBJECTIVES.length : 0;
     if (!wasDone) advanceObjectives(state);
+  } else if (version < 6) {
+    // Round 10 put "Survive the night" in the middle of the track and the knife step at its end.
+    const old = Math.max(0, Math.floor(num(raw.objective, 0)));
+    state.objective = Math.min(OBJECTIVES.length - 1, old >= NIGHT_STEP ? old + 1 : old);
+    advanceObjectives(state);
   }
   // Water used to ride in pack slots; it lives in the canteen now.
   if (!state.gear.includes('canteen')) state.canteen = emptyCanteen();

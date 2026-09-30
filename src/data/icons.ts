@@ -11,9 +11,11 @@ export const ICON_DIR = 'icons/jon/';
  * Jon's icons by id, then tier. A trailing number in a filename is the tier, and a tool's icon without one is tier 1,
  * the freshly crafted tool (upgrade level 0), so tool tier = upgrade level + 1. The first upload lost its filenames,
  * so the 01–20.png entries are a best visual guess; when named files arrive, their names replace these.
+ * knife.png was painted to match them (knapped stone, leather wrap, pale rim) until Jon draws his own.
  */
 export const ICON_FILES: Partial<Record<IconId, Partial<Record<number, string>>>> = {
   arrow: { 1: '03.png' },
+  knife: { 1: 'knife.png' },
   axe: { 1: '04.png', 2: '05.png', 3: '06.png' },
   backpack: { 1: '07.png' },
   bow: { 1: '08.png' },

@@ -10,7 +10,7 @@ export interface ToolUpgrade {
 
 export type UpgradableTool = Exclude<ToolId, 'hands'>;
 
-export const UPGRADABLE_TOOLS: UpgradableTool[] = ['axe', 'spear', 'bow', 'torch', 'rod'];
+export const UPGRADABLE_TOOLS: UpgradableTool[] = ['axe', 'spear', 'bow', 'torch', 'rod', 'knife'];
 export const MAX_TOOL_LEVEL = 3;
 export const LEVEL_NUMERALS = ['', 'I', 'II', 'III'];
 
@@ -43,6 +43,11 @@ export const TOOL_UPGRADES: Record<UpgradableTool, ToolUpgrade[]> = {
     { name: 'Bark Float', inputs: [{ item: 'stick', count: 10 }, { item: 'stone', count: 4 }, { item: 'cordage', count: 3 }] },
     { name: 'Weighted Line', inputs: [{ item: 'stick', count: 14 }, { item: 'stone', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }] },
     { name: "Angler's Pole", inputs: [{ item: 'stick', count: 12 }, { item: 'stone', count: 16 }, { item: 'cordage', count: 14 }, { item: 'bark', count: 8 }, { item: 'hide', count: 2 }] },
+  ],
+  knife: [
+    { name: 'Knapped Edge', inputs: [{ item: 'stone', count: 8 }, { item: 'stick', count: 6 }, { item: 'cordage', count: 2 }] },
+    { name: 'Wrapped Grip', inputs: [{ item: 'stone', count: 16 }, { item: 'stick', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 6 }] },
+    { name: "Skinner's Blade", inputs: [{ item: 'stone', count: 24 }, { item: 'cordage', count: 12 }, { item: 'bark', count: 8 }, { item: 'hide', count: 3 }] },
   ],
 };
 

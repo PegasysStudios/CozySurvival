@@ -19,8 +19,8 @@ function state(pack: Partial<Record<ItemId, number>> = {}): GameState {
 const rows = (id: string, s: GameState) => OBJECTIVES.find((o) => o.id === id)!.needs(s).map((n) => `${n.label} ${n.have}/${n.need}`);
 
 describe('quest tracker rows for each onboarding step (round 6)', () => {
-  it('lists the nine steps in order', () => {
-    expect(OBJECTIVES.map((o) => o.id)).toEqual(['drink', 'camp', 'forage', 'skewer', 'firewood', 'axe', 'fish', 'spear', 'bow']);
+  it('lists the eleven steps in order', () => {
+    expect(OBJECTIVES.map((o) => o.id)).toEqual(['drink', 'camp', 'forage', 'skewer', 'firewood', 'axe', 'night', 'fish', 'spear', 'bow', 'knife']);
   });
 
   it('1. drink from the lake', () => {
@@ -68,7 +68,15 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
     expect(rows('axe', s)).toEqual(['Stone Axe crafted 1/1', 'Log chopped 1/1']);
   });
 
-  it('7. fishing pole ingredients, the pole, a trout and a cooked trout', () => {
+  it('7. survive the night: one row for the next morning, ticked once it comes', () => {
+    const s = state();
+    s.stats.events.nightFrom = 1;
+    expect(rows('night', s)).toEqual(['See the morning of day 2 0/1']);
+    s.totalHours = 24.5;
+    expect(rows('night', s)).toEqual(['See the morning of day 2 1/1']);
+  });
+
+  it('8. fishing pole ingredients, the pole, a trout and a cooked trout', () => {
     const s = state({ stick: 12, cordage: 2 });
     expect(rows('fish', s)).toEqual(['Sticks 10/10', 'Stones 0/5', 'Cordage 2/5', 'Fishing Pole crafted 0/1', 'Trout caught 0/1', 'Trout cooked 0/1']);
     s.stats.crafted.rod = 1;
@@ -77,7 +85,7 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
     expect(rows('fish', s)).toEqual(['Fishing Pole crafted 1/1', 'Trout caught 1/1', 'Trout cooked 1/1']);
   });
 
-  it('8. spear ingredients, the spear, then a hare killed with it', () => {
+  it('9. spear ingredients, the spear, then a hare killed with it', () => {
     const s = state({ stone: 5 });
     expect(rows('spear', s)).toEqual(['Sticks 0/15', 'Stones 5/5', 'Cordage 0/5', 'Spear crafted 0/1', 'Hare hunted with the spear 0/1']);
     s.stats.crafted.spear = 1;
@@ -87,7 +95,7 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
     expect(rows('spear', s)).toEqual(['Spear crafted 1/1', 'Hare hunted with the spear 1/1']);
   });
 
-  it('9. bow and arrow ingredients summed, then only what is still to make', () => {
+  it('10. bow and arrow ingredients summed, then only what is still to make', () => {
     const s = state({ stick: 16, cordage: 10 });
     expect(rows('bow', s)).toEqual(['Sticks 16/17', 'Cordage 10/10', 'Stone 0/1', 'Plant Fiber 0/1', 'Bow crafted 0/1', 'Arrows made 0/1', 'Kill with the bow 0/1']);
     s.stats.crafted.bow = 1;
@@ -95,6 +103,16 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
     s.stats.crafted.arrows = 1;
     s.stats.events[killKey('bow')] = 1;
     expect(rows('bow', s)).toEqual(['Bow crafted 1/1', 'Arrows made 1/1', 'Kill with the bow 1/1']);
+  });
+
+  it('11. knife ingredients, the knife, then a kill skinned and butchered', () => {
+    const s = state({ stone: 4, cordage: 3 });
+    expect(rows('knife', s)).toEqual(['Stones 4/10', 'Sticks 0/5', 'Cordage 3/3', 'Stone Knife crafted 0/1', 'Kill skinned 0/1', 'Kill butchered 0/1']);
+    s.stats.crafted.knife = 1;
+    s.stats.events.skinned = 1;
+    expect(rows('knife', s)).toEqual(['Stone Knife crafted 1/1', 'Kill skinned 1/1', 'Kill butchered 0/1']);
+    s.stats.events.butchered = 2;
+    expect(rows('knife', s)).toEqual(['Stone Knife crafted 1/1', 'Kill skinned 1/1', 'Kill butchered 1/1']);
   });
 
   it('never shows more than a row needs, and the tracker follows the current step', () => {

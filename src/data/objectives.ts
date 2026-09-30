@@ -1,5 +1,7 @@
 import { haveItem } from '../sim/canteen';
 import { countItem } from '../sim/inventory';
+import { dayOf } from '../sim/time';
+import { BALANCE } from './balance';
 import type { BiomeId } from './biomes';
 import type { GameState } from '../sim/state';
 import type { IconId } from './icons';
@@ -20,6 +22,10 @@ export interface Objective {
   hint: string;
   /** Same step on the desert map, worded for its water, plants and animals. */
   desert?: { title?: string; hint?: string };
+  /** Recipes this step opens up on day 1 (see `lockedToday`): what it asks you to make, and what it needs. */
+  unlocks?: string[];
+  /** Runs every time the step is checked while it's the current one (it must be safe to repeat). */
+  start?(s: GameState): void;
   done(s: GameState): boolean;
   /** Everything the step still asks for, top to bottom. */
   needs(s: GameState): ObjectiveNeed[];
@@ -36,6 +42,10 @@ const FORAGE_FOOD = 3;
 const foraged = (s: GameState) => FORAGE_ITEMS.reduce((n, i) => n + got(s, i), 0);
 const hareKills = (s: GameState) => ev(s, killKey('spear', 'rabbit')) + ev(s, killKey('spear', 'jackrabbit'));
 const FIREWOOD = 2;
+/** `stats.events` key: the day the "Survive the night" step began (it holds until the next morning). */
+export const NIGHT_FROM = 'nightFrom';
+const nightFrom = (s: GameState) => ev(s, NIGHT_FROM);
+const survivedNight = (s: GameState) => nightFrom(s) > 0 && dayOf(s.totalHours) > nightFrom(s);
 
 const goal = (label: string, icon: IconId, have: number, need = 1): ObjectiveNeed => ({ label, icon, have: Math.min(have, need), need });
 
@@ -52,7 +62,10 @@ const ingredients = (s: GameState, recipes: string[]) => recipeNeeds(s, recipes.
 /** `kill:<tool>` counts every kill made with that tool, `kill:<tool>:<species>` kills of one species. */
 export const killKey = (tool: string, species?: string) => (species ? `kill:${tool}:${species}` : `kill:${tool}`);
 
-/** Onboarding: water -> camp -> food -> first meal -> firewood -> axe -> fishing -> spear -> bow. */
+/**
+ * Onboarding: water -> camp -> food -> first meal -> firewood -> axe -> survive the night -> fishing -> spear -> bow ->
+ * knife. The night step holds everything after it until the next morning.
+ */
 export const OBJECTIVES: Objective[] = [
   {
     id: 'drink', title: 'Find water and drink from the lake',
@@ -68,6 +81,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'camp', title: 'Set up camp: build a campfire',
     hint: 'Gather stones, sticks and fern fiber, then Crafting (C) > Build > Campfire and left-click flat ground.',
     desert: { hint: 'Gather stones, sticks and yucca fiber, then Crafting (C) > Build > Campfire and left-click flat ground. Desert nights get cold fast, so build before sundown.' },
+    unlocks: ['campfire'],
     done: (s) => made(s, 'campfire') >= 1,
     needs: (s) => [...ingredients(s, ['campfire']), goal('Campfire built', 'campfire', made(s, 'campfire'))],
   },
@@ -84,6 +98,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'skewer', title: 'Cook your first meal at the campfire',
     hint: "Click your lit campfire and roast a Forager's Skewer (salmonberries + wild onion + a stick) or a Mushroom Skewer.",
     desert: { hint: 'Click your lit campfire and roast a Desert Skewer (2 prickly pear fruit + cholla buds + a stick).' },
+    unlocks: SKEWERS,
     done: (s) => SKEWERS.some((m) => made(s, m) >= 1),
     needs: (s) => {
       const skewer = desert(s) ? 'desertSkewer' : 'forageSkewer';
@@ -103,13 +118,26 @@ export const OBJECTIVES: Objective[] = [
     id: 'axe', title: 'Craft an axe, then chop a tree',
     hint: 'Craft a Stone Axe, equip it (2) and hold left-click on a trunk to fell it, then keep chopping the fallen trunk for logs.',
     desert: { hint: 'Craft a Stone Axe, equip it (2) and hold left-click on a trunk to fell it. Joshua trees and mesquite give one log; junipers and pines in the high country give more.' },
+    unlocks: ['axe'],
     done: (s) => made(s, 'axe') >= 1 && got(s, 'log') >= 1,
     needs: (s) => [...ingredients(s, ['axe']), goal('Stone Axe crafted', 'axe', made(s, 'axe')), goal('Log chopped', 'log', got(s, 'log'))],
+  },
+  {
+    id: 'night', title: 'Survive the night',
+    hint: 'Night is coming. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. The rest of your crafting unlocks tomorrow.',
+    desert: { hint: 'Desert nights turn cold fast. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. The rest of your crafting unlocks tomorrow.' },
+    unlocks: ['cordage', 'leanTo', 'torch'],
+    start: (s) => {
+      if (nightFrom(s) <= 0) s.stats.events[NIGHT_FROM] = dayOf(s.totalHours);
+    },
+    done: survivedNight,
+    needs: (s) => [goal(`See the morning of day ${Math.max(1, nightFrom(s)) + 1}`, 'leanTo', survivedNight(s) ? 1 : 0)],
   },
   {
     id: 'fish', title: 'Other food: catch and cook a fish',
     hint: 'Twist fiber into cordage and craft a Fishing Pole. Hold left-click to cast, click when the float dips, then cook the trout at the fire.',
     desert: { hint: 'Twist fiber into cordage and craft a Fishing Pole. Gila trout live only in the spring pool: cast there, click when the float dips, then cook it at the fire.' },
+    unlocks: ['rod', 'grilledTrout'],
     done: (s) => made(s, 'rod') >= 1 && got(s, 'rawFish') >= 1 && FISH_DISHES.some((m) => made(s, m) >= 1),
     needs: (s) => [
       ...ingredients(s, ['rod']),
@@ -125,6 +153,7 @@ export const OBJECTIVES: Objective[] = [
       title: 'Craft a spear and hunt a jackrabbit',
       hint: 'Spear hunting is hard: jackrabbits bolt when you get close. Creep up slowly, stay still when they look up, then strike. Give rattlesnakes a wide berth.',
     },
+    unlocks: ['spear'],
     done: (s) => made(s, 'spear') >= 1 && hareKills(s) >= 1,
     needs: (s) => [...ingredients(s, ['spear']), goal('Spear crafted', 'spear', made(s, 'spear')), goal(desert(s) ? 'Jackrabbit hunted with the spear' : 'Hare hunted with the spear', 'hide', hareKills(s))],
   },
@@ -132,6 +161,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'bow', title: 'Craft a bow and arrows, then hunt with the bow',
     hint: 'Hold left-click to draw and release to shoot. Deer spook from far away, so a bow is the way to reach them.',
     desert: { hint: 'Hold left-click to draw and release to shoot. Javelina and roadrunners bolt early, so a bow is the way to reach them.' },
+    unlocks: ['bow', 'arrows', 'cookedMeat'],
     done: (s) => made(s, 'bow') >= 1 && made(s, 'arrows') >= 1 && ev(s, killKey('bow')) >= 1,
     needs: (s) => [
       ...ingredients(s, ['bow', 'arrows']),
@@ -140,10 +170,38 @@ export const OBJECTIVES: Objective[] = [
       goal('Kill with the bow', 'rawMeat', ev(s, killKey('bow'))),
     ],
   },
+  {
+    id: 'knife', title: 'Craft a knife, then skin and butcher your kill',
+    hint: 'A carcass needs a knife. Craft a Stone Knife, equip it (7) and click the kill: the first cut skins it for the hide, the second butchers it for the meat.',
+    desert: { hint: 'A carcass needs a knife. Craft a Stone Knife, equip it (7) and click the kill: the first cut skins it for the hide, the second butchers it for the meat. Quail, roadrunners, lizards and snakes have no hide, so they go straight to butchering.' },
+    unlocks: ['knife'],
+    done: (s) => made(s, 'knife') >= 1 && ev(s, 'skinned') >= 1 && ev(s, 'butchered') >= 1,
+    needs: (s) => [
+      ...ingredients(s, ['knife']),
+      goal('Stone Knife crafted', 'knife', made(s, 'knife')),
+      goal('Kill skinned', 'hide', ev(s, 'skinned')),
+      goal('Kill butchered', 'rawMeat', ev(s, 'butchered')),
+    ],
+  },
 ];
 
 /** How many steps the pre-round-5 onboarding track had (old saves store their position in it). */
 export const LEGACY_OBJECTIVE_COUNT = 10;
+
+/** Round 10 added "Survive the night" at this index and the knife step at the end; saves from before shift past it. */
+export const NIGHT_STEP = OBJECTIVES.findIndex((o) => o.id === 'night');
+
+/**
+ * Day 1 crafting limit: on the first day (the host's day in multiplayer) only recipes that the onboarding steps up to
+ * and including the current one unlock can be made; everything else waits for tomorrow. From day 2 on, or once past
+ * the night step (which only ends on a later morning, so that means an older save that was already further along),
+ * nothing is locked.
+ */
+export function lockedToday(s: GameState, recipeId: string): boolean {
+  if (!BALANCE.onboarding.dayOneLimit || dayOf(s.totalHours) > 1 || s.objective > NIGHT_STEP) return false;
+  for (let i = 0; i <= s.objective; i++) if (OBJECTIVES[i].unlocks?.includes(recipeId)) return false;
+  return true;
+}
 
 export const FREEPLAY_OBJECTIVE = {
   title: 'Survive as many days as you can',
@@ -160,7 +218,10 @@ export function objectiveText(o: Pick<Objective, 'title' | 'hint' | 'desert'>, b
 /** Advance past every completed objective. Returns indices completed this call. */
 export function advanceObjectives(s: GameState): number[] {
   const done: number[] = [];
-  while (s.objective < OBJECTIVES.length && OBJECTIVES[s.objective].done(s)) {
+  while (s.objective < OBJECTIVES.length) {
+    const o = OBJECTIVES[s.objective];
+    o.start?.(s);
+    if (!o.done(s)) break;
     done.push(s.objective);
     s.objective++;
   }

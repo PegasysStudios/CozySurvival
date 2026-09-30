@@ -437,14 +437,66 @@ const BUILDERS: Partial<Record<SpeciesId, () => RigParts>> = { rabbit, wolf, bea
 
 const cache = new Map<string, RigParts>();
 
-export function rigParts(species: SpeciesId, variant = 0): RigParts {
-  const key = species + variant;
+export function rigParts(species: SpeciesId, variant = 0, skinned = false): RigParts {
+  const key = species + variant + (skinned ? 's' : '');
   let r = cache.get(key);
   if (!r) {
-    r = species === 'deer' ? deer(variant === 1) : (BUILDERS[species] ?? fish)();
+    r = skinned ? skinParts(rigParts(species, variant)) : species === 'deer' ? deer(variant === 1) : (BUILDERS[species] ?? fish)();
     cache.set(key, r);
   }
   return r;
+}
+
+const MUSCLE_DARK = '#6e1c1a';
+const MUSCLE_LIGHT = '#b8463c';
+const SINEW = '#e6cfbf';
+
+/**
+ * A skinned carcass: the same rig with the fur gone, so every part is raw muscle (deep red with pale sinew and fat
+ * streaks), and a slimmer build (the torso narrower and lower around its middle, the legs, head and tail thinner).
+ */
+function skinParts(p: RigParts): RigParts {
+  const box = p.body.boundingBox ?? new THREE.Box3().setFromBufferAttribute(p.body.getAttribute('position') as THREE.BufferAttribute);
+  const cx = (box.min.x + box.max.x) / 2;
+  const cy = (box.min.y + box.max.y) / 2;
+  return {
+    ...p,
+    body: skinGeometry(p.body, 1, (v) => v.set(cx + (v.x - cx) * 0.8, cy + (v.y - cy) * 0.86, v.z)),
+    head: skinGeometry(p.head, 2, (v) => v.set(v.x * 0.86, v.y * 0.9, v.z * 0.95)),
+    legs: p.legs.map((l, i) => ({ ...l, geo: skinGeometry(l.geo, 3 + i, (v) => v.set(v.x * 0.78, v.y, v.z * 0.78)) })),
+    tail: p.tail ? { ...p.tail, geo: skinGeometry(p.tail.geo, 9, (v) => v.multiplyScalar(0.7)) } : undefined,
+  };
+}
+
+function skinGeometry(src: THREE.BufferGeometry, seed: number, slim: (v: THREE.Vector3) => void): THREE.BufferGeometry {
+  const g = src.clone();
+  const pos = g.getAttribute('position') as THREE.BufferAttribute;
+  const color = g.getAttribute('color') as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  const c = new THREE.Color();
+  for (let f = 0; f + 2 < pos.count; f += 3) {
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (let j = 0; j < 3; j++) {
+      x += pos.getX(f + j) / 3;
+      y += pos.getY(f + j) / 3;
+      z += pos.getZ(f + j) / 3;
+    }
+    const n = hash2(Math.round(x * 60) + f, Math.round((y + z) * 60), seed);
+    const streak = Math.sin(x * 38 + z * 23 + y * 9) > 0.86 || n > 0.93;
+    c.copy(streak ? col(SINEW) : mix(MUSCLE_DARK, MUSCLE_LIGHT, 0.25 + n * 0.75));
+    for (let j = 0; j < 3; j++) color.setXYZ(f + j, c.r, c.g, c.b);
+  }
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    slim(v);
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  g.computeBoundingSphere();
+  g.computeBoundingBox();
+  return g;
 }
 
 export interface Rig {
@@ -457,8 +509,9 @@ export interface Rig {
   chain: number;
 }
 
-export function buildRig(species: SpeciesId, variant: number, material: THREE.Material): Rig {
-  const parts = rigParts(species, variant);
+/** `skinned` builds a skinned carcass's rig (see `skinParts`). */
+export function buildRig(species: SpeciesId, variant: number, material: THREE.Material, skinned = false): Rig {
+  const parts = rigParts(species, variant, skinned);
   const root = new THREE.Group();
   const pivot = new THREE.Group();
   pivot.position.set(...parts.pivot);

@@ -56,6 +56,7 @@ const TOOL_ICONS: Record<ToolId, string> = {
   bow: svg('<path d="M9 4c12 3 15 21 0 24" stroke="#8a5f3a" stroke-width="3" fill="none" stroke-linecap="round"/><path d="M9 4v24" stroke="#e8dfcc" stroke-width="1.2"/><path d="M6 16h18" stroke="#b08a5a" stroke-width="2" stroke-linecap="round"/><path d="M26 16l-4-2v4z" fill="#6f757b"/>'),
   torch: svg('<path d="M14 29l2-15" stroke="#7a5534" stroke-width="3" stroke-linecap="round"/><path d="M16 3c3 4 6 6 6 10a6 6 0 0 1-12 0c0-3 3-5 6-10z" fill="#ffb347"/><path d="M16 8c2 3 3 4 3 6a3 3 0 0 1-6 0c0-2 1-3 3-6z" fill="#ffe08a"/>'),
   rod: svg('<path d="M5 28 24 5" stroke="#9a7048" stroke-width="2.6" stroke-linecap="round"/><path d="M24 5c3 6 3 12 1 17" stroke="#e8dfcc" stroke-width="1.2" fill="none"/><circle cx="25" cy="24" r="2.6" fill="#e0664d"/><path d="M22.4 24h5.2" stroke="#f4ede0" stroke-width="1.6"/><circle cx="9" cy="23" r="2" fill="#6f757b"/>'),
+  knife: svg('<path d="M15 17C18 10 23 6 28 4c-2 5-6 10-13 13z" fill="#a9aeb2" stroke="#3a2c22" stroke-width="1.4" stroke-linejoin="round"/><path d="M5 27l9-9" stroke="#7a5230" stroke-width="4" stroke-linecap="round"/><path d="M12.5 16.5l3 3" stroke="#d8c08a" stroke-width="2.4"/>'),
 };
 
 const GEAR_ICONS: Record<GearId, string> = {

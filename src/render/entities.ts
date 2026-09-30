@@ -54,7 +54,7 @@ export class EntityView {
   private readonly animals = new Map<number, AnimalView>();
   private readonly structures = new Map<number, StructureView>();
   private readonly drops = new Map<number, THREE.Mesh>();
-  private readonly carcasses = new Map<number, THREE.Group>();
+  private readonly carcasses = new Map<number, { root: THREE.Group; skinned: boolean }>();
   private readonly structureGeos = new Map<PrefabId, THREE.BufferGeometry>();
   private readonly dropGeos = new Map<ItemId, THREE.BufferGeometry>();
   private readonly flameGeo = flameGeometry();
@@ -150,21 +150,25 @@ export class EntityView {
     this.seen.clear();
     for (const c of state.carcasses) {
       this.seen.add(c.id);
-      if (this.carcasses.has(c.id)) continue;
-      const rig = buildRig(c.species, 0, this.animalMat);
+      const skinned = !!c.skinned;
+      const old = this.carcasses.get(c.id);
+      if (old?.skinned === skinned) continue;
+      // Skinning swaps the dead animal for its skinned model where it lies.
+      if (old) this.group.remove(old.root);
+      const rig = buildRig(c.species, 0, this.animalMat, skinned);
       const def = SPECIES[c.species];
       rig.pivot.rotation.z = Math.PI / 2 - 0.08;
-      rig.pivot.position.y = def.radius * 0.8;
+      rig.pivot.position.y = def.radius * (skinned ? 0.68 : 0.8);
       for (const l of rig.legs) l.mesh.rotation.x = 0.25;
       rig.head.rotation.x = 0.3;
       rig.root.position.set(c.x, this.terrain.heightAt(c.x, c.z), c.z);
       rig.root.rotation.y = c.rot;
-      this.carcasses.set(c.id, rig.root);
+      this.carcasses.set(c.id, { root: rig.root, skinned });
       this.group.add(rig.root);
     }
-    for (const [id, g] of this.carcasses) {
+    for (const [id, v] of this.carcasses) {
       if (!this.seen.has(id)) {
-        this.group.remove(g);
+        this.group.remove(v.root);
         this.carcasses.delete(id);
       }
     }

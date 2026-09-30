@@ -165,7 +165,8 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     walkSpeed: 0.45, runSpeed: 1.6, turnRate: 3, wanderRadius: 6,
     alertRadius: 6.5, fearRadius: 0, calmRadius: 6, alertTime: [2.5, 4],
     strike: { radius: 1.8, damage: 9, cooldown: 2.2 },
-    drops: [{ item: 'rawMeat', count: 1 }, { item: 'hide', count: 1 }],
+    // No hide worth keeping: like the birds and lizards, it goes straight to butchering.
+    drops: [{ item: 'rawMeat', count: 1 }],
   },
   scorpion: {
     id: 'scorpion', name: 'Desert Hairy Scorpion', kind: 'pest', habitat: 'land',
@@ -206,6 +207,11 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     drops: [{ item: 'rawMeat', count: 3 }, { item: 'hide', count: 2 }],
   },
 };
+
+/** Animals whose carcass has a hide to skin off before it can be butchered (the rest go straight to butchering). */
+export function hasHide(species: SpeciesId): boolean {
+  return SPECIES[species].drops.some((d) => d.item === 'hide');
+}
 
 /**
  * Predators are rare early: a single distant wolf on day 1, bears from day 2,

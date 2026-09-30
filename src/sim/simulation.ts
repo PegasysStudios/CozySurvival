@@ -22,10 +22,11 @@ import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot,
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, surfaceAt, type MoveEnv, type MoveInput } from './movement';
 import { canRepair, repairCost, repairSeconds, type RepairCheck } from './repair';
 import { addToStore, cloneStore, ensureStore } from './storage';
-import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
+import { applyDamage, applyFood, applySleep, createNeeds, restWhileWaiting, spendEnergy, updateNeeds, type Activity, type SleepResult } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
-import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
+import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, skinChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
+import { carcassStep, hidesOn } from './carcass';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
@@ -124,8 +125,8 @@ export type NetRequest =
   | { k: 'hit'; id: number; dmg: number; t?: number }
   | { k: 'sleep'; structure: number }
   | { k: 'wake' }
-  /** Gathering a stone turned up a scorpion at (x, z); the host spawns it. */
-  | { k: 'scorpion'; x: number; z: number };
+  /** Gathering stone pile `i` turned up its scorpion at (x, z); the host spawns it. */
+  | { k: 'scorpion'; i: number; x: number; z: number };
 
 export const COOK_RADIUS = 4;
 const ARROW_GRAVITY = 9.8;
@@ -478,6 +479,13 @@ export class Simulation {
 
     // Multiplayer only: the world keeps running while this player is dead or asleep.
     if (s.dead || this.sleepingIn !== null) {
+      if (!s.dead) {
+        const cause = restWhileWaiting(s.needs, gameHours, this.sleepByFire, this.coldLethal);
+        if (cause) {
+          this.getUp();
+          this.die(cause);
+        }
+      }
       this.updateProjectiles(dt);
       this.updateAnimals(dt);
       if (world) {
@@ -602,7 +610,8 @@ export class Simulation {
 
   /**
    * The spiny plant this player is pressing into, if any: within half a body width of a prickly pear's, cholla's or
-   * yucca's core (a picked yucca is just a stub), or right up against a saguaro. Picking them from arm's length is safe.
+   * agave's core or a yucca that's ready to harvest (a picked yucca is a harmless stub, a cut agave is gone), or right
+   * up against a saguaro. Picking them from arm's length is safe.
    */
   spinyPlantTouching(): { name: string; damage: number; x: number; z: number } | null {
     const p = this.state.player;
@@ -616,8 +625,8 @@ export class Simulation {
         const r = this.gen.resources[c.ref];
         const def = RESOURCES[r.kind];
         if (!def.spines) continue;
-        const stub = r.kind === 'yucca' && this.state.resources[c.ref].charges <= 0 ? 0.38 : 1;
-        if (Math.hypot(p.x - r.x, p.z - r.z) < def.spines.radius * r.scale * stub + body * S.touch) return { name: def.name, damage: def.spines.damage, x: r.x, z: r.z };
+        if (this.state.resources[c.ref].charges <= 0 && (def.spines.ripeOnly || !def.persistent)) continue;
+        if (Math.hypot(p.x - r.x, p.z - r.z) < def.spines.radius * r.scale + body * S.touch) return { name: def.name, damage: def.spines.damage, x: r.x, z: r.z };
       }
     }
     return null;
@@ -838,7 +847,11 @@ export class Simulation {
       }
       case 'carcass': {
         const c = s.carcasses.find((d) => d.id === t.id);
-        return c ? { name: speciesName(c.species, this.biome), action: 'Butcher', enabled: true } : null;
+        if (!c) return null;
+        const name = `${speciesName(c.species, this.biome)}${c.skinned ? ' · skinned' : ''}`;
+        const step = carcassStep(c);
+        if (s.activeTool === 'knife') return { name, action: step === 'skin' ? 'Skin' : 'Butcher', enabled: true };
+        return { name, action: s.tools.includes('knife') ? `Equip knife [${TOOLS.knife.slot}] to ${step}` : 'Needs a knife', enabled: false };
       }
       case 'structure': {
         const st = s.structures.find((d) => d.id === t.id);
@@ -925,6 +938,8 @@ export class Simulation {
         return c.spear.cooldown;
       case 'torch':
         return c.torch.cooldown;
+      case 'knife':
+        return c.knife.cooldown;
       default:
         return c.hand.cooldown;
     }
@@ -1087,7 +1102,7 @@ export class Simulation {
       case 'drop':
         return this.pickUpDrop(t.id);
       case 'carcass':
-        return this.butcher(t.id);
+        return this.cutCarcass(t.id);
       case 'structure':
         return this.useStructure(t.id);
       case 'animal':
@@ -1253,22 +1268,30 @@ export class Simulation {
     else if (this.roll(gatherBonusChance(s.skills.gathering)) && roomFor(s.inventory, def.item) > 0) {
       this.give(def.item, 1, g.x, gy + def.hitHeight, g.z, g.kind);
     }
+    if (def.bonus && this.roll(def.bonus.chance)) {
+      const { item, count } = def.bonus;
+      const got = this.give(item, count, g.x, gy + def.hitHeight, g.z, g.kind);
+      if (got < count) this.dropAt(item, count - got, g.x + 0.4, g.z - 0.4);
+    }
     spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
     this.emit({ type: 'swing', tool: 'hands', hit: true });
     this.gainXp('gathering', BALANCE.skills.xp.gather);
-    if (g.kind === 'stonePile' && this.biome === 'desert' && this.roll(BALANCE.scorpion.chance)) this.uncoverScorpion(g.x, g.z);
+    if (g.kind === 'stonePile' && this.biome === 'desert' && !dyn.scorpion && this.roll(BALANCE.scorpion.chance)) {
+      dyn.scorpion = true;
+      this.uncoverScorpion(index, g.x, g.z);
+    }
     this.worldVersion++;
   }
 
-  /** A scorpion was under the stone just gathered at (x, z). It comes out on the player's side of the pile. */
-  private uncoverScorpion(x: number, z: number): void {
+  /** A scorpion was under stone pile `index`, just gathered at (x, z). It comes out on the player's side of the pile. */
+  private uncoverScorpion(index: number, x: number, z: number): void {
     const s = this.state;
     const p = s.player;
     const d = Math.hypot(p.x - x, p.z - z) || 1;
     const k = Math.min(0.5, d * 0.5) / d;
     const sx = x + (p.x - x) * k;
     const sz = z + (p.z - z) * k;
-    if (this.authority === 'guest') this.netOut.push({ k: 'scorpion', x: sx, z: sz });
+    if (this.authority === 'guest') this.netOut.push({ k: 'scorpion', i: index, x: sx, z: sz });
     else this.revealScorpion(sx, sz);
     s.stats.events.scorpions = (s.stats.events.scorpions ?? 0) + 1;
     this.emit({ type: 'scorpion', x: sx, z: sz });
@@ -1401,27 +1424,68 @@ export class Simulation {
     this.worldVersion++;
   }
 
-  private butcher(id: number): void {
+  /** A knife cut on a carcass: the first skins it (if it has a hide), the next butchers it. No knife, no cut. */
+  private cutCarcass(id: number): void {
     const s = this.state;
     const i = s.carcasses.findIndex((c) => c.id === id);
     if (i < 0) return;
     const c = s.carcasses[i];
+    if (s.activeTool !== 'knife') {
+      this.actionCooldown = 0.6;
+      const owned = s.tools.includes('knife');
+      this.emit({ type: 'needTool', message: owned ? `Equip your Stone Knife [${TOOLS.knife.slot}] to skin and butcher.` : 'Needs a knife. Craft a Stone Knife (Crafting > Tools) to skin and butcher your kill.' });
+      return;
+    }
     this.actionCooldown = BALANCE.gather.cooldown;
-    let any = false;
+    spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
+    this.emit({ type: 'swing', tool: 'knife', hit: true });
+    if (carcassStep(c) === 'skin') this.skin(c);
+    else this.butcher(i);
+    this.wearTool('knife', 1);
+    this.worldVersion++;
+    this.progress();
+  }
+
+  /** Skinning: the Skinning skill (and the knife's upgrades) decide whether the hide comes off whole or tears. */
+  private skin(c: CarcassState): void {
+    const s = this.state;
+    const xp = BALANCE.skills.xp;
+    const hides = hidesOn(c);
+    const whole = this.rng.chance(skinChance(s));
+    for (const r of c.remaining) if (r.item === 'hide') r.count = 0;
+    c.skinned = true;
+    const name = speciesName(c.species, this.biome).toLowerCase();
+    let got = 0;
+    if (whole && hides > 0) {
+      got = this.give('hide', hides, c.x, c.y + 0.4, c.z, 'carcass');
+      this.dropAt('hide', hides - got, c.x + 0.5, c.z + 0.5);
+    }
+    s.stats.events.skinned = (s.stats.events.skinned ?? 0) + 1;
+    if (whole) s.stats.events.hidesWhole = (s.stats.events.hidesWhole ?? 0) + 1;
+    this.gainXp('skinning', whole ? xp.skin : xp.skinFail);
+    this.emit({ type: 'skinned', id: c.id, species: c.species, hides: whole ? hides : 0, x: c.x, y: c.y, z: c.z });
+    if (!whole) this.message(`The hide tore. The ${name} is skinned, but there's no hide to keep. Cut again to butcher it.`, 'warn');
+    else if (got < hides) this.message(`You skinned the ${name}. No room in your pack, so the hide is on the ground.`, 'good');
+    else this.message(`You skinned the ${name}. Cut again to butcher it.`, 'good');
+  }
+
+  /** Butchering: everything left on the carcass (what doesn't fit is set down beside it), then it's gone. */
+  private butcher(i: number): void {
+    const s = this.state;
+    const c = s.carcasses[i];
+    let spilled = false;
     for (const r of c.remaining) {
       if (r.count <= 0) continue;
       const added = this.give(r.item, r.count, c.x, c.y + 0.4, c.z, 'carcass');
-      r.count -= added;
-      if (added > 0) any = true;
+      if (added < r.count) spilled = true;
+      this.dropAt(r.item, r.count - added, c.x + 0.4, c.z + 0.4);
+      r.count = 0;
     }
-    if (!any) this.message('Your pack is full.', 'warn');
-    else {
-      spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
-      this.gainXp('hunting', BALANCE.skills.xp.butcher);
-    }
-    if (c.remaining.every((r) => r.count <= 0)) s.carcasses.splice(i, 1);
-    this.emit({ type: 'swing', tool: this.state.activeTool, hit: true });
-    this.worldVersion++;
+    s.carcasses.splice(i, 1);
+    s.stats.events.butchered = (s.stats.events.butchered ?? 0) + 1;
+    this.gainXp('hunting', BALANCE.skills.xp.butcher);
+    this.emit({ type: 'butchered', id: c.id, species: c.species, x: c.x, y: c.y, z: c.z });
+    if (spilled) this.message('Your pack is full, so the rest of the meat is on the ground.', 'warn');
   }
 
   private useStructure(id: number): void {
@@ -1527,7 +1591,7 @@ export class Simulation {
     const a = s.animals.find((x) => x.id === id);
     if (!a) return;
     const c = BALANCE.combat;
-    const stats = s.activeTool === 'axe' ? c.axe : s.activeTool === 'spear' ? c.spear : s.activeTool === 'torch' ? c.torch : c.hand;
+    const stats = s.activeTool === 'axe' ? c.axe : s.activeTool === 'spear' ? c.spear : s.activeTool === 'torch' ? c.torch : s.activeTool === 'knife' ? c.knife : c.hand;
     this.actionCooldown = stats.cooldown;
     spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
     if (dist > stats.reach) {
@@ -1587,13 +1651,14 @@ export class Simulation {
     const meat = remaining.find((r) => r.item === 'rawMeat');
     if (meat && by === null && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
     if (a.species === 'fish') {
+      // A speared trout needs no knife: it goes in the pack, or onto the ground when the pack is full.
       if (by !== null) return;
       const added = this.give('rawFish', 1, a.x, WATER_LEVEL + 0.2, a.z, 'carcass');
-      if (added > 0) {
-        this.message('Caught a trout!', 'good');
-        this.progress();
-        return;
-      }
+      this.dropAt('rawFish', 1 - added, a.x, a.z);
+      this.message(added > 0 ? 'Caught a trout!' : 'Caught a trout! No room in your pack, so it is on the ground.', 'good');
+      this.worldVersion++;
+      this.progress();
+      return;
     }
     s.carcasses.push({ id: s.nextId++, species: a.species, x: a.x, y: a.y, z: a.z, rot: a.heading, remaining, expiresAt: s.totalHours + 24 });
     this.worldVersion++;
@@ -2157,12 +2222,13 @@ export class Simulation {
       return true;
     }
     this.endFishing('reeled');
+    const coldLethal = this.coldLethal;
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
-    applySleep(s.needs, rest, byFire);
+    const night = applySleep(s.needs, rest, byFire, elapsed, coldLethal);
     this.updateWear(elapsed, false);
     if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.standUp();
@@ -2186,8 +2252,21 @@ export class Simulation {
     this.worldVersion++;
     this.emit({ type: 'slept', day: this.day, byFire });
     this.emit({ type: 'dayStart', day: this.day });
+    this.afterNight(night);
     this.progress();
     return true;
+  }
+
+  /** Dying in your sleep, or waking weaker, when a meter sat empty through the night. */
+  private afterNight(night: SleepResult): void {
+    if (night.cause) {
+      this.die(night.cause);
+      return;
+    }
+    if (night.lost < 0.5) return;
+    const why = night.from.map((f) => SLEPT_EMPTY[f] ?? f);
+    const list = why.length > 1 ? `${why.slice(0, -1).join(', ')} and ${why[why.length - 1]}` : why[0];
+    this.message(`You slept ${list} and woke up weaker (-${Math.round(night.lost)} health).`, 'warn');
   }
 
   // ------------------------------------------------------------------ storage
@@ -2411,7 +2490,8 @@ export class Simulation {
     const s = this.state;
     const st = s.structures.find((x) => x.id === id);
     const rest = st ? restBonus(st.prefab) : null;
-    if (rest) applySleep(s.needs, rest, this.sleepByFire);
+    const coldLethal = dayOf(Math.max(0, s.totalHours - elapsed)) > BALANCE.needs.coldGraceNights;
+    const night = rest ? applySleep(s.needs, rest, this.sleepByFire, elapsed, coldLethal) : null;
     this.updateWear(elapsed, false, false);
     if (st && prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.wasNight = this.night;
@@ -2419,6 +2499,7 @@ export class Simulation {
     this.worldVersion++;
     this.emit({ type: 'slept', day: this.day, byFire: this.sleepByFire });
     this.emit({ type: 'dayStart', day: this.day });
+    if (night) this.afterNight(night);
     this.progress();
   }
 
@@ -2507,7 +2588,10 @@ export class Simulation {
   setResource(i: number, v: ResourceDyn): void {
     const dyn = this.state.resources[i];
     if (!dyn) return;
+    // A stone pile's scorpion, once out, stays out: no update can put another one back under it.
+    const scorpion = dyn.scorpion || v.scorpion;
     Object.assign(dyn, v);
+    if (scorpion) dyn.scorpion = true;
     this.worldVersion++;
   }
 
@@ -2552,9 +2636,10 @@ export class Simulation {
 
   putCarcass(v: CarcassState): void {
     const s = this.state;
-    const c = s.carcasses.find((x) => x.id === v.id);
-    if (c) Object.assign(c, v);
-    else s.carcasses.push({ ...v, remaining: v.remaining.map((r) => ({ ...r })) });
+    const i = s.carcasses.findIndex((x) => x.id === v.id);
+    const copy = { ...v, remaining: v.remaining.map((r) => ({ ...r })) };
+    if (i >= 0) s.carcasses[i] = copy;
+    else s.carcasses.push(copy);
     this.worldVersion++;
   }
 
@@ -2591,6 +2676,13 @@ export class Simulation {
     this.wasNight = this.night;
   }
 
+  /** Jumps to just before the next dawn, so the next step starts the new day as usual (and lifts the day-1 limit). */
+  devNextMorning(): void {
+    const s = this.state;
+    s.totalHours = (Math.floor(s.totalHours / 24) + 1) * 24 - 0.001;
+    this.wasNight = this.night;
+  }
+
   devSpawn(species: SpeciesId, distance = 22): AnimalState | null {
     const p = this.state.player;
     for (let i = 0; i < 24; i++) {
@@ -2619,6 +2711,8 @@ export class Simulation {
 }
 
 const NO_SHELTER = { warmthBonus: 0, healthBonus: 0 };
+/** How a night spent with an empty meter reads in the wake-up message. */
+const SLEPT_EMPTY: Partial<Record<DamageSource, string>> = { starvation: 'hungry', dehydration: 'thirsty', cold: 'cold' };
 
 const STILL = { jumped: false, landed: 0, distance: 0, splash: 0 };
 

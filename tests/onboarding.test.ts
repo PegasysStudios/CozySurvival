@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
-import { killKey, LEGACY_OBJECTIVE_COUNT, OBJECTIVES } from '../src/data/objectives';
+import { killKey, LEGACY_OBJECTIVE_COUNT, NIGHT_STEP, OBJECTIVES } from '../src/data/objectives';
 import { RECIPE_BY_ID } from '../src/data/recipes';
 import { TREES } from '../src/data/resources';
 import { createAnimal } from '../src/sim/animals';
@@ -10,7 +10,8 @@ import { lookDir } from '../src/sim/movement';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { createNewState, nearestShore, Simulation, SPAWN_SHORE_DIST } from '../src/sim/simulation';
 import { getTerrain, WATER_LEVEL } from '../src/sim/terrain';
-import { aimAt, buildFresh, drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, quietSim, run, teleport } from './helpers';
+import { aimAt, buildFresh, drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, quietSim, run, teleport } from './helpers';
+import { dayOneLimit } from './setup';
 
 const F = BALANCE.fishing;
 
@@ -64,14 +65,17 @@ function bowHare(sim: Simulation): SimEvent[] {
 }
 
 describe('onboarding track', () => {
-  it('has nine steps in the order Jon asked for', () => {
-    expect(OBJECTIVES.map((o) => o.id)).toEqual(['drink', 'camp', 'forage', 'skewer', 'firewood', 'axe', 'fish', 'spear', 'bow']);
-    expect(OBJECTIVES[7].hint).toMatch(/spear hunting is hard/i);
+  it('has eleven steps in the order Jon asked for: the night after fire, meal and wood, the knife after the bow', () => {
+    expect(OBJECTIVES.map((o) => o.id)).toEqual(['drink', 'camp', 'forage', 'skewer', 'firewood', 'axe', 'night', 'fish', 'spear', 'bow', 'knife']);
+    expect(OBJECTIVES[NIGHT_STEP].title).toBe('Survive the night');
+    expect(OBJECTIVES[8].hint).toMatch(/spear hunting is hard/i);
+    expect(OBJECTIVES[10].title).toBe('Craft a knife, then skin and butcher your kill');
     expect(RECIPE_BY_ID.forageSkewer.inputs.map((i) => i.item).sort()).toEqual(['berries', 'onion', 'stick']);
     expect(RECIPE_BY_ID.forageSkewer.station).toBe('fire');
   });
 
-  it('walks through all nine steps with real actions, in order', () => {
+  it('walks through all eleven steps with real actions, in order, with the day-1 limit on', () => {
+    dayOneLimit(true);
     const sim = quietSim();
     teleport(sim, sim.terrain.spawn.x, sim.terrain.spawn.z);
     sim.state.gear.push('basket', 'backpack');
@@ -126,26 +130,48 @@ describe('onboarding track', () => {
     }
     expectStep(6);
 
-    // 7. rod, a fish, and cooking it
+    // 7. survive the night: nothing past it counts until the next morning, and the rest of crafting waits too
+    expect(sim.state.stats.events.nightFrom).toBe(1);
+    giveRecipe(sim, 'rod');
+    expect(sim.craft('rod')).toMatchObject({ ok: false, reason: 'tomorrow' });
+    sim.state.stats.crafted.rod = 1;
+    sim.state.stats.gathered.rawFish = 1;
+    sim.state.stats.crafted.grilledTrout = 1;
+    sim.devSetHour(23);
+    keepAlive(sim);
+    run(sim, 0.5);
+    expectStep(6);
+    delete sim.state.stats.crafted.rod;
+    delete sim.state.stats.gathered.rawFish;
+    delete sim.state.stats.crafted.grilledTrout;
+    const leanTo = buildFresh(sim, 'leanTo');
+    keepAlive(sim);
+    expect(sim.trySleep(leanTo.id)).toBe(true);
+    expect(sim.day).toBe(2);
+    keepAlive(sim);
+    run(sim, 0.1).forEach((e) => e.type === 'objective' && done.push(e.index));
+    expectStep(7);
+
+    // 8. rod, a fish, and cooking it
     craftFresh(sim, 'cordage');
     craftFresh(sim, 'rod');
     catchFish(sim);
-    expectStep(6);
+    expectStep(7);
     teleport(sim, fire.x + 1.6, fire.z);
     fire.fuel = Math.max(fire.fuel, 4);
     expect(sim.craft('grilledTrout').ok).toBe(true);
-    expectStep(7);
+    expectStep(8);
 
-    // 8. spear and a hare
+    // 9. spear and a hare
     craftFresh(sim, 'spear');
     sim.selectTool('spear');
     const p = sim.state.player;
     sim.state.animals.push(createAnimal(800, 'rabbit', p.x + 1, p.z, new Rng(2), sim.terrain));
     sim.perform({ kind: 'animal', id: 800, dist: 1 });
     expect(sim.state.stats.events[killKey('spear', 'rabbit')]).toBe(1);
-    expectStep(8);
+    expectStep(9);
 
-    // 9. bow, arrows and a bow kill
+    // 10. bow, arrows and a bow kill
     craftFresh(sim, 'bow');
     craftFresh(sim, 'arrows');
     keepAlive(sim);
@@ -155,10 +181,102 @@ describe('onboarding track', () => {
     expect(ev.some((e) => e.type === 'animalHit' && e.species === 'rabbit' && e.killed)).toBe(true);
     expect(sim.state.stats.events[killKey('bow')]).toBe(1);
     ev.forEach((e) => e.type === 'objective' && done.push(e.index));
+    expectStep(10);
+
+    // 11. a knife, then skin and butcher the bow kill
+    const kill = sim.state.carcasses.find((c) => c.species === 'rabbit')!;
+    expect(kill).toBeTruthy();
+    craftFresh(sim, 'knife');
+    sim.selectTool('knife');
+    sim.perform({ kind: 'carcass', id: kill.id, dist: 1 });
+    expectStep(10);
+    expect(sim.state.stats.events.skinned).toBe(1);
+    sim.perform({ kind: 'carcass', id: kill.id, dist: 1 });
+    expect(sim.state.stats.events.butchered).toBe(1);
     collect();
 
     expect(done).toEqual(OBJECTIVES.map((_, i) => i));
     expect(sim.currentObjective()).toBeNull();
+  });
+
+  it('survive the night holds the next steps until the next morning, however it is spent', () => {
+    for (const how of ['sleep', 'awake', 'late'] as const) {
+      const sim = quietSim();
+      sim.state.objective = NIGHT_STEP;
+      // Everything the next step asks for is already done: only the night holds it back.
+      Object.assign(sim.state.stats.crafted, { rod: 1, grilledTrout: 1 });
+      sim.state.stats.gathered.rawFish = 1;
+      if (how === 'late') sim.devSetHour(4);
+      keepAlive(sim);
+      run(sim, 0.1);
+      expect(sim.state.objective, how).toBe(NIGHT_STEP);
+      expect(sim.state.stats.events.nightFrom, how).toBe(1);
+      expect(sim.currentObjective()!.needs.map((n) => n.label)).toEqual(['See the morning of day 2']);
+      if (how === 'sleep') {
+        const shelter = placeShelter(sim, 'leanTo');
+        sim.devSetHour(21);
+        run(sim, 0.1);
+        expect(sim.state.objective).toBe(NIGHT_STEP);
+        drain(sim);
+        expect(sim.trySleep(shelter.id)).toBe(true);
+      } else {
+        sim.state.totalHours = 23.9;
+        keepAlive(sim);
+        run(sim, 0.1);
+        expect(sim.state.objective, how).toBe(NIGHT_STEP);
+        sim.state.totalHours = 24.05;
+      }
+      keepAlive(sim);
+      run(sim, 0.1);
+      expect(sim.day, how).toBe(2);
+      // The night step and the already-done fishing step tick off together on the morning of day 2.
+      expect(sim.state.objective, how).toBe(NIGHT_STEP + 2);
+    }
+  });
+
+  it('a night step first reached on day 3 waits for the morning of day 4', () => {
+    const sim = quietSim();
+    sim.state.totalHours = 2 * 24 + 3;
+    sim.state.objective = NIGHT_STEP;
+    keepAlive(sim);
+    run(sim, 0.1);
+    expect(sim.state.stats.events.nightFrom).toBe(3);
+    sim.state.totalHours = 3 * 24 - 0.1;
+    run(sim, 0.05);
+    expect(sim.state.objective).toBe(NIGHT_STEP);
+    sim.state.totalHours = 3 * 24 + 0.1;
+    keepAlive(sim);
+    run(sim, 0.05);
+    expect(sim.state.objective).toBe(NIGHT_STEP + 1);
+  });
+
+  it('the night hold survives a save and load', () => {
+    const sim = quietSim();
+    sim.state.objective = NIGHT_STEP;
+    keepAlive(sim);
+    run(sim, 0.1);
+    const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
+    expect(loaded.state.objective).toBe(NIGHT_STEP);
+    expect(loaded.state.stats.events.nightFrom).toBe(1);
+    keepAlive(loaded);
+    run(loaded, 0.1);
+    expect(loaded.state.objective).toBe(NIGHT_STEP);
+    loaded.state.totalHours = 24.2;
+    keepAlive(loaded);
+    run(loaded, 0.1);
+    expect(loaded.state.objective).toBe(NIGHT_STEP + 1);
+  });
+
+  it('the knife step needs a skin and a butcher: a hideless kill counts its butchering, a hide kill its skinning', () => {
+    const sim = quietSim();
+    sim.state.objective = OBJECTIVES.length - 1;
+    sim.state.stats.crafted.knife = 1;
+    sim.state.stats.events.butchered = 1;
+    run(sim, 0.05);
+    expect(sim.state.objective).toBe(OBJECTIVES.length - 1);
+    sim.state.stats.events.skinned = 1;
+    run(sim, 0.05);
+    expect(sim.state.objective).toBe(OBJECTIVES.length);
   });
 
   it('later steps done early only count once the earlier ones are finished', () => {
@@ -179,14 +297,15 @@ describe('onboarding track', () => {
 
   it('only spear kills of a hare count for the spear step', () => {
     const sim = quietSim();
-    sim.state.objective = 7;
+    const spear = OBJECTIVES.findIndex((o) => o.id === 'spear');
+    sim.state.objective = spear;
     sim.state.stats.crafted.spear = 1;
     sim.creditKill('rabbit', 'bow');
-    expect(sim.state.objective).toBe(7);
+    expect(sim.state.objective).toBe(spear);
     sim.creditKill('deer', 'spear');
-    expect(sim.state.objective).toBe(7);
+    expect(sim.state.objective).toBe(spear);
     sim.creditKill('rabbit', 'spear');
-    expect(sim.state.objective).toBe(8);
+    expect(sim.state.objective).toBe(spear + 1);
   });
 });
 

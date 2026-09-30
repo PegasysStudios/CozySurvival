@@ -147,7 +147,7 @@ export function itemDef(id: ItemId): ItemDef {
   return o ? { ...ITEMS[id], ...o } : ITEMS[id];
 }
 
-export type ToolId = 'hands' | 'axe' | 'spear' | 'bow' | 'torch' | 'rod';
+export type ToolId = 'hands' | 'axe' | 'spear' | 'bow' | 'torch' | 'rod' | 'knife';
 
 export interface ToolDef {
   id: ToolId;
@@ -163,10 +163,11 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   bow: { id: 'bow', name: 'Bow', slot: 4, description: 'Hold left-click to draw, release to shoot. Needs arrows.' },
   torch: { id: 'torch', name: 'Torch', slot: 5, description: 'Light and warmth. Predators keep their distance.' },
   rod: { id: 'rod', name: 'Fishing Pole', slot: 6, description: 'Hold left-click to wind up a cast, release to throw. Click when a fish bites.' },
+  knife: { id: 'knife', name: 'Stone Knife', slot: 7, description: 'Skin and butcher a kill: the first cut takes the hide, the second the meat. A weak weapon in a pinch.' },
 };
 
 /** Multiplayer sends the held tool as its index here, so new tools go at the end. */
-export const TOOL_ORDER: ToolId[] = ['hands', 'axe', 'spear', 'bow', 'torch', 'rod'];
+export const TOOL_ORDER: ToolId[] = ['hands', 'axe', 'spear', 'bow', 'torch', 'rod', 'knife'];
 
 export type GearId = 'basket' | 'backpack' | 'canteen';
 

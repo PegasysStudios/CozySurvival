@@ -126,6 +126,9 @@ export class HostSession extends Session {
       if (!wasDead && peerDead(peer)) this.system(`${peer.name} died. Their pack lies where they fell.`);
       if (wasDead !== peerDead(peer)) this.checkSleep();
     }
+    const requests = Array.isArray(m.r) ? m.r : [];
+    // Stone piles that had already given up their scorpion before this batch (the batch's own delta flags the pile).
+    const spent = new Set(requests.filter((r) => r.k === 'scorpion' && this.sim.state.resources[r.i]?.scorpion).map((r) => (r as { i: number }).i));
     if (Array.isArray(m.d)) {
       const from = peer ? { x: peer.x, z: peer.z } : { x: 0, z: 0 };
       for (const d of m.d) {
@@ -135,7 +138,7 @@ export class HostSession extends Session {
       }
     }
     if (Number.isInteger(m.q)) link.q = Math.max(link.q, m.q!);
-    for (const r of Array.isArray(m.r) ? m.r : []) {
+    for (const r of requests) {
       if (r.k === 'hit' && Number.isFinite(r.dmg) && Number.isFinite(r.id)) {
         const tool = Number.isInteger(r.t) ? (TOOL_ORDER[r.t!] ?? null) : null;
         this.sim.applyRemoteHit(link.pid, r.id, Math.min(MAX_HIT, Math.max(0, r.dmg)), peer?.x ?? 0, peer?.z ?? 0, tool);
@@ -144,7 +147,11 @@ export class HostSession extends Session {
         this.checkSleep();
       } else if (r.k === 'wake') {
         this.sleeping.delete(link.pid);
-      } else if (r.k === 'scorpion' && peer && Number.isFinite(r.x) && Number.isFinite(r.z) && Math.hypot(r.x - peer.x, r.z - peer.z) < SCORPION_REACH) {
+      } else if (r.k === 'scorpion' && peer && Number.isInteger(r.i) && !spent.has(r.i) && Number.isFinite(r.x) && Number.isFinite(r.z) && Math.hypot(r.x - peer.x, r.z - peer.z) < SCORPION_REACH) {
+        const g = this.sim.gen.resources[r.i];
+        if (g?.kind !== 'stonePile') continue;
+        spent.add(r.i);
+        this.sim.state.resources[r.i].scorpion = true;
         this.sim.revealScorpion(r.x, r.z);
       }
     }

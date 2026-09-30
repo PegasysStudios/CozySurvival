@@ -384,6 +384,13 @@ export function toolGeometry(tool: ToolId): THREE.BufferGeometry {
       b.add(new CylinderGeometry(0.02, 0.024, 0.5, 6), { matrix: tf(0, 0.2, -0.02), color: '#7a5534' });
       b.add(new CylinderGeometry(0.045, 0.035, 0.14, 7), { matrix: tf(0, 0.46, -0.02), color: (_x, y) => (y > 0.5 ? col('#2a221c') : col('#e6ddcc')) });
       break;
+    case 'knife':
+      // A short leather-wrapped grip in the fist and a knapped stone blade angled forward.
+      sleeveAndHand(b);
+      b.add(new CylinderGeometry(0.02, 0.023, 0.16, 6), { matrix: tf(0, 0.06, -0.03, -0.35, 0, 0), color: (_x, y) => (Math.floor(y * 60) % 2 ? col('#6e4428') : col('#8a5a36')) });
+      b.add(new CylinderGeometry(0.026, 0.026, 0.035, 6), { matrix: tf(0, 0.145, -0.06, -0.35, 0, 0), color: '#d8c08a' });
+      b.add(new OctahedronGeometry(0.05, 0), { matrix: tf(0, 0.26, -0.1, -0.35, 0, 0, 0.5, 2.3, 0.2), color: '#a9aeb2', vary: 0.1 });
+      break;
   }
   return b.build();
 }
