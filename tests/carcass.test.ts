@@ -16,8 +16,8 @@ import { skinChance as knifeSkinChance } from '../src/sim/upgrades';
 import { drain, keepAlive, quietSim } from './helpers';
 
 const K = BALANCE.skills;
-const HIDE_SPECIES: SpeciesId[] = ['rabbit', 'deer', 'jackrabbit', 'javelina', 'wolf', 'bear', 'cougar'];
-const HIDELESS: SpeciesId[] = ['quail', 'roadrunner', 'lizard', 'snake'];
+const HIDE_SPECIES: SpeciesId[] = ['rabbit', 'deer', 'jackrabbit', 'javelina', 'wolf', 'bear', 'cougar', 'boar', 'goat'];
+const HIDELESS: SpeciesId[] = ['quail', 'roadrunner', 'lizard', 'snake', 'junglefowl', 'crab', 'viper'];
 /** XP at the start of each level, 1..10. */
 const LEVEL_XP = [0, ...K.thresholds];
 
@@ -157,8 +157,9 @@ describe('skin, then butcher, then gone (round 10)', () => {
 });
 
 describe('animals without a hide (round 10)', () => {
-  it('only birds, lizards and snakes (with meat) have no hide', () => {
-    const withMeat = (Object.keys(SPECIES) as SpeciesId[]).filter((s) => SPECIES[s].drops.length > 0 && s !== 'fish');
+  it('only birds, lizards, snakes and crabs (with meat) have no hide', () => {
+    // Fish and the other swimmers never leave a carcass: they go straight into the pack.
+    const withMeat = (Object.keys(SPECIES) as SpeciesId[]).filter((s) => SPECIES[s].drops.length > 0 && SPECIES[s].habitat === 'land');
     expect(withMeat.filter((s) => !hasHide(s)).sort()).toEqual([...HIDELESS].sort());
     expect(withMeat.filter(hasHide).sort()).toEqual([...HIDE_SPECIES].sort());
   });

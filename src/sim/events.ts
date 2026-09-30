@@ -52,8 +52,12 @@ export type SimEvent =
   | { type: 'animalFlee'; id: number; species: SpeciesId }
   | { type: 'predatorAlert'; id: number; species: SpeciesId; x: number; z: number }
   | { type: 'predatorAttack'; id: number; species: SpeciesId }
-  /** A rattlesnake coiled and rattled at the player. */
-  | { type: 'rattle'; id: number; x: number; z: number }
+  /** A rattlesnake coiled and rattled at the player (a fer-de-lance hisses instead). */
+  | { type: 'rattle'; id: number; x: number; z: number; species?: SpeciesId }
+  /** An arrow knocked a coconut out of palm `tree`'s crown at (x, y, z); it lands at (gx, gz). */
+  | { type: 'coconutDown'; tree: number; x: number; y: number; z: number; gx: number; gz: number }
+  /** The current past the reef is pushing the player back toward the island. */
+  | { type: 'current'; strength: number }
   /** The stone this player just gathered had a scorpion under it. */
   | { type: 'scorpion'; x: number; z: number }
   /** A skinning cut: `hides` taken whole (0 when the hide tore). The carcass now shows skinned either way. */

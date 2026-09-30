@@ -44,10 +44,30 @@ const DESERT_KEYS: Key[] = KEYS.map((k) => {
   return { ...k, ...day[k.h] };
 });
 
+/**
+ * Clear tropical air: a deep saturated blue overhead (Jon's lagoon photo), a pale sea-haze horizon, strong sun with
+ * turquoise bounce light off the lagoon, and a gold-and-rose sunset like the crater-bay photo.
+ */
+const ISLAND_KEYS: Key[] = KEYS.map((k) => {
+  const day: Partial<Record<number, Partial<Key>>> = {
+    6.4: { top: '#4a78b8', horizon: '#f5b48a', sun: '#ffc08a', hemiGround: '#4a5a48', fog: '#e3bfa2' },
+    8: { top: '#2f7fde', horizon: '#cde8f2', sunI: 2.5, hemiSky: '#bfe3f4', hemiGround: '#5f7058', fog: '#c6e2ec' },
+    12: { top: '#1f6fd8', horizon: '#c9e7f3', sun: '#fffaf0', sunI: 2.9, hemiSky: '#c4e6f6', hemiGround: '#66785a', fog: '#c4e2ee' },
+    16: { top: '#2a78d8', horizon: '#d6e9ee', sunI: 2.65, hemiSky: '#c8e2f0', hemiGround: '#687458', fog: '#cfe4ea' },
+    18.4: { top: '#4a70b4', horizon: '#ffc07a', sun: '#ffb468', hemiSky: '#e0c4b0', hemiGround: '#55503c', fog: '#f0c49a' },
+    19.7: { top: '#35437a', horizon: '#ec8a70', sun: '#ff8e62', fog: '#b07480' },
+  };
+  return { ...k, ...day[k.h] };
+});
+
 type ColorKey = 'top' | 'horizon' | 'sun' | 'hemiSky' | 'hemiGround' | 'fog';
 const COLOR_KEYS: ColorKey[] = ['top', 'horizon', 'sun', 'hemiSky', 'hemiGround', 'fog'];
 const parse = (keys: Key[]) => keys.map((k) => Object.fromEntries(COLOR_KEYS.map((c) => [c, new THREE.Color(k[c])])) as Record<ColorKey, THREE.Color>);
-const PALETTES = { pnw: { keys: KEYS, parsed: parse(KEYS) }, desert: { keys: DESERT_KEYS, parsed: parse(DESERT_KEYS) } };
+const PALETTES: Record<BiomeId, { keys: Key[]; parsed: Record<ColorKey, THREE.Color>[] }> = {
+  pnw: { keys: KEYS, parsed: parse(KEYS) },
+  desert: { keys: DESERT_KEYS, parsed: parse(DESERT_KEYS) },
+  island: { keys: ISLAND_KEYS, parsed: parse(ISLAND_KEYS) },
+};
 
 export class DayNight {
   readonly top = new THREE.Color();

@@ -4,7 +4,8 @@ import type { ResourceKind, TreeSpecies } from './resources';
 
 export type ForageId =
   | 'berryBush' | 'fern' | 'mushroom' | 'onion' | 'birch'
-  | 'pricklyPear' | 'cholla' | 'yucca' | 'agave' | 'chia' | 'wolfberry' | 'mesquite' | 'pinyon' | 'juniper';
+  | 'pricklyPear' | 'cholla' | 'yucca' | 'agave' | 'chia' | 'wolfberry' | 'mesquite' | 'pinyon' | 'juniper'
+  | 'coconut' | 'seaGrape' | 'pandanus' | 'taro' | 'banana' | 'purslane' | 'breadfruit' | 'hau';
 
 export interface ForageEntry {
   id: ForageId;
@@ -106,6 +107,54 @@ export const FORAGE_GUIDE: ForageEntry[] = [
     habitat: 'The lower edge of the high country, on dry rocky ground.',
     notes: 'Shredded juniper bark was tinder, bedding and diaper padding for desert peoples. Each tree gives two handfuls, then regrows in about a day.',
   },
+  {
+    id: 'coconut', biome: 'island', name: 'Coconut Palm', latin: 'Cocos nucifera', item: 'coconut',
+    use: 'A drink and a meal in one: the water eases thirst, the white meat takes the edge off hunger. Cook it with fish or bananas for a real meal.',
+    habitat: 'Beaches and the palm-fringed islet in the lagoon.',
+    notes: "The \"tree of life\" of the Pacific: on some atolls people lived on five or six nuts a day. The nuts hang far out of reach, so shoot them down with a bow; now and then one lies fallen under its palm. A palm ripens new nuts about a day and a quarter after it is picked clean.",
+  },
+  {
+    id: 'seaGrape', biome: 'island', name: 'Sea Grape', latin: 'Coccoloba uvifera', item: 'seaGrapes',
+    use: 'Tart purple grapes that ease hunger and thirst. Roast them on a skewer, steep them into tea, or glaze a fish.',
+    habitat: 'The sandy strand just above the beach.',
+    notes: 'A salt-tolerant shrub that holds the dunes together. The fruit is mostly pit, and people have long made jelly and wine from it. Bushes fruit again about a day after picking.',
+  },
+  {
+    id: 'pandanus', biome: 'island', name: 'Pandanus', latin: 'Pandanus tectorius', item: 'fiber',
+    use: 'Not food here. Its long strap leaves strip into fiber, and four fiber twist into cordage for tools, packs and shelters.',
+    habitat: 'Beaches, the littoral forest and grassy slopes, standing on its stilt roots.',
+    notes: 'Pacific islanders wove mats, sails, baskets and thatch from pandanus leaves. Stripped plants grow new leaves within a day.',
+  },
+  {
+    id: 'taro', biome: 'island', name: 'Wild Taro', latin: 'Colocasia esculenta', item: 'taro',
+    use: 'A starchy root full of stinging crystals raw: eating it hurts. Cooked into poi, laulau or island stew it is one of the best foods on the island.',
+    habitat: 'Wet ground by the streams and pools.',
+    notes: 'Taro was the staple of Hawaii and much of Polynesia, grown in flooded terraces. The crystals break down with heat. Pulled plants come back about a day later.',
+  },
+  {
+    id: 'banana', biome: 'island', name: 'Wild Banana', latin: 'Musa spp.', item: 'banana',
+    use: 'Sweet, quick energy and a little food. Bake them with coconut for a proper meal.',
+    habitat: 'Damp clearings in the jungle and along the streams.',
+    notes: 'Bananas travelled across the Pacific in voyaging canoes and now grow wild on many islands. A cut bunch takes about a day and a half to grow back.',
+  },
+  {
+    id: 'purslane', biome: 'island', name: 'Beach Purslane', latin: 'Portulaca lutea', item: 'purslane',
+    use: 'A small bite of salty, juicy leaves: a little food and a little water. It rounds out a beach skewer.',
+    habitat: 'Sand, rocks and open grassland in full sun.',
+    notes: "One of the Pacific's emergency foods, eaten raw or cooked. Picked patches regrow in about a day.",
+  },
+  {
+    id: 'breadfruit', biome: 'island', name: 'Breadfruit', latin: 'Artocarpus altilis', item: 'breadfruit',
+    use: 'Pick the big fruit by hand. Hard and bland raw, it roasts into one of the most filling foods on the island and thickens island stew.',
+    habitat: 'Scattered through the jungle and the lowland forest.',
+    notes: "A staple across Polynesia and the reason for the voyage of HMS Bounty. Each tree carries two ripe fruit at a time and ripens more in about a day and a half.",
+  },
+  {
+    id: 'hau', biome: 'island', name: 'Hau (Beach Hibiscus)', latin: 'Hibiscus tiliaceus', item: 'bark',
+    use: 'Not food. Peel the tough inner bark by hand for canteens, torches and bark shelters.',
+    habitat: 'Along the shore behind the beach, and by the streams.',
+    notes: 'Polynesians twisted hau bark into rope and beat it into cloth. Its yellow flowers turn red and drop within a day. Each tree gives two strips, then regrows in about a day.',
+  },
 ];
 
 export const FORAGE_BY_ID: Record<ForageId, ForageEntry> = Object.fromEntries(FORAGE_GUIDE.map((f) => [f.id, f])) as Record<ForageId, ForageEntry>;
@@ -118,6 +167,7 @@ export function forageGuideFor(biome: BiomeId): ForageEntry[] {
 const RESOURCE_FORAGE: Partial<Record<ResourceKind, ForageId>> = {
   berryBush: 'berryBush', fern: 'fern', mushroom: 'mushroom', onion: 'onion',
   pricklyPear: 'pricklyPear', cholla: 'cholla', yucca: 'yucca', agave: 'agave', chia: 'chia', wolfberry: 'wolfberry',
+  seaGrape: 'seaGrape', pandanus: 'pandanus', taro: 'taro', banana: 'banana', purslane: 'purslane', coconut: 'coconut',
 };
 
 /** The guide entry a forage patch belongs to (sticks and stones aren't plants). */
@@ -125,7 +175,9 @@ export function forageForResource(kind: ResourceKind): ForageId | null {
   return RESOURCE_FORAGE[kind] ?? null;
 }
 
-const TREE_FORAGE: Partial<Record<TreeSpecies, ForageId>> = { birch: 'birch', mesquite: 'mesquite', pinyon: 'pinyon', juniper: 'juniper', cottonwood: 'juniper' };
+const TREE_FORAGE: Partial<Record<TreeSpecies, ForageId>> = {
+  birch: 'birch', mesquite: 'mesquite', pinyon: 'pinyon', juniper: 'juniper', cottonwood: 'juniper', breadfruit: 'breadfruit', hau: 'hau', palm: 'coconut',
+};
 
 /** The guide entry a hand-harvestable tree unlocks. */
 export function forageForTree(species: TreeSpecies): ForageId | null {

@@ -11,7 +11,7 @@ export interface TitleMap {
   tagline: string;
   index: number;
   count: number;
-  /** "forest" or "desert", as in "Day 1 in this same forest". */
+  /** "forest", "desert" or "island", as in "Day 1 in this same forest". */
   place: string;
 }
 
@@ -56,6 +56,10 @@ const CAUSES: Record<string, string> = {
   spines: 'One cactus too many. The spines won.',
   scorpion: 'A scorpion sting was the last straw.',
   javelina: 'A javelina herd ran you down.',
+  boar: 'A wild boar charged out of the jungle.',
+  viper: "A fer-de-lance's venom did its work.",
+  jellyfish: 'Box jellyfish stings in the shallows were too much.',
+  shark: 'A tiger shark found you past the reef.',
   dev: 'Struck down by the developer.',
   unknown: 'The forest was too much this time.',
 };

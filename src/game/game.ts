@@ -5,7 +5,7 @@ import { ITEMS, TOOLS, getDisplayBiome, itemName, setDisplayBiome, type ItemId }
 import { OBJECTIVES, objectiveText } from '../data/objectives';
 import { PLACE_ROTATE_BIG_STEP, PLACE_ROTATE_STEP, PREFABS } from '../data/prefabs';
 import { RECIPE_BY_ID } from '../data/recipes';
-import type { SpeciesId } from '../data/species';
+import { SPECIES, type SpeciesId } from '../data/species';
 import { AudioSystem, type Sfx } from '../audio/audio';
 import { volumePercent } from '../audio/mix';
 import { randomSeed } from '../core/rng';
@@ -60,16 +60,28 @@ const COPY: Record<BiomeId, { start: string; dawn: string; dawnLater: string; ni
     dawnLater: 'Dawn light on the mesas. A black bear roams the juniper high country now.',
     nightfall: 'The desert sheds its heat fast after dark. Stay by your fire; a mountain lion hunts at dusk and a torch keeps it at bay.',
   },
+  island: {
+    start: 'Washed up on the sand. The sea is salt: follow the stream inland to drink, then gather sticks, stones and pandanus.',
+    dawn: 'Sunrise over the reef. The heat builds fast here, so drink often.',
+    dawnLater: 'Morning light on the lagoon. More tiger sharks cruise past the reef now; the lagoon is still safe.',
+    nightfall: 'A warm night falls over the island. Keep your fire going and stay out of the deep water past the reef.',
+  },
 };
 
 const FUR: Partial<Record<SpeciesId, string>> = {
   bear: '#2a2420', wolf: '#8e8a83', fish: '#cfe6f2', cougar: '#b48d5f', javelina: '#4a4039', jackrabbit: '#a58d6c',
   quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360', scorpion: '#c9a45c',
+  boar: '#3a302a', goat: '#e6e0d4', junglefowl: '#a84a2a', crab: '#c8402a', viper: '#7a6a44',
 };
 
 const SKINNED_RED = '#b8463c';
 const MAP_FADE_MS = 900;
 const JAVELINA_TIP = 'Javelinas guard their patch and charge anyone who comes in. Sprint away, or fight back with a weapon.';
+const BOAR_TIP = 'Wild boars guard their patch of jungle and charge hard. Sprint away (they can\'t catch a sprint), or fight back with a spear.';
+const SHARK_TIP = 'A tiger shark! Swim back over the reef into the lagoon: the water inside is too shallow for it.';
+const JELLY_TIP = 'Box jellyfish sting! They drift in the shallows off the beaches. Watch the water, or wade in somewhere else.';
+const VIPER_TIP = 'A fer-de-lance! Its venom keeps hurting for a while. Back away from coiled snakes in the leaf litter.';
+const HURT_TIPS: Partial<Record<string, [string, string]>> = { javelina: ['javelina', JAVELINA_TIP], boar: ['boar', BOAR_TIP], shark: ['shark', SHARK_TIP], jellyfish: ['jelly', JELLY_TIP], viper: ['viper', VIPER_TIP] };
 
 /** Wires the simulation to rendering, audio, UI, input and persistence. */
 export class Game {
@@ -677,7 +689,8 @@ export class Game {
     for (const f of fires) fireDist = Math.min(fireDist, Math.hypot(f.x - p.x, f.z - p.z));
     if (sim.state.activeTool === 'torch') fireDist = Math.min(fireDist, 7);
     let waterDist = 99;
-    for (const l of sim.terrain.lakes) waterDist = Math.min(waterDist, Math.max(0, Math.hypot(l.x - p.x, l.z - p.z) - l.r));
+    if (sim.terrain.island) waterDist = this.islandWaterDist(dt);
+    else for (const l of sim.terrain.lakes) waterDist = Math.min(waterDist, Math.max(0, Math.hypot(l.x - p.x, l.z - p.z) - l.r));
     const sheltered = !!sim.nearestStructure((id) => !!PREFABS[id].shelter, BALANCE.needs.shelterWarmRadius);
     this.audio.update(dt, {
       hour: sim.hour,
@@ -687,6 +700,31 @@ export class Game {
       indoors: sheltered,
       paused: this.mode === 'paused' || this.mode === 'title' || this.mode === 'dead',
     });
+  }
+
+  private waterProbeT = 0;
+  private waterProbe = 99;
+
+  /** On the island the water ambience follows the nearest water of any kind: probe outward a few times a second. */
+  private islandWaterDist(dt: number): number {
+    this.waterProbeT -= dt;
+    if (this.waterProbeT > 0) return this.waterProbe;
+    this.waterProbeT = 0.25;
+    const t = this.sim.terrain;
+    const p = this.sim.state.player;
+    let best = t.heightAt(p.x, p.z) < 0 ? 0 : 99;
+    for (const r of [2, 4, 7, 11, 16, 23, 32, 44]) {
+      if (r >= best) break;
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        if (t.heightAt(p.x + Math.cos(a) * r, p.z + Math.sin(a) * r) < 0) {
+          best = r;
+          break;
+        }
+      }
+    }
+    this.waterProbe = best;
+    return best;
   }
 
   // ------------------------------------------------------------------ events
@@ -900,7 +938,8 @@ export class Game {
         const right = Math.cos(this.yaw) * dx - Math.sin(this.yaw) * dz;
         this.hud.flashHurt(e.amount, e.source === 'dev' ? null : Math.atan2(right, fwd));
         // Guests never see the host's predatorAlert, so the first charge that lands teaches them too.
-        if (e.source === 'javelina') this.throttledToast('javelina', JAVELINA_TIP, 'warn', 25);
+        const tip = HURT_TIPS[e.source];
+        if (tip) this.throttledToast(tip[0], tip[1], 'warn', 25);
         break;
       }
       case 'death':
@@ -911,7 +950,7 @@ export class Game {
           this.lastDay = e.day;
           if (this.mode !== 'sleeping') {
             const copy = COPY[sim.biome];
-            this.hud.showBanner(`Day ${e.day}`, e.day >= (sim.biome === 'desert' ? 3 : 2) ? copy.dawnLater : copy.dawn);
+            this.hud.showBanner(`Day ${e.day}`, e.day >= (sim.biome === 'pnw' ? 2 : 3) ? copy.dawnLater : copy.dawn);
             this.sfx('dawn');
           }
         }
@@ -935,10 +974,12 @@ export class Game {
       case 'animalHit': {
         this.sfx('hit');
         const col = FUR[e.species] ?? '#8a6d52';
-        if (e.species === 'fish') fx.splash(e.x, 0, e.z, 16);
+        const swims = SPECIES[e.species].habitat === 'water';
+        if (swims) fx.splash(e.x, 0, e.z, 16);
         else fx.fur(e.x, e.y, e.z, col, e.killed ? 18 : 8);
         if (e.killed && e.species === 'scorpion') this.hud.toast('You squashed the scorpion.', 'good');
-        else if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
+        else if (e.killed && e.species === 'jellyfish') this.hud.toast('The jellyfish goes limp and drifts off.', 'good');
+        else if (e.killed && !swims) this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
         break;
       }
       case 'scorpion':
@@ -950,10 +991,20 @@ export class Game {
         break;
       case 'rattle': {
         const k = clamp(1 - Math.hypot(e.x - p.x, e.z - p.z) / 20, 0.3, 1);
-        this.sfx('rattle', k);
-        this.throttledToast('rattle', 'A rattlesnake is coiled and buzzing. Back away slowly; it strikes if you step closer.', 'warn', 20);
+        if (e.species === 'viper') {
+          this.sfx('rattle', k * 0.3);
+          this.throttledToast('viper-coil', 'A fer-de-lance is coiled in the leaf litter. Back away slowly; its bite is venomous.', 'warn', 20);
+        } else {
+          this.sfx('rattle', k);
+          this.throttledToast('rattle', 'A rattlesnake is coiled and buzzing. Back away slowly; it strikes if you step closer.', 'warn', 20);
+        }
         break;
       }
+      case 'coconutDown':
+        fx.leaves(e.x, e.y - 1, e.z, '#5f9a3a', 10, 1.5);
+        fx.dust(e.gx, sim.terrain.heightAt(e.gx, e.gz), e.gz, 8, 0.6, '#e6d8b0');
+        this.sfx('land', 0.6);
+        break;
       case 'predatorAlert': {
         const d = Math.hypot(e.x - p.x, e.z - p.z);
         const k = clamp(1 - d / 40, 0.2, 1);
@@ -966,6 +1017,11 @@ export class Game {
         } else if (e.species === 'javelina') {
           this.sfx('growl', k * 0.5);
           this.throttledToast('javelina', JAVELINA_TIP, 'warn', 25);
+        } else if (e.species === 'boar') {
+          this.sfx('growl', k * 0.6);
+          this.throttledToast('boar', BOAR_TIP, 'warn', 25);
+        } else if (e.species === 'shark') {
+          this.throttledToast('shark', SHARK_TIP, 'warn', 20);
         } else {
           this.sfx('growl', k);
           this.throttledToast('bear', 'A black bear rears up! Back away slowly or keep a fire between you.', 'warn', 25);
@@ -973,7 +1029,8 @@ export class Game {
         break;
       }
       case 'predatorAttack':
-        if (e.species !== 'scorpion') this.sfx('growl', 0.6);
+        if (e.species === 'shark') this.sfx('splash', 1);
+        else if (e.species !== 'scorpion' && e.species !== 'jellyfish') this.sfx('growl', 0.6);
         break;
       case 'arrowFired':
         this.sfx('arrow', e.power);

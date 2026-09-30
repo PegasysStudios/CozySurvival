@@ -3,7 +3,7 @@ import { damp } from '../core/math';
 import { BALANCE } from '../data/balance';
 import { topHeight, type Collider } from './colliders';
 import type { PlayerState } from './state';
-import { PLAY_HALF, WATER_LEVEL, type Terrain } from './terrain';
+import { WATER_LEVEL, type Terrain } from './terrain';
 
 const P = BALANCE.player;
 export const JUMP_VELOCITY = Math.sqrt(2 * P.gravity * P.jumpHeight);
@@ -111,7 +111,7 @@ function slipOffFlank(env: MoveEnv, p: PlayerState): void {
 }
 
 function blocked(env: MoveEnv, p: PlayerState, hFrom: number, fx: number, fz: number, tx: number, tz: number): boolean {
-  if (Math.abs(tx) > PLAY_HALF || Math.abs(tz) > PLAY_HALF) return true;
+  if (!env.terrain.inPlayBounds(tx, tz)) return true;
   const hTo = surfaceAt(env, tx, tz);
   const rise = hTo - hFrom;
   if (rise <= 0) return false;

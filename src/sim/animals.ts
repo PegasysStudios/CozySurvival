@@ -3,11 +3,11 @@ import { damp, headingTo, turnToward } from '../core/math';
 import type { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { biomeDef } from '../data/biomes';
-import { SPECIES, type PestSpecies, type PredatorSpecies, type PreySpecies, type SpeciesId, type Territory } from '../data/species';
+import { SPECIES, type PestSpecies, type PredatorSpecies, type PreySpecies, type SpeciesId, type Territory, type WaterZone } from '../data/species';
 import type { Collider } from './colliders';
 import type { SimEvent } from './events';
 import type { AnimalMode, AnimalState, DamageSource } from './state';
-import { PLAY_HALF, WATER_LEVEL, type Terrain } from './terrain';
+import { WATER_LEVEL, type Terrain } from './terrain';
 
 export interface AnimalEnv {
   terrain: Terrain;
@@ -26,6 +26,12 @@ export interface AnimalEnv {
   readonly animals: readonly AnimalState[];
   events: SimEvent[];
   hurtPlayer(amount: number, source: DamageSource, fromX: number, fromZ: number): void;
+  /** The player is wading or swimming (box jellyfish only sting in the water). */
+  playerInWater?: boolean;
+  /** The player is out in the deep water past the reef, where the sharks are. */
+  playerDeep?: boolean;
+  /** A venomous bite: `perSecond` health for `seconds` more, up to `maxSeconds` in all. */
+  poison?(perSecond: number, seconds: number, maxSeconds: number, source: DamageSource, fromX: number, fromZ: number): void;
 }
 
 /** Predators never walk closer than this to a lit fire. */
@@ -34,10 +40,33 @@ export const STALK_KEEP_DIST = 7.5;
 export const FAR_LOD_DIST = 110;
 
 export function isHabitable(t: Terrain, species: SpeciesId, x: number, z: number): boolean {
-  if (Math.abs(x) > PLAY_HALF - 4 || Math.abs(z) > PLAY_HALF - 4) return false;
-  if (SPECIES[species].habitat === 'water') return t.waterDepth(x, z) > 0.6;
+  if (!t.inPlayBounds(x, z, 4)) return false;
+  const def = SPECIES[species];
+  if (def.habitat === 'water') {
+    const depth = t.waterDepth(x, z);
+    if (depth <= 0.6) return false;
+    return !t.island || inWaterZone(t, def.waters, x, z, depth);
+  }
   if (t.heightAt(x, z) < WATER_LEVEL + 0.15) return false;
   return t.slopeAt(x, z) < 0.9;
+}
+
+/** Island water: fish keep to fresh water or the lagoon, jellyfish to the sunny shallows, sharks past the reef. */
+function inWaterZone(t: Terrain, zone: WaterZone | undefined, x: number, z: number, depth: number): boolean {
+  const isl = t.island!;
+  const sea = isl.waterAt(x, z).kind === 'sea';
+  switch (zone) {
+    case 'fresh':
+      return !sea;
+    case 'lagoon':
+      return sea && isl.pastReef(x, z) < -3;
+    case 'shallows':
+      return sea && depth < 2.4 && isl.pastReef(x, z) < -6 && isl.land(x, z) > -28;
+    case 'deep':
+      return sea && depth > 3 && isl.pastReef(x, z) > 4;
+    default:
+      return true;
+  }
 }
 
 export function createAnimal(id: number, species: SpeciesId, x: number, z: number, rng: Rng, t: Terrain): AnimalState {
@@ -169,6 +198,7 @@ function updateCoiled(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: numb
   if (d < strike.radius && a.cooldown <= 0) {
     a.cooldown = strike.cooldown;
     env.hurtPlayer(strike.damage, a.species as DamageSource, a.x, a.z);
+    if (strike.venom) env.poison?.(strike.venom.perSecond, strike.venom.seconds, strike.venom.maxSeconds, a.species as DamageSource, a.x, a.z);
     env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
   } else if (d > def.alertRadius * 1.3) {
     setMode(a, 'idle', env.rng.range(2, 4));
@@ -206,7 +236,23 @@ function flee(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: n
   }
 }
 
+/** A box jellyfish drifts slowly about its patch of shallows and stings anyone in the water who touches it. */
+function updateDrifter(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
+  const drift = def.drift!;
+  if (a.mode !== 'idle' && a.mode !== 'wander') setMode(a, 'idle', env.rng.range(1, 3));
+  roam(a, def, env, dt);
+  if (!env.playerDead && env.playerInWater && d < drift.radius && a.cooldown <= 0) {
+    a.cooldown = drift.cooldown;
+    env.hurtPlayer(drift.damage, a.species as DamageSource, a.x, a.z);
+    env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+  }
+}
+
 function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
+  if (def.drift) {
+    updateDrifter(a, def, env, dt, d);
+    return;
+  }
   if (def.territory) {
     updateTerritorial(a, def, def.territory, env, dt, d);
     return;
@@ -226,7 +272,7 @@ function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number
       if (d < alert) {
         setMode(a, 'alert', env.rng.range(def.alertTime[0], def.alertTime[1]));
         a.alertDist = d;
-        if (def.strike) env.events.push({ type: 'rattle', id: a.id, x: a.x, z: a.z });
+        if (def.strike) env.events.push({ type: 'rattle', id: a.id, x: a.x, z: a.z, species: a.species });
         break;
       }
       roam(a, def, env, dt);
@@ -559,6 +605,83 @@ function updatePest(a: AnimalState, def: PestSpecies, env: AnimalEnv, dt: number
   }
 }
 
+/** How far a tiger shark notices someone splashing about in the deep water, and how fast it closes that distance. */
+export const SHARK_HEARING = 220;
+const SHARK_CRUISE = 0.65;
+
+/**
+ * A tiger shark cruises the deep water past the reef. Anyone swimming out there draws it in from far off (`stalk`,
+ * circling closer), it rushes in (`chase`), bites (`attack`) and peels away (`reposition`) before coming round again.
+ * It can't follow anyone back over the reef, where the water is too shallow for it, and gives up once they're inside.
+ */
+function updateShark(a: AnimalState, def: PredatorSpecies, env: AnimalEnv, dt: number, d: number): void {
+  const prey = !env.playerDead && !!env.playerDeep;
+  const toPlayer = headingTo(a.x, a.z, env.playerX, env.playerZ);
+  const detect = def.detectRadius * (env.night ? def.nightDetectMul : 1);
+  switch (a.mode) {
+    case 'idle':
+    case 'wander': {
+      if (prey && a.aggroCooldown <= 0 && d < detect) {
+        setMode(a, 'stalk', 25);
+        env.events.push({ type: 'predatorAlert', id: a.id, species: a.species, x: a.x, z: a.z });
+        break;
+      }
+      if (prey && d < SHARK_HEARING) {
+        steer(a, env, toPlayer, def.runSpeed * SHARK_CRUISE, dt);
+        break;
+      }
+      if (a.mode === 'idle') {
+        steer(a, env, a.heading, def.walkSpeed * 0.5, dt);
+        if (a.timer <= 0) {
+          pickTarget(a, env, a.homeX, a.homeZ, def.wanderRadius);
+          setMode(a, 'wander', env.rng.range(10, 20));
+        }
+      } else {
+        steer(a, env, headingTo(a.x, a.z, a.tx, a.tz), def.walkSpeed, dt);
+        if (Math.hypot(a.tx - a.x, a.tz - a.z) < 2 || a.timer <= 0) setMode(a, 'idle', env.rng.range(2, 5));
+      }
+      break;
+    }
+    case 'stalk': {
+      if (!prey || a.timer <= 0) {
+        setMode(a, 'wander', 5);
+        break;
+      }
+      // Circle in: aim a little to the side of the swimmer so the approach curves.
+      steer(a, env, toPlayer + (d > 8 ? 0.5 : 0.15), def.walkSpeed * 1.8, dt);
+      if (d < def.chargeRadius) {
+        setMode(a, 'chase', 0);
+        env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+      }
+      break;
+    }
+    case 'chase': {
+      if (!prey || a.modeTime > 12) {
+        setMode(a, 'wander', 5);
+        break;
+      }
+      steer(a, env, toPlayer, def.runSpeed, dt);
+      if (d <= def.attackRange && a.cooldown <= 0) {
+        a.cooldown = def.attackCooldown;
+        env.hurtPlayer(def.attackDamage, a.species as DamageSource, a.x, a.z);
+        env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+        setMode(a, 'reposition', 2.4);
+      }
+      break;
+    }
+    case 'reposition':
+      steer(a, env, toPlayer + Math.PI * 0.8, def.runSpeed * 0.8, dt);
+      if (a.timer <= 0) setMode(a, prey ? 'stalk' : 'wander', 15);
+      break;
+    case 'retreat':
+      steer(a, env, headingTo(a.x, a.z, a.homeX, a.homeZ), def.runSpeed * 0.8, dt);
+      if (a.timer <= 0 || Math.hypot(a.homeX - a.x, a.homeZ - a.z) < 6) setMode(a, 'wander', 5);
+      break;
+    default:
+      setMode(a, 'idle', 1);
+  }
+}
+
 const PREDATOR_ACTIVE: readonly AnimalMode[] = ['stalk', 'chase', 'attack', 'warn', 'reposition'];
 
 /** Hunting, charging or stinging someone right now: nobody can sleep with one of these close by. */
@@ -590,6 +713,7 @@ export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
   a.hurt = Math.max(0, a.hurt - dt);
   if (def.kind === 'prey') updatePrey(a, def, env, dt, d);
   else if (def.kind === 'pest') updatePest(a, def, env, dt, d);
+  else if (def.habitat === 'water') updateShark(a, def, env, dt, d);
   else updatePredator(a, def, env, dt, d);
 }
 
@@ -630,7 +754,61 @@ export interface AvoidPoint {
   minDist: number;
 }
 
+/** Where each island animal lives, as a test on a candidate land point. */
+const ISLAND_HABITAT: Partial<Record<SpeciesId, (t: Terrain, x: number, z: number) => boolean>> = {
+  crab: (t, x, z) => t.island!.land(x, z) < 26 && t.heightAt(x, z) < 3,
+  junglefowl: (t, x, z) => t.island!.jungle(x, z) > 0.25 && t.island!.land(x, z) > 20,
+  goat: (t, x, z) => t.island!.plains(x, z) > 0.5,
+  boar: (t, x, z) => t.island!.jungle(x, z) > 0.5,
+  viper: (t, x, z) => t.island!.jungle(x, z) > 0.6,
+};
+
+/**
+ * An island spawn point. Water animals are placed by zone: out from the coast into the lagoon or its shallows, past
+ * the reef for sharks, or along the streams and pools for gobies. Land animals keep to their habitat.
+ */
+function findIslandSpawn(t: Terrain, rng: Rng, species: SpeciesId, avoid: readonly AvoidPoint[], tries: number): { x: number; z: number } | null {
+  const isl = t.island!;
+  const def = SPECIES[species];
+  const habitat = ISLAND_HABITAT[species];
+  for (let i = 0; i < tries; i++) {
+    let x: number;
+    let z: number;
+    const a = rng.range(0, Math.PI * 2);
+    if (def.habitat === 'water' && def.waters === 'fresh') {
+      if (rng.chance(0.5) && isl.streams.length) {
+        const st = rng.pick(isl.streams);
+        const k = rng.int(0, st.pts.length / 2 - 1) * 2;
+        x = st.pts[k];
+        z = st.pts[k + 1];
+      } else {
+        const pool = rng.pick(isl.pools);
+        const r = rng.range(0, pool.r * 0.75);
+        x = pool.x + Math.cos(a) * r;
+        z = pool.z + Math.sin(a) * r;
+      }
+    } else if (def.habitat === 'water') {
+      const reef = isl.reefAt(a);
+      const out = def.waters === 'deep' ? reef + rng.range(8, 34) : def.waters === 'shallows' ? rng.range(3, Math.min(24, reef - 8)) : rng.range(4, reef - 6);
+      const r = isl.coastAt(a) + out;
+      x = Math.cos(a) * r;
+      z = Math.sin(a) * r;
+    } else {
+      const r = Math.sqrt(rng.next()) * isl.coastAt(a) * 0.97;
+      x = Math.cos(a) * r;
+      z = Math.sin(a) * r;
+      if (t.slopeAt(x, z) > 0.5) continue;
+      if (habitat && !habitat(t, x, z)) continue;
+    }
+    if (!isHabitable(t, species, x, z)) continue;
+    if (avoid.some((p) => Math.hypot(p.x - x, p.z - z) < p.minDist)) continue;
+    return { x, z };
+  }
+  return null;
+}
+
 export function findSpawnPoint(t: Terrain, rng: Rng, species: SpeciesId, avoid: readonly AvoidPoint[], tries = 60): { x: number; z: number } | null {
+  if (t.island) return findIslandSpawn(t, rng, species, avoid, tries);
   const water = SPECIES[species].habitat === 'water';
   if (water && t.fishLakes.length === 0) return null;
   const upland = biomeDef(t.biome).uplandOnly.includes(species);
@@ -644,8 +822,8 @@ export function findSpawnPoint(t: Terrain, rng: Rng, species: SpeciesId, avoid: 
       x = lake.x + Math.cos(ang) * r;
       z = lake.z + Math.sin(ang) * r;
     } else {
-      x = rng.range(-PLAY_HALF + 10, PLAY_HALF - 10);
-      z = rng.range(-PLAY_HALF + 10, PLAY_HALF - 10);
+      x = rng.range(-t.playHalf + 10, t.playHalf - 10);
+      z = rng.range(-t.playHalf + 10, t.playHalf - 10);
       if (t.slopeAt(x, z) > 0.5) continue;
       if (t.landforms.length > 0 && t.landformAt(x, z).rock > 0.3) continue;
       if (upland && t.upland(x, z) < 0.45) continue;

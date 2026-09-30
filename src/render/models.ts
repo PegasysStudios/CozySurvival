@@ -3,6 +3,7 @@ import { clamp } from '../core/math';
 import { hash2, Rng } from '../core/rng';
 import type { ResourceKind, TreeSpecies } from '../data/resources';
 import { desertResourceGeometry, desertTreeGeometry, isDesertTree } from './desertModels';
+import { islandResourceGeometry, islandTreeGeometry, isIslandTree } from './islandModels';
 import { between, col, GeoBuilder, mix, tf } from './geo';
 import { blades, coniferTiers, foliage, frond, roots } from './plantParts';
 
@@ -17,6 +18,7 @@ const STRIP_TOP = 3.6;
  */
 export function treeGeometry(species: TreeSpecies, lod = 0, stripped = false): THREE.BufferGeometry {
   if (isDesertTree(species)) return desertTreeGeometry(species, lod, stripped);
+  if (isIslandTree(species)) return islandTreeGeometry(species, lod, stripped);
   const b = new GeoBuilder(species.length * 31);
   const near = lod === 0;
   if (species === 'fir') {
@@ -86,10 +88,12 @@ export function treeGeometry(species: TreeSpecies, lod = 0, stripped = false): T
 const BARK: Record<TreeSpecies, string> = {
   fir: '#5a3a2a', cedar: '#7a4430', birch: '#e6e0d4', maple: '#584536',
   joshua: '#6f604c', mesquite: '#4a3a2e', cottonwood: '#8a8378', juniper: '#7a5e4a', pinyon: '#5e4636', ponderosa: '#a8603a',
+  palm: '#8f826c', breadfruit: '#6a6052', kukui: '#948e82', hau: '#7a7266', treeFern: '#4a3626',
 };
 const TRUNK_R: Record<TreeSpecies, number> = {
   fir: 0.4, cedar: 0.5, birch: 0.2, maple: 0.33,
   joshua: 0.24, mesquite: 0.18, cottonwood: 0.4, juniper: 0.28, pinyon: 0.28, ponderosa: 0.45,
+  palm: 0.24, breadfruit: 0.36, kukui: 0.42, hau: 0.26, treeFern: 0.18,
 };
 
 export function stumpGeometry(species: TreeSpecies): THREE.BufferGeometry {
@@ -281,6 +285,13 @@ export function resourceGeometry(kind: ResourceKind): ResourceModel {
       }
       return { main: b.build(true), doubleSided: true };
     }
+    case 'seaGrape':
+    case 'pandanus':
+    case 'taro':
+    case 'banana':
+    case 'purslane':
+    case 'coconut':
+      return islandResourceGeometry(kind);
     default:
       return desertResourceGeometry(kind);
   }

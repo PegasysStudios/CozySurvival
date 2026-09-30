@@ -10,7 +10,8 @@ import { createAnimal } from '../src/sim/animals';
 import type { Collider } from '../src/sim/colliders';
 import { countItem } from '../src/sim/inventory';
 import { deserializeState, serializeState } from '../src/sim/save';
-import type { Simulation } from '../src/sim/simulation';
+import { Simulation } from '../src/sim/simulation';
+import { newToolWear, toolWear, wearFraction } from '../src/sim/durability';
 import { chopPowerBonus, huntDamageBonus, skillLevel } from '../src/sim/skills';
 import { arrowSpeedMultiplier, chopPower, landChance, toolBreakdown, toolLevel, torchBurnMultiplier, weaponDamageMultiplier } from '../src/sim/upgrades';
 import { shelterMenu, slotsNeeded } from '../src/ui/structure';
@@ -229,6 +230,44 @@ describe('tool upgrades', () => {
       expect(ev).toContainEqual({ type: 'upgraded', tool: 'axe', level: lv + 1 });
     }
     expect(sim.canUpgradeTool('axe')).toEqual({ ok: false, reason: 'maxed' });
+  });
+
+  it('an upgrade brings any tool, weapon or the knife back to full durability for its new level, on every map (round 11)', () => {
+    const wearing = UPGRADABLE_TOOLS.filter((t) => t in BALANCE.durability.tools);
+    expect(wearing.sort()).toEqual(['axe', 'bow', 'knife', 'rod', 'spear', 'torch']);
+    for (const biome of ['pnw', 'desert', 'island'] as const) {
+      const sim = biome === 'pnw' ? quietSim() : Simulation.newGame(42, biome);
+      sim.state.animals.length = 0;
+      roomyPack(sim);
+      for (const tool of wearing) {
+        sim.state.tools.push(tool);
+        for (let lv = 0; lv < MAX_TOOL_LEVEL; lv++) {
+          const w = toolWear(sim.state, tool)!;
+          // Well worn (nearly broken on the last level) before each upgrade.
+          w.dur = lv === MAX_TOOL_LEVEL - 1 ? 1 : w.max * 0.3;
+          const before = w.max;
+          sim.state.inventory.slots.fill(null);
+          give(sim, asGive(TOOL_UPGRADES[tool][lv].inputs));
+          keepAlive(sim);
+          expect(sim.upgradeTool(tool).ok, `${biome} ${tool} level ${lv + 1}`).toBe(true);
+          const after = sim.state.toolWear[tool]!;
+          expect(after.dur, `${biome} ${tool} level ${lv + 1}`).toBe(after.max);
+          expect(after.max).toBeGreaterThanOrEqual(before);
+          expect(wearFraction(after)).toBe(1);
+        }
+      }
+      // Made at a higher crafting skill, the new level's maximum is the higher one.
+      const pro = biome === 'pnw' ? quietSim() : Simulation.newGame(42, biome);
+      roomyPack(pro);
+      pro.state.tools.push('knife');
+      toolWear(pro.state, 'knife')!.dur = 3;
+      pro.state.skills.crafting = MAX_XP;
+      give(pro, asGive(TOOL_UPGRADES.knife[0].inputs));
+      keepAlive(pro);
+      expect(pro.upgradeTool('knife').ok).toBe(true);
+      expect(pro.state.toolWear.knife).toEqual(newToolWear('knife', MAX_XP));
+      expect(pro.state.toolWear.knife!.max).toBe(BALANCE.durability.tools.knife.uses * 4);
+    }
   });
 
   it('upgrades are personal and survive save and load; old tools start at level 0', () => {

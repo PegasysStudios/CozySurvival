@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { hash2 } from '../core/rng';
 import type { SpeciesId } from '../data/species';
 import { between, col, GeoBuilder, mix, tf } from './geo';
+import { boar, crab, goat, jellyfish, junglefowl, reefFish, shark, viper } from './islandCreatures';
 
 const { CylinderGeometry, ConeGeometry, IcosahedronGeometry, OctahedronGeometry, BoxGeometry } = THREE;
 
@@ -433,7 +434,10 @@ function scorpion(): RigParts {
   };
 }
 
-const BUILDERS: Partial<Record<SpeciesId, () => RigParts>> = { rabbit, wolf, bear, jackrabbit, javelina, quail, roadrunner, lizard, snake, cougar, scorpion };
+const BUILDERS: Partial<Record<SpeciesId, () => RigParts>> = {
+  rabbit, wolf, bear, jackrabbit, javelina, quail, roadrunner, lizard, snake, cougar, scorpion,
+  boar, goat, junglefowl, crab, viper, reefFish, jellyfish, shark,
+};
 
 const cache = new Map<string, RigParts>();
 

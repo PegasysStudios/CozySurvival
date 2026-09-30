@@ -10,6 +10,9 @@ import { GhostView } from './ghost';
 import { makeNatureMaterials, NatureView } from './nature';
 import { Effects } from './particles';
 import { DayNight, SkyView } from './sky';
+import { IslandFeatures } from './islandFeatures';
+import { IslandTerrain } from './islandTerrain';
+import { IslandWaterView } from './islandWater';
 import { buildTerrainMesh } from './terrainMesh';
 import { ViewModel, type ViewModelInput } from './viewmodel';
 import { WaterView } from './water';
@@ -17,7 +20,14 @@ import { WaterView } from './water';
 const SHADOW_EXTENT = 42;
 const LEAF_COLOR: Partial<Record<TreeSpecies, string>> = {
   joshua: '#8a9a48', mesquite: '#7a9040', cottonwood: '#7aa844', juniper: '#6a8466', pinyon: '#4a6a3a', ponderosa: '#4f7a3c',
+  palm: '#5f9a3a', breadfruit: '#3f7a2e', kukui: '#8aa87a', hau: '#5a8a3a', treeFern: '#4a8a3a',
 };
+/**
+ * Clear tropical air lets you see further on the island (its fog starts and ends later), which the chunked terrain
+ * and instance culling keep affordable.
+ */
+const FOG = { near: 30, far: 210, nightNear: 12, nightFar: 85 };
+const ISLAND_FOG = { near: 45, far: 250, nightNear: 14, nightFar: 95 };
 const SHADOW_MAP = 2048;
 
 export interface CameraPose {
@@ -48,7 +58,10 @@ export class GameView {
   private seed = -1;
   private biome = '';
   private terrainMesh: THREE.Mesh | null = null;
-  private water: WaterView | null = null;
+  private islandTerrain: IslandTerrain | null = null;
+  private islandFeatures: IslandFeatures | null = null;
+  private fogKeys = FOG;
+  private water: WaterView | IslandWaterView | null = null;
   private sky: SkyView | null = null;
   nature: NatureView | null = null;
   entities: EntityView | null = null;
@@ -108,10 +121,19 @@ export class GameView {
       this.seed = sim.state.seed;
       this.biome = sim.biome;
       this.dayNight.setBiome(sim.biome);
-      this.terrainMesh = buildTerrainMesh(sim.terrain);
-      this.water = new WaterView(sim.terrain);
-      this.sky = new SkyView(sim.state.seed, sim.biome === 'desert' ? 5 : 16);
-      this.scene.add(this.terrainMesh, this.water.group, this.sky.group);
+      this.sky = new SkyView(sim.state.seed, sim.biome === 'desert' ? 5 : sim.biome === 'island' ? 22 : 16);
+      if (sim.terrain.island) {
+        this.islandTerrain = new IslandTerrain(sim.terrain);
+        this.water = new IslandWaterView(sim.terrain);
+        this.islandFeatures = new IslandFeatures(sim.terrain);
+        this.fogKeys = ISLAND_FOG;
+        this.scene.add(this.islandTerrain.group, this.water.group, this.islandFeatures.group, this.sky.group);
+      } else {
+        this.terrainMesh = buildTerrainMesh(sim.terrain);
+        this.water = new WaterView(sim.terrain);
+        this.fogKeys = FOG;
+        this.scene.add(this.terrainMesh, this.water.group, this.sky.group);
+      }
     }
     this.disposeDynamic();
     this.nature = new NatureView(sim.terrain, sim.gen, this.natureMats);
@@ -148,6 +170,17 @@ export class GameView {
       this.scene.remove(this.terrainMesh);
       this.terrainMesh.geometry.dispose();
       (this.terrainMesh.material as THREE.Material).dispose();
+      this.terrainMesh = null;
+    }
+    if (this.islandTerrain) {
+      this.scene.remove(this.islandTerrain.group);
+      this.islandTerrain.dispose();
+      this.islandTerrain = null;
+    }
+    if (this.islandFeatures) {
+      this.scene.remove(this.islandFeatures.group);
+      this.islandFeatures.dispose();
+      this.islandFeatures = null;
     }
     if (this.water) {
       this.scene.remove(this.water.group);
@@ -184,8 +217,10 @@ export class GameView {
     this.hemi.intensity = dn.hemiIntensity;
     this.fog.color.copy(dn.fog);
     (this.scene.background as THREE.Color).copy(dn.fog);
-    this.fog.near = 30 - dn.night * 12;
-    this.fog.far = 210 - dn.night * 85;
+    const fk = this.fogKeys;
+    this.fog.near = fk.near - dn.night * fk.nightNear;
+    this.fog.far = fk.far - dn.night * fk.nightFar;
+    this.islandTerrain?.cull(pose.x, pose.z, this.fog.far + 15);
     windUniforms.uTime.value = time;
     windUniforms.uWind.value = 0.8 + 0.4 * Math.sin(time * 0.07);
 
@@ -205,7 +240,8 @@ export class GameView {
         this.nature.sync(sim.state, true);
         this.entities.sync(sim.state);
       }
-      this.nature.update(dt, pose.x, pose.z, this.fog.far + 15);
+      // Past about 90% fog the island's jungle is only a haze, so its trees stop a little short of the fog's end.
+      this.nature.update(dt, pose.x, pose.z, this.fog.far + (this.islandTerrain ? -25 : 15));
       this.entities.update(sim, dt, time, pose.x, pose.z);
       this.ghost.update(sim.placement, time);
       for (const f of this.entities.fires) {
@@ -235,6 +271,7 @@ export class GameView {
         this.effects.torch(this.tmpV.x, this.tmpV.y, this.tmpV.z);
       }
     }
+    this.islandFeatures?.update(dt, time, pose.x, pose.z, sim.hour, dn.night, this.effects);
     this.fishing.update(sim.state.dead ? null : sim.fishing, cam, time);
     this.effects.update(dt);
     this.water?.update(time, dn.horizon, dn.sunDir, dn.sun, (1 - dn.night) * smoothstep(0.02, 0.2, dn.sunDir.y) + dn.night * 0.25, dn.night);

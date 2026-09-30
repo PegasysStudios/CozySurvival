@@ -81,7 +81,10 @@ export function decodePose(w: unknown): Pose | null {
 
 // ------------------------------------------------------------------ animals
 
-const SPECIES_IDS: SpeciesId[] = ['rabbit', 'deer', 'fish', 'wolf', 'bear', 'jackrabbit', 'javelina', 'quail', 'roadrunner', 'lizard', 'snake', 'cougar', 'scorpion'];
+const SPECIES_IDS: SpeciesId[] = [
+  'rabbit', 'deer', 'fish', 'wolf', 'bear', 'jackrabbit', 'javelina', 'quail', 'roadrunner', 'lizard', 'snake', 'cougar', 'scorpion',
+  'boar', 'goat', 'junglefowl', 'crab', 'viper', 'reefFish', 'jellyfish', 'shark',
+];
 const MODES: AnimalMode[] = ['idle', 'wander', 'alert', 'flee', 'stalk', 'chase', 'attack', 'reposition', 'warn', 'retreat'];
 
 /** [id, species, x cm, z cm, heading crad, mode, speed cm/s, hurt ms] */

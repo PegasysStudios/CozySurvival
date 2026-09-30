@@ -287,7 +287,7 @@ export class Panels {
     const next = nextServing(s);
     const d = el('div', 'canteen-detail');
     const kinds = CANTEEN_ITEMS.filter((i) => s.canteen[i] > 0).map((i) => `${s.canteen[i]} ${itemName(i, s.canteen[i]).toLowerCase()}`);
-    const source = sim.biome === 'desert' ? 'a spring or a rock pool' : 'the lake';
+    const source = sim.biome === 'desert' ? 'a spring or a rock pool' : sim.biome === 'island' ? 'a stream or pool (not the salty sea)' : 'the lake';
     d.innerHTML = `<div class="detail-icon big">${gearIcon('canteen')}</div><h3>${escapeHtml(GEAR.canteen.name)}</h3><p>${escapeHtml(GEAR.canteen.description)}</p>`
       + `<div class="fuel-meter canteen-meter"><span>Water</span><div class="fuel-track"><div class="fuel-fill water" style="transform:scaleX(${canteenFill(s).toFixed(3)})"></div></div><b>${n} / ${cap}</b></div>`
       + `<div class="effects">${n ? escapeHtml(`Holds ${kinds.join(' and ')}.`) : 'Empty.'}</div>`

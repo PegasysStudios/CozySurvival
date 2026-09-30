@@ -2,6 +2,7 @@ import { clamp } from '../core/math';
 import { BALANCE } from '../data/balance';
 import type { ToolId } from '../data/items';
 import { isUpgradable, MAX_TOOL_LEVEL, TOOL_UPGRADES, type ToolUpgrade } from '../data/upgrades';
+import { newToolWear, toolWears } from './durability';
 import { hasAll, removeAll } from './inventory';
 import { catchBonus, chopPowerBonus, huntDamageBonus, skinBonus } from './skills';
 import type { GameState } from './state';
@@ -51,11 +52,20 @@ export function canUpgradeTool(s: GameState, tool: ToolId): UpgradeCheck {
 }
 
 /** Consumes the next level's materials and raises the tool's level. */
+/**
+ * Fit the tool's next upgrade level. An upgrade refits the whole tool, so it comes back at full condition: its
+ * durability resets to 100% of the maximum for the new level, made at your current crafting skill (never below the
+ * maximum it had).
+ */
 export function upgradeTool(s: GameState, tool: ToolId): UpgradeCheck {
   const check = canUpgradeTool(s, tool);
   if (!check.ok) return check;
   removeAll(s.inventory, nextToolUpgrade(s, tool)!.inputs);
   s.toolLevels[tool] = toolLevel(s, tool) + 1;
+  if (toolWears(tool) && s.tools.includes(tool)) {
+    const max = Math.max(newToolWear(tool, s.skills.crafting).max, s.toolWear[tool]?.max ?? 0);
+    s.toolWear[tool] = { dur: max, max };
+  }
   return check;
 }
 
