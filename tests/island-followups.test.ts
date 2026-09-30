@@ -6,8 +6,11 @@ import { GROUND_CLEAR, planIslandGround } from '../src/render/islandGround';
 import { islandResourceGeometry } from '../src/render/islandModels';
 import { IslandWaterView } from '../src/render/islandWater';
 import { WaterView } from '../src/render/water';
+import { PROTOCOL_VERSION } from '../src/net/config';
+import { deserializeState, serializeState } from '../src/sim/save';
+import { Simulation } from '../src/sim/simulation';
 import { getTerrain, type Terrain } from '../src/sim/terrain';
-import { getWorldGen, type WorldGen } from '../src/sim/worldgen';
+import { getWorldGen, WORLD_REVISION, type WorldGen } from '../src/sim/worldgen';
 
 const SEEDS = [1, 7, 42, 777, 2024, 31337, 20260929, 99991];
 /** What may lie on bare sand: driftwood, stones and fallen coconuts. Every other resource is a plant. */
@@ -173,6 +176,69 @@ describe('bare beach sand', () => {
     // Well inland and up on the grass there is none.
     expect(isl.sandAt(t.spawn.x, t.spawn.z, 3)).toBe(0);
     expect(isl.sandAt(0, 0, t.heightAt(0, 0))).toBe(0);
+  });
+});
+
+describe('island saves across the follow-ups', () => {
+  /** An island save as the PR #11 build wrote it: no world revision, and tree and plant states indexed by its layout. */
+  function oldIslandSave(): { json: string; sim: Simulation } {
+    const sim = Simulation.newGame(42, 'island');
+    const p = sim.state.player;
+    sim.state.structures.push({ id: sim.state.nextId++, prefab: 'campfire', x: p.x + 3, y: 5, z: p.z, rot: 0, fuel: 8 });
+    const raw = JSON.parse(serializeState(sim.state)) as Record<string, unknown>;
+    delete raw.worldRev;
+    const g = getWorldGen(42, 'island');
+    // Felled trees and picked plants at indices past the new layout's end, and one inside it.
+    raw.trees = [[g.trees.length + 400, 0, 1, 0, 0, 2, 0, 1], [5, 0, 1, 0, 0, 1, 0, 1]];
+    raw.resources = [[g.resourceSpots + 120, 0, 30], [g.resources[0].spot, 0, 30]];
+    return { json: JSON.stringify(raw), sim };
+  }
+
+  it('loads an island save from before them, with its trees and plants fresh and its camp reseated on the ground', () => {
+    const { json, sim } = oldIslandSave();
+    const s = deserializeState(json);
+    expect(s).not.toBeNull();
+    const g = getWorldGen(42, 'island');
+    expect(s!.biome).toBe('island');
+    expect(s!.trees).toHaveLength(g.trees.length);
+    expect(s!.trees.every((t) => !t.felled)).toBe(true);
+    expect(s!.resources).toHaveLength(g.resources.length);
+    expect(s!.resources.every((r, i) => r.charges === RESOURCES[g.resources[i].kind].charges)).toBe(true);
+    expect(s!.structures).toHaveLength(1);
+    const fire = s!.structures[0];
+    expect(fire.y).toBeCloseTo(getTerrain(42, 'island').heightAt(fire.x, fire.z), 0);
+    expect(s!.inventory).toEqual(sim.state.inventory);
+    expect((s as unknown as Record<string, unknown>).worldRev).toBeUndefined();
+    // Saved again, it's a current save.
+    expect(JSON.parse(serializeState(s!)).worldRev).toBe(WORLD_REVISION.island);
+  });
+
+  it('keeps felled trees and picked plants in a current island save', () => {
+    const sim = Simulation.newGame(42, 'island');
+    sim.state.trees[5].felled = true;
+    sim.state.trees[5].hp = 0;
+    sim.state.resources[0].charges = 0;
+    const json = serializeState(sim.state);
+    expect(JSON.parse(json).worldRev).toBe(2);
+    const s = deserializeState(json)!;
+    expect(s.trees[5].felled).toBe(true);
+    expect(s.resources[0].charges).toBe(0);
+  });
+
+  it('writes nothing new into forest and desert saves', () => {
+    expect(WORLD_REVISION.pnw).toBeUndefined();
+    expect(WORLD_REVISION.desert).toBeUndefined();
+    for (const biome of ['pnw', 'desert'] as const) {
+      const sim = Simulation.newGame(42, biome);
+      sim.state.trees[3].felled = true;
+      const raw = JSON.parse(serializeState(sim.state));
+      expect(raw.worldRev, biome).toBeUndefined();
+      expect(deserializeState(JSON.stringify(raw))!.trees[3].felled, biome).toBe(true);
+    }
+  });
+
+  it('keeps players on the old island layout out of new servers', () => {
+    expect(PROTOCOL_VERSION).toBe(9);
   });
 });
 

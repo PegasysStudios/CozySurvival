@@ -400,6 +400,13 @@ export function generateDesert(seed: number): WorldGen {
   return { seed, biome: 'desert', trees, resources, resourceSpots: spots, rocks, logs, cacti };
 }
 
+/**
+ * Raised when a map's generation moves its trees and forage, so an older save of that map (tree and resource states
+ * are stored by index) knows they no longer line up and starts them fresh. Saves record it as `worldRev`; maps
+ * without an entry write nothing, so their saves are unchanged. Island 2: bare beaches and more purslane.
+ */
+export const WORLD_REVISION: Partial<Record<BiomeId, number>> = { island: 2 };
+
 const cache = new Map<string, WorldGen>();
 
 export function getWorldGen(seed: number, biome: BiomeId = DEFAULT_BIOME): WorldGen {

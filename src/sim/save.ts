@@ -19,7 +19,7 @@ import { STATE_VERSION, type CarcassState, type GameState, type RepairState, typ
 import { freshTree } from './trunks';
 import { getTerrain } from './terrain';
 import { dayOf } from './time';
-import { getWorldGen } from './worldgen';
+import { getWorldGen, WORLD_REVISION } from './worldgen';
 
 export const SAVE_FORMAT = 'cozysurvival-save';
 
@@ -45,6 +45,8 @@ export function serializeState(s: GameState): string {
   const out: Record<string, unknown> = { ...s, format: SAVE_FORMAT };
   out.trees = trees;
   out.resources = resources;
+  const rev = WORLD_REVISION[s.biome ?? DEFAULT_BIOME];
+  if (rev) out.worldRev = rev;
   return JSON.stringify(out);
 }
 
@@ -100,9 +102,11 @@ export function deserializeState(json: string | null): GameState | null {
   const biome: BiomeId = isBiomeId(raw.biome) ? raw.biome : DEFAULT_BIOME;
 
   const gen = getWorldGen(raw.seed, biome);
-  // Round 9 reshaped the desert around its pools and scattered stones in place of the pebbles, so an older desert
-  // save's trees and plants no longer line up with the world: they start fresh.
-  const regrown = biome === 'desert' && version < 5;
+  // Round 9 reshaped the desert around its pools and scattered stones in place of the pebbles, and a map whose
+  // WORLD_REVISION has moved on since the save was written has regrown too, so an older save's trees and plants no
+  // longer line up with the world: they start fresh.
+  const rev = WORLD_REVISION[biome];
+  const regrown = (biome === 'desert' && version < 5) || (rev !== undefined && num(raw.worldRev, 1) < rev);
   const trees: TreeDyn[] = gen.trees.map((t) => freshTree(t.species));
   if (!regrown) for (const e of raw.trees as unknown[]) {
     if (!Array.isArray(e) || e.length < 5) return null;
@@ -167,6 +171,7 @@ export function deserializeState(json: string | null): GameState | null {
   const carcasses = (raw.carcasses as CarcassState[]).filter((c) => isObj(c) && c.species in SPECIES && Array.isArray(c.remaining)).map(normalizeCarcass);
   const state = { ...raw, version: STATE_VERSION, player, canteen, skills, toolWear, toolLevels, forage, structures, trees, resources, carcasses } as unknown as GameState & { format?: string; known?: unknown };
   delete state.format;
+  delete (state as { worldRev?: unknown }).worldRev;
   // Saves from before round 6 list learned recipes; every recipe is available now.
   delete state.known;
   // Round 10: a save already past day 1 has survived its night, so the new night step never holds it back.
