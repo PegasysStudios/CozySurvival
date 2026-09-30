@@ -60,7 +60,7 @@ export const RESOURCES: Record<ResourceKind, ResourceDef> = {
   pandanus: { kind: 'pandanus', name: 'Pandanus', verb: 'Strip leaves', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.8, hitHeight: 0.9, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
   taro: { kind: 'taro', name: 'Wild Taro', verb: 'Pull taro', item: 'taro', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.6, hitHeight: 0.45, blockRadius: 0.5, starter: 1, scatter: 0.5 },
   banana: { kind: 'banana', name: 'Wild Banana', verb: 'Cut bananas', item: 'banana', yield: 2, charges: 2, respawnHours: 36, hitRadius: 0.85, hitHeight: 1.4, blockRadius: 0.6, persistent: true, starter: 0, scatter: 0.45 },
-  purslane: { kind: 'purslane', name: 'Beach Purslane', verb: 'Pick purslane', item: 'purslane', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.1, blockRadius: 0.35, starter: 1, scatter: 0.5 },
+  purslane: { kind: 'purslane', name: 'Beach Purslane', verb: 'Pick purslane', item: 'purslane', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.55, hitHeight: 0.16, blockRadius: 0.4, starter: 3, scatter: 0.8 },
   coconut: { kind: 'coconut', name: 'Fallen Coconut', verb: 'Pick up the coconut', item: 'coconut', yield: 1, charges: 1, respawnHours: 36, hitRadius: 0.42, hitHeight: 0.16, blockRadius: 0.3, starter: 1, scatter: 0.35 },
 };
 

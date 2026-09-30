@@ -60,7 +60,7 @@ function islandColor(t: Terrain, c: THREE.Color, mx: number, my: number, mz: num
     return;
   }
   const steep = 1 - smoothstep(0.62, 0.86, up);
-  const beach = L < 26 && my < 2.2 ? 1 - smoothstep(1.3, 2.2, my) : 0;
+  const beach = isl.sandAt(mx, mz, my, L);
   const plains = L > 18 ? (1 - jungle) * smoothstep(18, 34, L) : 0;
   c.copy(C.littoral).lerp(C.grassGreen, patch * 0.5);
   if (plains > 0) {

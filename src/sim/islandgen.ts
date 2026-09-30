@@ -12,11 +12,11 @@ function dry(t: Terrain, x: number, z: number, minHeight: number, maxSlope: numb
 }
 
 /**
- * The island, zoned like a real high island from the sea inward: coconut palms, sea grape, pandanus, purslane and
- * driftwood on the beach strand; beach hibiscus (hau) on the littoral edge and along the streams; dense windward
- * jungle of kukui (candlenut) and breadfruit with tree ferns, wild bananas and taro by the water; and open leeward
- * grassland with only a few lone trees. Basalt boulders gather on the headlands, below the knolls and around the
- * waterfall, and every cave holds a few loose stones.
+ * The island, zoned like a real high island from the sea inward: bare beach sand with only driftwood, stones and
+ * fallen coconuts on it; a grassy littoral strip behind it with the coconut palms, sea grape, pandanus, purslane and
+ * beach hibiscus (hau); dense windward jungle of kukui (candlenut) and breadfruit with tree ferns, wild bananas and
+ * taro by the water; and open leeward grassland (purslane underfoot) with only a few lone trees. Basalt boulders
+ * gather on the headlands, below the knolls and around the waterfall, and every cave holds a few loose stones.
  */
 export function generateIsland(seed: number): WorldGen {
   const t = getTerrain(seed, 'island');
@@ -32,11 +32,15 @@ export function generateIsland(seed: number): WorldGen {
   const sz = t.spawn.z;
   const spawnDist = (x: number, z: number) => Math.hypot(x - sx, z - sz);
   const ph = t.playHalf;
-  // Nothing grows through the ring of a cave's rock shell.
+  // Nothing grows through the ring of a cave's rock shell, or on the beach sand.
   const inCave = (x: number, z: number, pad: number) => isl.caves.some((c) => Math.hypot(x - c.x, z - c.z) < c.r + pad);
+  const sand = (x: number, z: number) => isl.onSand(x, z, t.heightAt(x, z));
+  /** Kinds that may lie on the sand; everything else is a plant. */
+  const onSandOk = (kind: ResourceKind) => kind === 'stickPile' || kind === 'stonePile' || kind === 'coconut';
 
   let spots = 0;
   const addResource = (x: number, z: number, kind: ResourceKind, grows: boolean): boolean => {
+    if (!onSandOk(kind) && sand(x, z)) return false;
     if (!occ.free(x, z, 0.8)) return false;
     occ.add(x, z, 0.5);
     const r: ResourceGen = { x, z, kind, rot: rng.range(0, Math.PI * 2), scale: rng.range(0.85, 1.15), spot: spots++ };
@@ -57,7 +61,7 @@ export function generateIsland(seed: number): WorldGen {
 
   const addTree = (x: number, z: number, species: TreeSpecies, scale: number): boolean => {
     const trunkR = TREES[species].trunkRadius * scale;
-    if (!occ.free(x, z, trunkR + 1.4) || inCave(x, z, 2.5)) return false;
+    if (sand(x, z) || !occ.free(x, z, trunkR + 1.4) || inCave(x, z, 2.5)) return false;
     occ.add(x, z, trunkR + 0.4);
     trees.push({ x, z, species, scale, rot: rng.range(0, Math.PI * 2), trunkR, tint: rng.next() });
     return true;
@@ -84,36 +88,38 @@ export function generateIsland(seed: number): WorldGen {
     }
   }
 
-  // Palms and a couple of beach hibiscus around the spawn, so the first coconuts and bark are close.
+  // Palms and a couple of beach hibiscus along the top of the spawn beach, so the first coconuts and bark are close.
   let near = 0;
-  for (let i = 0; i < 300 && near < 6; i++) {
+  for (let i = 0; i < 400 && near < 6; i++) {
     const a = rng.range(0, Math.PI * 2);
-    const d = rng.range(9, 26);
+    const d = rng.range(9, 36);
     const x = sx + Math.cos(a) * d;
     const z = sz + Math.sin(a) * d;
     if (!dry(t, x, z, 0.5, 0.6) || isl.land(x, z) < 3) continue;
     if (addTree(x, z, 'palm', rng.range(0.9, 1.15))) near++;
   }
   near = 0;
-  for (let i = 0; i < 300 && near < 2; i++) {
+  for (let i = 0; i < 400 && near < 2; i++) {
     const a = rng.range(0, Math.PI * 2);
-    const d = rng.range(14, 32);
+    const d = rng.range(14, 40);
     const x = sx + Math.cos(a) * d;
     const z = sz + Math.sin(a) * d;
     if (!dry(t, x, z, 0.8, 0.6) || isl.land(x, z) < 8) continue;
     if (addTree(x, z, 'hau', rng.range(0.9, 1.1))) near++;
   }
 
-  // The beach strand: coconut palms thickest near the sand, thinning into the littoral forest.
+  // The littoral strip: coconut palms thickest just above the sand, thinning into the littoral forest.
   const palmCell = 6;
   for (let gx = -ph; gx < ph; gx += palmCell) {
     for (let gz = -ph; gz < ph; gz += palmCell) {
       const x = gx + rng.range(0.4, palmCell - 0.4);
       const z = gz + rng.range(0.4, palmCell - 0.4);
       const L = isl.land(x, z);
-      if (L < 2 || L > 46) continue;
+      if (L < 2 || L > 50 || sand(x, z)) continue;
       const cliff = isl.cliffAt(Math.atan2(z, x));
-      const density = (0.5 * (1 - smoothstep(16, 42, L)) + 0.06) * (1 - cliff * 0.8) * smoothstep(8, 22, spawnDist(x, z));
+      // Where the leeward grassland runs down to the beach the palms thin out, so it stays open country.
+      const open = 1 - 0.6 * smoothstep(0.5, 0.9, isl.plains(x, z));
+      const density = (0.9 * (1 - smoothstep(28, 46, L)) + 0.05) * open * (1 - cliff * 0.8) * smoothstep(8, 22, spawnDist(x, z));
       if (!rng.chance(density) || !dry(t, x, z, 0.35, 0.7)) continue;
       if (rng.chance(0.08) && L > 10) addTree(x, z, 'hau', rng.range(0.85, 1.15));
       else addTree(x, z, 'palm', rng.range(0.85, 1.22));
@@ -169,13 +175,14 @@ export function generateIsland(seed: number): WorldGen {
   }
 
   // Starter patch on the spawn beach: its first RESOURCES[kind].starter spots of each kind grow.
+  // Plants go on the grass at the top of the beach, so they reach a little further than the driftwood and stones.
   const starter: [ResourceKind, number][] = [
-    ['stickPile', 5], ['stonePile', 5], ['pandanus', 4], ['seaGrape', 3], ['purslane', 2], ['coconut', 2],
+    ['stickPile', 5], ['stonePile', 5], ['pandanus', 4], ['seaGrape', 3], ['purslane', 4], ['coconut', 2],
   ];
-  const palmsNear = trees.filter((p) => p.species === 'palm' && spawnDist(p.x, p.z) < 30);
+  const palmsNear = trees.filter((p) => p.species === 'palm' && spawnDist(p.x, p.z) < 38);
   for (const [kind, count] of starter) {
     let placed = 0;
-    for (let attempt = 0; attempt < 300 && placed < count; attempt++) {
+    for (let attempt = 0; attempt < 400 && placed < count; attempt++) {
       let x: number;
       let z: number;
       if (kind === 'coconut' && palmsNear.length) {
@@ -185,7 +192,7 @@ export function generateIsland(seed: number): WorldGen {
         z = p.z + Math.sin(a) * rng.range(1, 2.2);
       } else {
         const a = rng.range(0, Math.PI * 2);
-        const d = rng.range(4, 20);
+        const d = rng.range(4, onSandOk(kind) ? 20 : 34);
         x = sx + Math.cos(a) * d;
         z = sz + Math.sin(a) * d;
       }
@@ -207,17 +214,18 @@ export function generateIsland(seed: number): WorldGen {
       const j = isl.jungle(x, z);
       const roll = rng.next();
       let kind: ResourceKind;
-      if (fresh < 10) kind = roll < 0.45 ? 'taro' : roll < 0.65 ? 'banana' : roll < 0.82 ? 'pandanus' : 'stickPile';
-      else if (L < 24) kind = roll < 0.3 ? 'seaGrape' : roll < 0.5 ? 'purslane' : roll < 0.7 ? 'stickPile' : roll < 0.85 ? 'pandanus' : 'stonePile';
+      if (sand(x, z)) kind = roll < 0.6 ? 'stickPile' : 'stonePile';
+      else if (fresh < 10) kind = roll < 0.45 ? 'taro' : roll < 0.65 ? 'banana' : roll < 0.82 ? 'pandanus' : 'stickPile';
+      else if (L < 46) kind = roll < 0.22 ? 'seaGrape' : roll < 0.6 ? 'purslane' : roll < 0.8 ? 'pandanus' : roll < 0.9 ? 'stickPile' : 'stonePile';
       else if (j > 0.5) kind = roll < 0.22 ? 'banana' : roll < 0.5 ? 'stickPile' : roll < 0.62 ? 'taro' : roll < 0.74 ? 'pandanus' : 'stonePile';
-      else kind = roll < 0.28 ? 'purslane' : roll < 0.56 ? 'stonePile' : roll < 0.76 ? 'stickPile' : roll < 0.9 ? 'pandanus' : 'seaGrape';
+      else kind = roll < 0.34 ? 'purslane' : roll < 0.58 ? 'stonePile' : roll < 0.76 ? 'stickPile' : roll < 0.9 ? 'pandanus' : 'seaGrape';
       addResource(x, z, kind, growRng.chance(RESOURCES[kind].scatter));
     }
   }
 
   // Now and then a coconut has dropped by itself and lies under its palm.
   for (const p of trees) {
-    if (p.species !== 'palm' || !rng.chance(0.3)) continue;
+    if (p.species !== 'palm' || !rng.chance(0.55)) continue;
     const a = rng.range(0, Math.PI * 2);
     const x = p.x + Math.cos(a) * rng.range(1, 2.4);
     const z = p.z + Math.sin(a) * rng.range(1, 2.4);

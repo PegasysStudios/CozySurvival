@@ -57,6 +57,17 @@ export interface BiomeDef {
   thirstMultiplier?: number;
   /** Warmth lost sleeping through the night away from a burning fire, instead of `BALANCE.needs.sleep.coldWarmthCost`. */
   sleepWarmthCost?: number;
+  /**
+   * Opacity (0..1) of the island's single water sheet: at the shore, over water 4 m or deeper, and in streams and
+   * pools. Only the island's water reads it; the PNW and desert lakes keep their own look.
+   */
+  waterOpacity?: WaterOpacity;
+}
+
+export interface WaterOpacity {
+  shallow: number;
+  deep: number;
+  fresh: number;
 }
 
 /**
@@ -132,6 +143,8 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     warmth: { day: 88, night: 58, warmUp: [5, 8.5], coolDown: [18.5, 22], rate: BALANCE.needs.warmthRatePerHour, coolRate: 12 },
     thirstMultiplier: 1.45,
     sleepWarmthCost: 8,
+    // Milky turquoise over the sand rather than glass-clear: the lagoon floor shows through only at the very edge.
+    waterOpacity: { shallow: 0.74, deep: 0.97, fresh: 0.9 },
     // Fish are the main meat, as on real Pacific islands: parrotfish on the reef and gobies in the streams.
     prey: [
       { species: 'reefFish', count: 30, minDist: 0 },

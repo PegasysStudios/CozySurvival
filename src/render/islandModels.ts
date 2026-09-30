@@ -290,12 +290,31 @@ export function islandResourceGeometry(kind: ResourceKind): ResourceModel {
       return { main: b.build(true), extra: bunch.build(true) };
     }
     case 'purslane': {
-      for (let i = 0; i < 16; i++) {
-        const a = rng.range(0, Math.PI * 2);
-        const r = rng.range(0, 0.22);
-        b.add(new OctahedronGeometry(0.035, 0), { matrix: tf(Math.cos(a) * r, 0.03, Math.sin(a) * r, 0, a, 0, 1.4, 0.6, 0.8), color: rng.pick(['#5a8a3a', '#6a9a42', '#7aa84a']), vary: 0.08 });
+      // A low mat about a metre across: red stems radiating from a leafy crown, fleshy lime leaves brighter than the
+      // grass around it, and yellow flowers on top, so it reads from a few metres away.
+      b.add(new IcosahedronGeometry(0.13, 0), { matrix: tf(0, 0.06, 0, 0, rng.range(0, 3), 0, 1.5, 0.65, 1.5), color: '#79c24a', jitter: 0.02, vary: 0.08 });
+      const stems = 7;
+      for (let i = 0; i < stems; i++) {
+        const a = (i / stems) * Math.PI * 2 + rng.range(-0.3, 0.3);
+        const len = rng.range(0.34, 0.5);
+        const tilt = rng.range(0.08, 0.22);
+        const ca = Math.cos(a);
+        const sa = Math.sin(a);
+        b.add(new CylinderGeometry(0.012, 0.02, len, 4, 1, true), { matrix: tf(ca * len * 0.5, 0.04 + Math.sin(tilt) * len * 0.5, sa * len * 0.5, 0, -a, tilt - Math.PI / 2), color: '#b0443e', vary: 0.1 });
+        for (const f of [0.38, 0.62, 0.84, 1]) {
+          const side = rng.range(-0.05, 0.05);
+          const d = len * f;
+          b.add(new OctahedronGeometry(0.058, 0), {
+            matrix: tf(ca * d - sa * side, 0.05 + Math.sin(tilt) * d, sa * d + ca * side, 0, -a + rng.range(-0.5, 0.5), 0, 1.5, 0.7, 1),
+            color: rng.pick(['#74c046', '#86d052', '#6ab63e']), vary: 0.08,
+          });
+        }
       }
-      for (let i = 0; i < 4; i++) b.add(new CylinderGeometry(0.018, 0.012, 0.012, 5), { matrix: tf(rng.range(-0.15, 0.15), 0.06, rng.range(-0.15, 0.15)), color: '#f0d23a' });
+      for (let i = 0; i < 10; i++) {
+        const a = rng.range(0, Math.PI * 2);
+        const r = rng.range(0.05, 0.42);
+        b.add(new CylinderGeometry(0.034, 0.02, 0.018, 5), { matrix: tf(Math.cos(a) * r, 0.13 + rng.range(0, 0.05), Math.sin(a) * r), color: '#ffd83a' });
+      }
       return { main: b.build() };
     }
     case 'coconut':

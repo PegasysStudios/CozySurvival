@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { BIOMES, type WaterOpacity } from '../data/biomes';
 import { TERRAIN_CELL, WATER_LEVEL, type Terrain } from '../sim/terrain';
 import { islandWaterTexture } from './islandTerrain';
 
@@ -34,6 +35,9 @@ const fragment = /* glsl */ `
   uniform vec3 uSunColor;
   uniform float uSunStrength;
   uniform float uNight;
+  uniform float uAlphaShallow;
+  uniform float uAlphaDeep;
+  uniform float uAlphaFresh;
   varying vec3 vWorld;
 
   float waveH(vec2 p) {
@@ -69,8 +73,8 @@ const fragment = /* glsl */ `
     float surf = reef * (1.0 - fresh) * smoothstep(0.35, 0.9, surfWave * (0.7 + 0.3 * sin(uTime * 0.7 + vWorld.z * 0.05)));
     float foam = max(shore * (0.35 + 0.45 * ripple), surf * 0.75);
     col = mix(col, vec3(0.95, 0.97, 0.97) * (1.0 - uNight * 0.6), foam);
-    float alpha = mix(0.42, 0.93, smoothstep(0.0, 6.0, depth));
-    alpha = mix(alpha, 0.72, fresh);
+    float alpha = mix(uAlphaShallow, uAlphaDeep, smoothstep(0.0, 4.0, depth));
+    alpha = mix(alpha, uAlphaFresh, fresh);
     alpha = clamp(alpha + fres * 0.08 + foam * 0.3, 0.0, 1.0);
     gl_FragColor = vec4(col, alpha);
     #include <tonemapping_fragment>
@@ -94,7 +98,7 @@ export class IslandWaterView {
   private readonly tex: THREE.DataTexture;
   private readonly tmp = new THREE.Color();
 
-  constructor(t: Terrain) {
+  constructor(t: Terrain, opacity: WaterOpacity = BIOMES.island.waterOpacity!) {
     this.tex = islandWaterTexture(t);
     this.material = new THREE.ShaderMaterial({
       vertexShader: vertex,
@@ -119,6 +123,9 @@ export class IslandWaterView {
           uSunColor: { value: new THREE.Color('#fff4dc') },
           uSunStrength: { value: 1 },
           uNight: { value: 0 },
+          uAlphaShallow: { value: opacity.shallow },
+          uAlphaDeep: { value: opacity.deep },
+          uAlphaFresh: { value: opacity.fresh },
         },
       ]),
     });

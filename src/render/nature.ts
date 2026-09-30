@@ -10,6 +10,7 @@ import type { WorldGen } from '../sim/worldgen';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
 import { creosoteGeometry, desertFlowerGeometry, desertGrassGeometry, SAGUARO_HEIGHT, saguaroGeometry, sagebrushGeometry } from './desertModels';
+import { ISLAND_GROUND_VARIANTS, planIslandGround, type IslandGroundKind } from './islandGround';
 import { coconutCrownGeometry, islandFlowerGeometry, islandGrassGeometry, jungleUnderstoryGeometry, naupakaGeometry } from './islandModels';
 import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, STONE_VARIANTS, stoneLook, stonePileGeometry, stumpGeometry, treeGeometry, trunkGeometry } from './models';
 
@@ -390,56 +391,16 @@ export class NatureView {
     }
   }
 
-  /**
-   * Island ground cover, zoned like the trees: naupaka shrubs, sedges and morning glory on the sand; ferns, ti plants
-   * and elephant ears under the jungle; waist-high golden grass over the leeward grassland.
-   */
+  /** Island ground cover from {@link planIslandGround}: bare sand, then the littoral strip, jungle and grassland. */
   private buildIslandGround(): void {
-    const t = this.terrain;
-    const isl = t.island!;
-    const rng = new Rng(this.gen.seed ^ 0x6a57);
-    const shrubs: InstanceSpec[][] = [[], []];
-    const sedge: InstanceSpec[][] = [[], [], []];
-    const tall: InstanceSpec[][] = [[], [], []];
-    const under: InstanceSpec[][] = [[], [], []];
-    const flowers: InstanceSpec[][] = [[], [], [], []];
+    const lists = {} as Record<IslandGroundKind, InstanceSpec[][]>;
+    for (const [kind, n] of Object.entries(ISLAND_GROUND_VARIANTS) as [IslandGroundKind, number][]) lists[kind] = Array.from({ length: n }, () => []);
+    const { naupaka: shrubs, sedge, tall, understory: under, flower: flowers } = lists;
     const pos: { list: InstanceSpec[][]; set: number; local: number; x: number; z: number }[] = [];
-    const put = (list: InstanceSpec[][], set: number, x: number, h: number, z: number, s: number, sy = s) => {
-      pos.push({ list, set, local: list[set].length, x, z });
-      list[set].push({ matrix: tf(x, h - 0.03, z, 0, rng.range(0, 6.28), 0, s, sy, s) });
-    };
-    for (let i = 0; i < 80000; i++) {
-      const a = rng.range(0, Math.PI * 2);
-      const r = Math.sqrt(rng.next()) * (isl.coastAt(a) + 4);
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      const h = t.heightAt(x, z);
-      if (h < 0.25 || t.slopeAt(x, z) > 0.7) continue;
-      if (Math.hypot(x - t.spawn.x, z - t.spawn.z) < 3.5) continue;
-      const L = isl.land(x, z);
-      const roll = rng.next();
-      if (L < 30 && h < 2.4) {
-        if (L > 5 && roll < 0.14) put(shrubs, rng.chance(0.4) ? 1 : 0, x, h, z, rng.range(0.8, 1.3));
-        else if (roll < 0.42) put(sedge, rng.int(0, 2), x, h, z, rng.range(0.8, 1.3));
-        else if (roll < 0.46) put(flowers, rng.chance(0.7) ? 0 : 3, x, h, z, rng.range(0.8, 1.2));
-        continue;
-      }
-      const j = isl.jungle(x, z);
-      if (j > 0.45) {
-        if (roll < 0.13) put(under, 0, x, h, z, rng.range(0.9, 1.4));
-        else if (roll < 0.18) put(under, 1, x, h, z, rng.range(0.8, 1.2));
-        else if (roll < 0.23) put(under, 2, x, h, z, rng.range(0.9, 1.4));
-        continue;
-      }
-      const pl = isl.plains(x, z);
-      if (pl > 0.4) {
-        if (roll < 0.78) put(tall, rng.int(0, 2), x, h, z, rng.range(0.8, 1.25), rng.range(0.8, 1.3));
-        else if (roll < 0.8) put(flowers, rng.pick([1, 2]), x, h, z, rng.range(0.8, 1.1));
-        else if (roll < 0.815) put(shrubs, 0, x, h, z, rng.range(0.7, 1.0));
-        continue;
-      }
-      if (roll < 0.4) put(sedge, rng.int(0, 2), x, h, z, rng.range(0.9, 1.3));
-      else if (roll < 0.45) put(under, 0, x, h, z, rng.range(0.7, 1.1));
+    for (const p of planIslandGround(this.terrain, this.gen)) {
+      const list = lists[p.kind];
+      pos.push({ list, set: p.variant, local: list[p.variant].length, x: p.x, z: p.z });
+      list[p.variant].push({ matrix: tf(p.x, p.y - 0.03, p.z, 0, p.rot, 0, p.scale, p.scaleY, p.scale) });
     }
     const add = (list: InstanceSpec[][], geo: (v: number) => THREE.BufferGeometry, into: ChunkedInstances[], name: string, mat: THREE.Material, lod?: (v: number) => THREE.BufferGeometry) =>
       list.map((specs, v) => {

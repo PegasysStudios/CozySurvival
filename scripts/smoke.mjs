@@ -368,6 +368,36 @@ async function main() {
         };
       });
     const lock = () => page.evaluate(() => (window.__cozy.game.input.locked = true));
+    const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    /** Turn the player to `yaw` and read the Day card's compass back from the HUD. */
+    const compassAt = async (yaw) => {
+      await page.evaluate((y) => (window.__cozy.game.yaw = y), yaw);
+      await waitFrames(3);
+      return page.evaluate(() => {
+        const card = document.querySelector('.hud-clock');
+        const c = card?.querySelector('.clock-compass');
+        const cr = c?.getBoundingClientRect();
+        const kr = card?.getBoundingClientRect();
+        return {
+          point: c?.dataset.point, text: c?.querySelector('.compass-point')?.textContent, title: c?.title,
+          needle: c?.querySelector('.compass-needle')?.style.transform ?? '',
+          inCard: !!cr && !!kr && cr.width > 0 && cr.left >= kr.left && cr.right <= kr.right + 0.5 && cr.bottom <= kr.bottom + 0.5,
+        };
+      });
+    };
+    /** Every heading reads right on the HUD, then the player faces the way they did before. */
+    const compassRound = async (ks) => {
+      const yaw0 = await page.evaluate(() => window.__cozy.game.yaw);
+      const seen = [];
+      for (const k of ks) seen.push({ want: COMPASS[k], ...(await compassAt((-k * Math.PI) / 4)) });
+      await page.evaluate((y) => (window.__cozy.game.yaw = y), yaw0);
+      await waitFrames(2);
+      return { ok: seen.every((s) => s.point === s.want && s.text === s.want && s.inCard && s.needle.startsWith('rotate(')) && new Set(seen.map((s) => s.needle)).size === seen.length, seen };
+    };
+
+    const pnwCompass = await compassRound([0, 1, 2, 3, 4, 5, 6, 7]);
+    check('the Day card compass reads all eight headings as the player turns (N, NE, E, SE, S, SW, W, NW)', pnwCompass.ok, JSON.stringify(pnwCompass.seen.map((s) => `${s.want}:${s.point}/${s.text}${s.inCard ? '' : ' outside card'}`)));
+    check('the compass names the facing in full on hover', pnwCompass.seen[2]?.title === 'Facing east' && pnwCompass.seen[5]?.title === 'Facing southwest', JSON.stringify(pnwCompass.seen.map((s) => s.title)));
 
     // Placement through real input: crafting menu -> ghost -> red/green -> rotate -> click to place.
     await page.evaluate(() => {
@@ -785,6 +815,8 @@ async function main() {
     await waitFrames(4);
     await shoot(page, 'gameplay-desert');
     await measure(page, 'Arizona Desert');
+    const desertCompass = await compassRound([2, 5]);
+    check('the desert HUD has the compass too', desertCompass.ok, JSON.stringify(desertCompass.seen.map((s) => `${s.want}:${s.point}`)));
     await lock();
     await page.keyboard.press('KeyC');
     await sleep(300);
@@ -868,6 +900,28 @@ async function main() {
       'the island (four times the area) renders within twice the forest\'s frame time and draw calls',
       islandPerf.medianMs <= pnwPerf.medianMs * 2 && islandPerf.calls <= pnwPerf.calls * 2.5,
       JSON.stringify({ island: islandPerf, pnw: pnwPerf }),
+    );
+    const islandCompass = await compassRound([3, 6]);
+    check('the island HUD has the compass too', islandCompass.ok, JSON.stringify(islandCompass.seen.map((s) => `${s.want}:${s.point}`)));
+    const islandLook = await page.evaluate(() => {
+      const g = window.__cozy.game;
+      const u = g.view?.water?.material?.uniforms;
+      const gen = g.sim.gen;
+      const t = g.sim.terrain;
+      const isl = t.island;
+      const res = gen?.resources ?? [];
+      const plants = res.filter((r) => !['stickPile', 'stonePile', 'coconut'].includes(r.kind));
+      return {
+        alpha: u ? [u.uAlphaShallow?.value, u.uAlphaDeep?.value, u.uAlphaFresh?.value] : null,
+        purslane: res.filter((r) => r.kind === 'purslane').length,
+        plantsOnSand: plants.filter((r) => isl.onSand(r.x, r.z, t.heightAt(r.x, r.z))).length,
+        treesOnSand: (gen?.trees ?? []).filter((tr) => isl.onSand(tr.x, tr.z, t.heightAt(tr.x, tr.z))).length,
+      };
+    });
+    check(
+      'in the browser the island water is the less see-through setting, purslane is plentiful and nothing grows on the sand',
+      JSON.stringify(islandLook.alpha) === JSON.stringify([0.74, 0.97, 0.9]) && islandLook.purslane >= 300 && islandLook.plantsOnSand === 0 && islandLook.treesOnSand === 0,
+      JSON.stringify(islandLook),
     );
     const salt = await page.evaluate(() => {
       const sim = window.__cozy.game.sim;
