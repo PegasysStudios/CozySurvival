@@ -138,7 +138,7 @@ export function placeShelter(sim: Simulation, tier: PrefabId): StructureState {
   const inv = sim.state.inventory;
   const held = inv.slots.slice();
   const gear = sim.state.gear.slice();
-  if (!sim.state.gear.includes('basket')) sim.state.gear.push('basket');
+  for (const g of ['basket', 'backpack'] as const) if (!sim.state.gear.includes(g)) sim.state.gear.push(g);
   ensureSlots(sim);
   inv.slots.fill(null);
   giveRecipe(sim, 'leanTo');

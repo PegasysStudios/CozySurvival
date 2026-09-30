@@ -1164,7 +1164,8 @@ b {
   gap: 8px;
 }
 
-.fuel-actions .fuel-btn {
+.fuel-actions .fuel-btn,
+.fuel-actions .sleep-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;

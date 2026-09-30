@@ -15,7 +15,7 @@ import { button, el, escapeHtml } from './dom';
 import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
 import { gearIcon, itemIcon, MISC_ICONS, toolIcon } from './icons';
-import { ingredients, shelterMenu, type Ingredient } from './structure';
+import { ingredients, packRoomNote, shelterMenu, type Ingredient } from './structure';
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
 export type CraftTab = 'all' | RecipeCategory | 'upgrades';
@@ -283,6 +283,8 @@ export class Panels {
     actions.append(go);
     box.append(actions);
     if (!check.ok && check.reason) box.append(el('div', 'craft-reason', escapeHtml(UPGRADE_FAILURE_TEXT[check.reason])));
+    const room = packRoomNote(s, up.inputs);
+    if (room) box.append(el('div', 'effects muted', escapeHtml(room)));
     d.append(box);
     return d;
   }
@@ -412,7 +414,7 @@ export class Panels {
       b.disabled = !o.enabled;
       actions.append(b);
     }
-    const sleep = button(`${MISC_ICONS.moonBed} ${m.sleepLabel}`, 'btn fuel-btn sleep-btn', () => {
+    const sleep = button(`${MISC_ICONS.moonBed} ${m.sleepLabel}`, 'btn sleep-btn', () => {
       if (sim.trySleep(fireId)) this.host.close();
       else this.render();
     });
@@ -473,6 +475,7 @@ export class Panels {
       ua.append(go);
       upg.append(ua);
       if (n.reason) upg.append(el('div', 'craft-reason', escapeHtml(n.reason)));
+      if (n.room) upg.append(el('div', 'effects muted', escapeHtml(n.room)));
     }
     body.append(rest, upg);
     this.card.append(head, ladder, body);

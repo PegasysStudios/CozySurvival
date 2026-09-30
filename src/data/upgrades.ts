@@ -56,13 +56,14 @@ export function isUpgradable(tool: ToolId): tool is UpgradableTool {
 export const SHELTER_TIERS: PrefabId[] = ['leanTo', 'aFrame', 'barkHut', 'hideTent'];
 
 /**
- * Materials to upgrade into each tier (keyed by the tier being built). Steeply rising: the A-frame fits the base
- * pack, the bark hut and hide tent need a Grass Basket.
+ * Materials to upgrade into each tier (keyed by the tier being built). Each tier takes roughly 1.5-1.75x the
+ * gathering of the one before (the lean-to itself fills the 6-slot base pack): the A-frame needs a Grass Basket's
+ * room (9 slots), the bark hut and hide tent a Hide Backpack's (14 slots), since everything is carried at once.
  */
 export const SHELTER_UPGRADES: Partial<Record<PrefabId, Cost>> = {
-  aFrame: [{ item: 'log', count: 12 }, { item: 'stick', count: 24 }, { item: 'cordage', count: 10 }],
-  barkHut: [{ item: 'log', count: 16 }, { item: 'bark', count: 30 }, { item: 'cordage', count: 20 }, { item: 'stone', count: 10 }],
-  hideTent: [{ item: 'hide', count: 18 }, { item: 'log', count: 16 }, { item: 'cordage', count: 20 }, { item: 'bark', count: 10 }],
+  aFrame: [{ item: 'log', count: 16 }, { item: 'stick', count: 24 }, { item: 'cordage', count: 12 }, { item: 'bark', count: 10 }],
+  barkHut: [{ item: 'log', count: 24 }, { item: 'bark', count: 40 }, { item: 'cordage', count: 20 }, { item: 'stone', count: 20 }],
+  hideTent: [{ item: 'hide', count: 18 }, { item: 'log', count: 24 }, { item: 'cordage', count: 30 }, { item: 'bark', count: 20 }],
 };
 
 export const SHELTER_UPGRADE_TEXT: Partial<Record<PrefabId, string>> = {

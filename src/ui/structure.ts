@@ -1,10 +1,12 @@
-import { itemName, type ItemId } from '../data/items';
+import { BALANCE } from '../data/balance';
+import { ITEMS, itemName, type ItemId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { nextShelter, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier } from '../data/upgrades';
 import { wearFraction } from '../sim/durability';
 import { countItem } from '../sim/inventory';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
+import type { GameState } from '../sim/state';
 import { canSleepAt } from '../sim/time';
 import { UPGRADE_FAILURE_TEXT, type UpgradeCheck } from '../sim/upgrades';
 
@@ -35,11 +37,32 @@ export interface ShelterMenu {
     check: UpgradeCheck;
     /** Why it can't be upgraded right now, or null. */
     reason: string | null;
+    /** Set when the materials can't all fit in the pack as it is. */
+    room: string | null;
   } | null;
 }
 
 export function ingredients(sim: Simulation, inputs: readonly { item: ItemId; count: number }[]): Ingredient[] {
   return inputs.map((i) => ({ item: i.item, name: itemName(i.item, i.count), need: i.count, have: countItem(sim.state.inventory, i.item) }));
+}
+
+/** Pack slots it takes to carry `inputs` all at once. */
+export function slotsNeeded(inputs: readonly { item: ItemId; count: number }[]): number {
+  return inputs.reduce((n, i) => n + Math.ceil(i.count / ITEMS[i.item].stack), 0);
+}
+
+/** When the pack is too small to ever hold `inputs` at once: how many slots it takes and which gear makes room. */
+export function packRoomNote(s: GameState, inputs: readonly { item: ItemId; count: number }[]): string | null {
+  const need = slotsNeeded(inputs);
+  const have = s.inventory.slots.length;
+  if (need <= have) return null;
+  const c = BALANCE.carry;
+  const needsBackpack = need > c.baseSlots + c.basketSlots;
+  const gear = [
+    !s.gear.includes('basket') ? 'a Grass Basket' : '',
+    needsBackpack && !s.gear.includes('backpack') ? 'a Hide Backpack' : '',
+  ].filter(Boolean);
+  return `Needs ${need} pack slots at once and you have ${have}${gear.length ? `: make room with ${gear.join(' and ')}` : ''}.`;
 }
 
 function restText(prefab: PrefabId): string {
@@ -65,6 +88,7 @@ export function shelterMenu(sim: Simulation, id: number): ShelterMenu | null {
       inputs: ingredients(sim, SHELTER_UPGRADES[nextId]!),
       check,
       reason: check.ok ? null : blocker ? `${PLACEMENT_REASON_TEXT[blocker]}. It needs a little more room to grow.` : UPGRADE_FAILURE_TEXT[check.reason!],
+      room: packRoomNote(sim.state, SHELTER_UPGRADES[nextId]!),
     };
   }
   return {
