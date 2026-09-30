@@ -173,7 +173,7 @@ export class IslandLayout {
       bays.push({ a, amp: rng.range(34, 58), w: rng.range(0.14, 0.24) });
     }
     const reefHarm = [3, 5, 8].map((k) => ({ k, amp: rng.range(3, 6), phase: rng.range(0, Math.PI * 2) }));
-    const isletA = base + rng.range(0.3, 0.9) * Math.PI;
+    let isletA = base + rng.range(0.3, 0.9) * Math.PI;
     for (let i = 0; i <= COAST_N; i++) {
       const a = (i / COAST_N) * Math.PI * 2;
       let r = R0;
@@ -188,8 +188,6 @@ export class IslandLayout {
       this.coast[i] = clamp(r, R0 * 0.6, R_MAX);
       let reef = 40;
       for (const h of reefHarm) reef += h.amp * Math.sin(h.k * a + h.phase);
-      // The reef swings wide around the lagoon islet so it sits in calm, shallow water.
-      reef += 26 * bump(angDiff(a, isletA) / 0.16);
       this.reef[i] = Math.min(reef, REEF_MAX - this.coast[i]);
       this.cliffs[i] = cliff;
     }
@@ -199,9 +197,10 @@ export class IslandLayout {
     const pd = rng.range(0, 55);
     this.peak = { x: Math.cos(pa) * pd, z: Math.sin(pa) * pd, r: rng.range(165, 190), h: rng.range(56, 68), craterR: rng.range(18, 24), craterD: rng.range(6, 9) };
 
-    // A palm islet out in the lagoon.
+    // A palm islet out in the lagoon, off a stretch of coast with room around it (the reef follows its far shore).
+    for (let k = 0; k < 24 && this.coastAt(isletA) > R_MAX - 45; k++) isletA += 0.26;
     const isletR = rng.range(13, 17);
-    const isletD = this.coastAt(isletA) + this.reefAt(isletA) * 0.48;
+    const isletD = this.coastAt(isletA) + rng.range(18, 24) + isletR;
     this.islet = { x: Math.cos(isletA) * isletD, z: Math.sin(isletA) * isletD, r: isletR };
 
     // Sand spits: strips of land running out from the coast.
@@ -211,9 +210,11 @@ export class IslandLayout {
         const a = rng.range(0, Math.PI * 2);
         if (Math.abs(angDiff(a, isletA)) < 0.5 || this.headlands.some((h) => Math.abs(angDiff(a, h.a)) < h.w * 2)) continue;
         if (this.spits.some((s) => Math.abs(angDiff(a, Math.atan2(s.z0, s.x0))) < 0.8)) continue;
+        // Keep the spit inside its reef, and off the outermost coast, so deep water still rings it.
+        if (this.coastAt(a) > R_MAX - 35) continue;
         const r = this.coastAt(a) - 8;
-        const bend = rng.range(-0.5, 0.5);
-        const len = rng.range(48, 70);
+        const bend = rng.range(-0.45, 0.45);
+        const len = Math.min(rng.range(40, 62), 8 + this.reefAt(a) * 0.6);
         const x0 = Math.cos(a) * r;
         const z0 = Math.sin(a) * r;
         this.spits.push({ x0, z0, x1: x0 + Math.cos(a + bend) * len, z1: z0 + Math.sin(a + bend) * len, w: rng.range(6, 9) });
@@ -349,7 +350,8 @@ export class IslandLayout {
     const side = rng.chance(0.5) ? 1 : -1;
     const ca2 = Math.atan2(-wf.dirZ, -wf.dirX) + side * rng.range(0.95, 1.15);
     const pool = wf.pool;
-    const caveD = pool.r + PIT_LEDGE + 5.5;
+    // Deep enough into the cliff that the mouth opens onto the ledge beside the pool, not into the water.
+    const caveD = pool.r + PIT_LEDGE + 7.5;
     const cx = pool.x + Math.cos(ca2) * caveD;
     const cz = pool.z + Math.sin(ca2) * caveD;
     this.caves.push({ x: cx, z: cz, facing: Math.atan2(pool.z - cz, pool.x - cx), r: 5.2, height: 4.2, floorY: PIT_FLOOR });
@@ -376,7 +378,8 @@ export class IslandLayout {
     let t = (a / (Math.PI * 2)) % 1;
     if (t < 0) t += 1;
     const f = t * COAST_N;
-    const i = Math.floor(f);
+    // A bearing a hair under zero wraps to exactly 1: that is the table's last entry, not one past it.
+    const i = Math.min(COAST_N - 1, Math.floor(f));
     const k = f - i;
     return arr[i] + (arr[i + 1] - arr[i]) * k;
   }
@@ -503,7 +506,9 @@ export class IslandLayout {
     const wall = 1 - smoothstep(0.3, 0.68, head);
     if (wall <= 0) return h;
     const rise = c.wallH * (0.85 + 0.3 * this.detail.get(x * 0.08, z * 0.08));
-    return Math.max(h, lerp(h, h + rise, wall * smoothstep(0.2, 2.6, edge) * (1 - smoothstep(9, 22, edge))));
+    // Walls only stand on the island itself: along the mouth they stop at the coast instead of running out to sea.
+    const ashore = smoothstep(-3, 3, this.coastAt(Math.atan2(z, x)) - Math.hypot(x, z));
+    return Math.max(h, lerp(h, h + rise, wall * ashore * smoothstep(0.2, 2.6, edge) * (1 - smoothstep(9, 22, edge))));
   }
 
   /** The plunge pool's amphitheatre: a steep cliff all round, opened at the front by the stream's gorge. */
