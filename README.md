@@ -262,6 +262,7 @@ Rendering is built for 60 fps:
 - **Upgrade-only tiers.** The A-frame, bark hut and hide tent appear in the Build and Upgrades tabs with how to reach them (upgrade the tier below in place). Every tool's three upgrade levels are listed with their costs, even before the tool is made.
 - **Jon's icons.** Hand-made 64×64 PNGs live in `public/icons/jon/`. `src/data/icons.ts` holds the only mapping from item id and tier to file (tool tier = upgrade level + 1); anything unmapped keeps its built-in SVG. The first upload lost its filenames, so the mapping is a best guess until named files arrive.
 - **Ferns.** Sword ferns grow on 48% of their map-wide spots (was 40%), so fiber is a little easier to find.
+- **Fiber stacks.** Plant fiber stacks to 30 per pack slot (was 16). Every other item keeps its stack size.
 
 ## Known gaps
 
