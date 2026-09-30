@@ -262,7 +262,7 @@ Round 11. The numbers below are averages over the eight seeds in `tests/island.t
   - beaches: about 45,000 m² of bare pale sand with driftwood, loose stones, fallen coconuts and land crabs, and nothing growing on it. Coconut palms, sea grape, pandanus, purslane, naupaka and sedge line the grassy strip at the top of the beach
   - the cove: turquoise water behind a mouth 12–15 m wide, walled by grey limestone 6–9 m high, with a beach at its head and two sea stacks at the mouth
   - windward jungle: about 141,000 m² at about 220 trees per hectare (kukui, breadfruit, tree ferns and beach hibiscus), with ferns, ti plants and elephant ears underneath
-  - leeward grassland and the grassy upper slopes of a 56–68 m volcanic peak with a small summit crater: about 121,000 m² at about 12 trees per hectare
+  - leeward grassland and the grassy upper slopes of a 56–68 m volcanic peak with a small summit crater: about 121,000 m² at about 13 trees per hectare
   - a waterfall that drops 16 m on average (never less than 12) from a mossy cliff amphitheatre into its plunge pool
   - two streams (about 360 m of stream per island) and three freshwater pools: the plunge pool, one partway down the main stream, and the spring that feeds the second
   - three small caves: one in the waterfall's cliff and one in the side of each of two rock knolls
