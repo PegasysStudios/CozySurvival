@@ -36,7 +36,7 @@ export function pnwFingerprint(seed: number): Record<string, string> {
   for (let i = 0; i < t.heights.length; i += 7) heights.push(t.heights[i]);
   const sim = Simulation.newGame(seed);
   // Round 8 added the canteen and bumped the save version; neither changes the world or how it plays.
-  const start: Partial<typeof sim.state> = { ...sim.state, version: 3, runId: '', skills: withoutSkinning(sim.state.skills) };
+  const start: Omit<Partial<typeof sim.state>, 'skills'> & { skills: object } = { ...sim.state, version: 3, runId: '', skills: withoutSkinning(sim.state.skills) };
   delete start.canteen;
   run(sim, 20, { moveZ: -1 });
   run(sim, 20, { moveX: 1, sprint: true });
