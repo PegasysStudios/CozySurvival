@@ -24,7 +24,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | `npm run preview` | Serve the production build on port **5288** |
 | `npm test` | Vitest suite for the simulation (no browser or WebGL needed) |
 | `npm run typecheck` | TypeScript only |
-| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then switch to the desert with the title arrow, start a desert run, check that each map continues its own run, and play a two-tab multiplayer session on a desert server over `?net=local`. Saves title and first-person screenshots of both maps. Fails on any console error |
+| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, check the day-1 crafting lock, skip to the next morning, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then switch to the desert with the title arrow, start a desert run, check that each map continues its own run, and play a two-tab multiplayer session on a desert server over `?net=local`. Saves title and first-person screenshots of both maps. Fails on any console error |
 
 `npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one. Screenshots go to `smoke-shots/` (git-ignored); set `SMOKE_SHOTS` to save them elsewhere.
 
@@ -37,13 +37,14 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | Jump | Space (also climbs onto boulders and fallen trunks) |
 | Swim | W A S D in deep water (no running or jumping while swimming) |
 | Look | Mouse |
-| Gather, use tool, interact (fires, benches, shelters, workbenches, storage, carcasses) | Left-click (hold to repeat) |
+| Gather, use tool, interact (fires, benches, shelters, workbenches, storage) | Left-click (hold to repeat) |
+| Skin, then butcher a carcass | Equip the Stone Knife (7) and left-click it: the first cut skins, the second butchers |
 | Sit on a bench / stand up | Left-click the bench / click it again or press a move key |
 | Drink from the canteen | Tab, click the canteen, then **Drink** (or F) |
 | Campfire menu (fuel meter, add a stick or log, cook) | Left-click a lit campfire (an unlit one takes fuel straight away) |
 | Draw and release the bow | Hold and release left-click |
 | Fish (fishing pole) | Hold left-click to wind up, release to cast, click when the float dips |
-| Select tool | 1–6 or mouse wheel |
+| Select tool (7 is the Stone Knife) | 1–7 or mouse wheel |
 | Crafting (icon tabs along the top) | C |
 | Pack (inventory) | Tab |
 | Quick eat or drink whatever you need most | F |
@@ -56,36 +57,53 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 ## What's in the demo
 
 - **Day cycle.** A 24-minute day (one real minute per game hour) with sunrise, golden hour, dusk and a moonlit night: sky dome, stars, drifting clouds, fog and light colour all follow the clock. Sleeping in a shelter or beside a campfire after 19:00 skips to dawn and fully restores energy.
-- **Needs.** Health, hunger, thirst, warmth and energy. Empty hunger, thirst or warmth wears health down, and health at zero ends the run.
+- **Needs.** Health, hunger, thirst, warmth and energy. An empty meter never kills you by itself: empty hunger, thirst or warmth wears health down slowly, and only health at zero ends the run.
+  - Awake, an empty meter costs 15 health an hour (hunger), 22 (thirst) or 18 (warmth), and the drains add up: 55 an hour with all three empty. Health comes back at 5 an hour only while hunger and thirst are above 35 and warmth above 25.
+  - Asleep (or lying in bed waiting for the others in multiplayer), each empty meter drains at a quarter of the awake rate (3.75, 5.5 and 4.5 an hour), for the hours it sits at zero, summed. Warmth only counts away from a burning fire, once the night's warmth cost has run it out. That night you don't heal, you wake to a warning such as "You slept hungry and cold and woke up weaker (-12 health)", and you can die in your sleep.
+  - The rates live in `BALANCE.needs` (`starvingDamagePerHour`, `dehydrationDamagePerHour`, `freezingDamagePerHour`, `sleep.emptyDrainShare`).
 - **Cold.** Night pulls warmth toward zero; fires, shelters and a torch hold it up.
-  - Cold can't kill you during the first two nights: freezing still hurts, but stops at 1 health. From night 3 on it can be lethal. Hunger and thirst can still kill at any time.
+  - Cold can't kill you during the first two nights, awake or asleep: freezing still hurts, but stops at 1 health. From night 3 on it can take health to zero. Empty hunger and thirst can wear health to zero at any time.
   - Within range of a burning campfire (5.5 m) the cold never lowers your warmth, even at the edge of the firelight or while wading.
   - Sleeping through the night with no burning campfire in range costs 30 of your 100 warmth (`sleep.coldWarmthCost` in `balance.ts`). Beside a burning fire you wake at least as warm as you lay down, and a shelter can still warm you up. Energy is a real resource: walking drains a little (0.1/s), running drains 0.8/s (about two minutes from full), and every task and tool action costs energy: swinging an axe, spear or torch or loosing an arrow 1, gathering 0.5, casting a line 1.2, striking a fish 0.4, crafting 3, building 6, swimming 0.2/s. Standing still or sitting on a bench restores it, food and drink speed up recovery, and sleep refills it.
-- **Skills.** Gathering, hunting, cooking, crafting and fishing each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Pack panel (Tab). The effects are gentle:
+- **Skills.** Gathering, hunting, cooking, crafting, fishing and skinning each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Pack panel (Tab). The effects are gentle:
   - gathering: a growing chance of a bonus find (up to 40%), and up to +0.5 chop power with the axe
   - hunting: up to 40% more damage to animals and a chance of extra meat when you butcher
   - cooking: a novice sometimes chars a meal (20% at level 1, never at level 10). The first time you cook a dish it always comes out right, drinks never burn, and a Charred Meal is still edible.
   - crafting: tools and shelters you make last longer (up to 4×)
   - fishing: the chance to land a hooked fish, from 35% at level 1 (a few tries per fish) to 70% at level 10 (90% with a fully upgraded pole)
+  - skinning: the chance a skinning cut takes the hide whole, on the same curve as fishing: 35% at level 1 to 70% at level 10 (90% with a fully upgraded knife). A whole hide gives 5 XP and a torn one 2.
   - Tool skills and tool upgrades add their bonuses on the same base, so neither alone reaches the top: see **Tool and weapon upgrades** below.
 - **Durability.** Crafted tools, shelters and benches wear out.
   - Tools lose a point per use and a little over time, and a lit torch burns down while you hold it. The HUD shows a bar under each tool, and the bow's slot shows how many arrows you carry (red at zero).
   - Shelters weather slowly and wear a little each night you sleep in them. Benches wear a little each time you sit.
   - You get a warning at 25%. At zero the item breaks: a tool is gone, a structure falls apart. Craft or build a new one.
   - Campfires, gear (basket, backpack, canteen) and bare hands don't wear.
-- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Every recipe and upgrade is visible from the start, greyed out until your pack holds the materials. A 9-step onboarding track leads through the basics, and the tracker lists each step's ingredients and goals in a column with have/need counts:
+- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Every recipe and upgrade is visible from the start, greyed out until your pack holds the materials. An 11-step onboarding track leads through the basics, and the tracker lists each step's ingredients and goals in a column with have/need counts:
   1. Drink from the lake.
   2. Build a campfire.
   3. Forage food (3 berries, onions or chanterelles).
   4. Cook a skewer: the Forager's Skewer (2 salmonberries, a wild onion and a stick) or the Mushroom Skewer.
   5. Add firewood to the fire (twice).
   6. Craft a Stone Axe and chop a tree for a log.
-  7. Craft a Fishing Pole, catch a trout and cook it.
-  8. Craft a spear and hunt a hare with it. The task warns that spear hunting is hard.
-  9. Craft a bow and arrows and make a kill with the bow. That completes onboarding; the goal becomes surviving and upgrading.
+  7. Survive the night: sleep in a lean-to, sleep by the fire or stay up. The step (and everything after it) holds until the morning of the next day.
+  8. Craft a Fishing Pole, catch a trout and cook it.
+  9. Craft a spear and hunt a hare with it. The task warns that spear hunting is hard.
+  10. Craft a bow and arrows and make a kill with the bow.
+  11. Craft a knife, then skin and butcher a kill. That completes onboarding; the goal becomes surviving and upgrading.
+
+  **Day-1 crafting limit.** On day 1 you can only craft what the onboarding steps you've reached ask for (and what goes into it). Everything else stays visible, greyed with a lock and "Unlocks tomorrow", and the Crafting tab says so. From the morning of day 2 every recipe opens. In multiplayer it follows the host's day. What each step opens:
+
+  | Step | Opens on day 1 |
+  |---|---|
+  | Build a campfire | Campfire |
+  | Cook a skewer | Forager's Skewer, Mushroom Skewer (desert: Desert Skewer) |
+  | Craft a Stone Axe | Stone Axe |
+  | Survive the night | Cordage, Lean-to, Torch |
+
+  The later steps (fishing, spear, bow, knife) name their recipes too, but they only start after the night, so on day 2 or later. Saves from before round 10 that are already past day 1 are never locked or held by the night step. `BALANCE.onboarding.dayOneLimit = false` turns the limit off.
 
   Beyond the track:
-  - tools: axe, spear, bow and arrows, torch, fishing pole
+  - tools: axe, spear, bow and arrows, torch, fishing pole, Stone Knife
   - water: drink by hand, or carry up to 4 servings in the canteen (never in pack slots), boiling them at a fire
   - multi-ingredient meals: Forager's Skewer, Forest Stew, Mushroom Skewer, Salmonberry Tea, Bark-Baked Trout, Trout Chowder, Trout & Berry Skewer, Smoked Trout
   - gear, tools, structures and cordage cost about 5× what they did in round 3 (a workbench is 10 logs). Arrows, fuel and food recipes are unchanged. The comment above `RECIPES` in `src/data/recipes.ts` lists the few recipes kept below 5× and why.
@@ -106,16 +124,18 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   | 4. Hide Tent | upgrading a bark hut | 18 hides, 24 logs, 30 cordage, 20 birch bark (14 slots: needs a backpack) | +50 / +10 |
 
   An upgrade gives the shelter fresh condition. A bigger tier needs room, so step out of its footprint and clear anything in the way; the menu says what's blocking it and whether your pack can carry the materials.
-- **Tool and weapon upgrades.** Every tool and weapon (axe, spear, bow, torch, fishing pole) has three upgrade levels, each much costlier than the last, and level III always needs hides. Click a tool on the tool belt in the Pack (Tab), or open the **Upgrades** tab in Crafting (C), to see its current stats, what the next level does and its materials. Upgrades are kept when a worn-out tool is re-crafted. Bonuses add to the matching skill's bonus on the same base:
+- **Tool and weapon upgrades.** Every tool and weapon (axe, spear, bow, torch, fishing pole, Stone Knife) has three upgrade levels, each much costlier than the last, and level III always needs hides. Click a tool on the tool belt in the Pack (Tab), or open the **Upgrades** tab in Crafting (C), to see its current stats, what the next level does and its materials. Upgrades are kept when a worn-out tool is re-crafted. Bonuses add to the matching skill's bonus on the same base:
   - axe: chop power per swing = 1 + Gathering (up to +0.5) + axe (+0.2 / +0.4 / +0.6). A 6-hit fir takes 6 swings at the start, 4 at Gathering level 5 with a level II axe, and 3 with both maxed.
   - spear and bow: damage × (1 + Hunting (up to +0.4) + weapon (+0.15 / +0.3 / +0.45)), so up to ×1.85. Bow upgrades also shoot faster, flatter arrows (up to +25% speed), which is how they improve accuracy.
   - fishing pole: landing chance = 35% + Fishing (up to +35%) + pole (+7 / +14 / +20%), capped at 95%.
   - torch: no skill. Upgrades cut its burn rate (by 20 / 40 / 60%) and add warmth while held (+3 / +6 / +9).
+  - Stone Knife: skinning chance = 35% + Skinning (up to +35%) + knife (+7 / +14 / +20%), capped at 95%, and slash damage × (1 + Hunting + knife (+0.15 / +0.3 / +0.45)).
 - **Foraging guide.** The Pack (Tab) has a **Foraging** tab: a numbered guide of every harvestable plant (salmonberry, sword fern, chanterelle, nodding onion, paper birch). Each page unlocks the first time you harvest that plant and shows its effects and hunger when eaten, the recipes that use it, where it grows, how fast it regrows, and field notes. Locked pages hint at where to look. Unlocks are saved with your run.
 - **Wildlife.**
   - Rabbits, deer and fish each have their own fear radius and flee behaviour. Deer spook from far away, so a bow helps.
   - Predators are rare early. Day 1 has a single distant grey wolf, black bears appear from day 2, and numbers grow slowly after that. Wolves spot you from farther away at night.
   - Predators stalk and attack, but keep away from lit fires, and a raised torch holds them off.
+  - A kill leaves a carcass that needs a Stone Knife: without one you can still kill, but clicking the carcass only says "Needs a knife". See **Knife, skinning and butchering** under [Round 10](#round-10).
 - **Fishing.** Craft a Fishing Pole (10 sticks, 5 stones, 5 cordage) once you have made cordage and found the water. Stand at a lake or pond, hold left-click to wind up (longer throws further, 3 to 14 m), release to cast, and wait for a bite (2.5 to 7 s). Click within 0.9 s of the float dipping to strike; your fishing skill decides whether the trout is landed or slips the hook. Clicking early reels in, and switching tools, swimming or walking off reels the line in too.
 - **Stripped birches.** Peeling all the bark off a paper birch leaves the lower half of its trunk bare wood until the bark grows back a day later. The look follows the saved bark state, so it survives reloads and syncs in multiplayer.
 - **Trees.** Felling a tree takes two steps.
@@ -191,7 +211,8 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
   For comparison, fir and cedar give 3 logs and birch and maple give 2.
 - **Plants.** Creosote fills the low flats at about 300 bushes per hectare, with sagebrush, bunchgrass and boulders around them (about 32 boulders of 1 m or more per world against 116). Harvestable plants: prickly pear, banana yucca (fiber), cholla, agave, desert chia and wolfberry, plus mesquite and pinyon trees. Each has a Foraging guide page.
 - **Stones.** About 1,500 gatherable stone piles per world, thickest on slickrock, in washes and on talus, thinner by the water and in the high country. There are no purely decorative small stones.
-- **Spines.** Walking into a prickly pear (3 damage), cholla (5) or the core of a yucca (2), or pressing right up against a saguaro (4), pricks you, at most once every 1.1 s, with a small knockback and a one-time warning per plant. The hitbox sits well inside picking reach, so gathering never hurts.
+- **Spines.** Walking into a prickly pear (3 damage), cholla (5), agave (3) or the core of a yucca that's ready to harvest (2), or pressing right up against a saguaro (4), pricks you, at most once every 1.1 s, with a small knockback and a one-time warning per plant. A picked or regrowing yucca is harmless, even stood on. The agave uses the cactus hitbox (0.4 m, like the cholla) and pricks while it has a heart to cut. The hitbox sits well inside picking reach, so gathering never hurts.
+- **Fiber.** A yucca gives a sure 2 fiber per harvest (two harvests before it regrows). Cutting an agave heart also has a 30% chance of 1 fiber, so about 0.3 fiber per heart against the yucca's 2.
 - **Edibles.**
 
   | Food | Source | Raw effect |
@@ -224,11 +245,11 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
   - **Black bear:** one from day 3, and only in the juniper and pine high country.
   - **Rattlesnake:** doesn't flee. It rattles when you come close and strikes within 1.8 m for 9 damage (every 2.2 s).
   - **Javelina:** territorial. Each holds about 14 m around its home. Come within 12 m of one inside that ground and it clacks its teeth, then charges at 6 m/s (faster than your 4.3 m/s walk, slower than your 6.8 m/s sprint) and butts for 8 damage every 1.5 s. Herd-mates within 16 m join in. It gives up once you are about 22 m from its home and walks back. Hit it and it charges you; badly hurt (a spear hit, or an axe hit and a punch) it bolts instead, at up to 6.4 m/s. It also charges other animals that wander in: prey bolts, and a mountain lion or bear slinks off home. Outside its ground it only watches you. Each gives 3 meat and 2 hides.
-  - **Scorpion:** hides under stones. Each stone you gather has an 18% chance to turn one up. It rears up for 0.8 s, then scuttles after you at 3.4 m/s and stings for 6 every 1.6 s. One axe, spear or arrow hit kills it (bare hands take two), and it leaves nothing to butcher. Walk away and it loses interest once you are 7 m clear for 3 s, then burrows and is gone. At most 4 are out at once, and sleeping clears them.
+  - **Scorpion:** hides under stones. Each stone you gather has a 9% chance to turn one up, and each stone pile hides at most one, ever (the pile remembers it in saves and multiplayer). It rears up for 0.8 s, then scuttles after you at 3.4 m/s and stings for 6 every 1.6 s. One axe, spear or arrow hit kills it (bare hands take two), and it leaves nothing to butcher. Walk away and it loses interest once you are 7 m clear for 3 s, then burrows and is gone. At most 4 are out at once, and sleeping clears them.
   - Jackrabbits stand in for hares on the onboarding track.
 
   On the Pacific Northwest map wolves go up to four (one more every two days) and bears appear from day 2, two from day 5.
-- **Onboarding** is the same 9 steps, reworded for the spring, desert forage, the Desert Skewer and jackrabbits.
+- **Onboarding** is the same 11 steps, reworded for the spring, desert forage, the Desert Skewer, the cold desert night and jackrabbits. Quail, roadrunners, lizards and snakes have no hide, so the knife step counts their butchering.
 
 ### Map select and saves
 
@@ -258,9 +279,9 @@ Available on the dev server, or on any build with `?dev=1` in the URL.
 
 - **`` ` `` (backquote)** opens the dev panel. From it you can:
   - set the time scale
-  - jump to a time of day
+  - jump to a time of day, or to the next morning (which lifts the day-1 crafting limit)
   - give item kits
-  - unlock all tools and gear
+  - unlock all tools (the Stone Knife included) and gear
   - spawn an animal nearby: a wolf, bear, deer or rabbit on the Pacific Northwest map, or any desert predator or prey (or a scorpion) on the desert
   - refill needs, take damage, or die
   - show an FPS counter
@@ -304,13 +325,15 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 568 tests covering:
+`npm test` runs 659 tests covering:
+
+- round 10: the knife (`tests/knife.test.ts`: recipe, key 7 and icon, the three tiers and their bonuses, repair costs and a workbench repair, the weak two-slash weapon, a use per cut until it breaks), carcasses (`tests/carcass.test.ts`: "Needs a knife" without one, skin then butcher then gone, a torn hide still skinned and butcherable, full-pack drops, hideless birds, lizards and snakes butchered in one cut, the Skinning curve and its progression, the slimmer raw-muscle model, skinned carcasses in saves and old carcasses loading), the day-1 limit (`tests/dayOne.test.ts`: step-by-step unlocks on both maps, no crafting or placing a locked recipe, everything open on day 2 or past the night step, the off switch, old saves past day 1 never locked or held, old track positions moved onto the new track, the locked tiles and header, the dev Next morning), health and needs (`tests/health.test.ts`: each drain rate awake and asleep, drains adding up, death only at health 0 with the worst cause named, no regen while a meter is empty, the cold grace awake and asleep, dying in your sleep, both maps), the 11-step onboarding and the survive-the-night hold (`tests/onboarding.test.ts`), 9% scorpions and one per pile (`tests/scorpions.test.ts`), yucca and agave spines and the agave fiber rate (`tests/spines.test.ts`), and in multiplayer: skin and butcher sync (late joiners too), a hideless quail, a waiting sleeper's drain and death, the night skip's drain, the day-1 limit following the host's day, and a spent stone pile
 
 - the Arizona Desert (`tests/desert.test.ts`): the biome config, water across 40 seeds (always a drinkable spring near the spawn, no big lakes, far less water than the Pacific Northwest map), the alkali pool (first taste, refusal, no canteen fill), evening and night warmth against the Pacific Northwest map, a fire holding warmth, small-tree against big-tree wood, big trees only in the high country, scrub and cactus instead of forest plants, day-1 spawns, the cougar and upland-only bear schedule, the cougar's stalk and the torch, the rattlesnake strike, and the small prey bolting
 - per-map saves (`tests/maps.test.ts`): an old save loading unchanged as a Pacific Northwest run, a desert run leaving the Pacific Northwest save untouched, **Continue** on both maps, per-map records, Start from scratch and Retry the day on the desert, and a desert multiplayer server carrying its map through the lobby to a joining guest
 - the title map picker (`tests/title.test.ts`): arrow order and clicks, the map copy and the dots
 - round 8: the canteen (`tests/canteen.test.ts`: filling, the fill bar, each Drink taking one serving until empty, boiling inside it, F, pack water migrating on both maps, save round-trip), benches (`tests/bench.test.ts`: seat position and facing from either side, clamping to the ends, standing up, the seated pose for other players, saves), repairs (`tests/repair.test.ts`: cost as a share of the crafting cost that rises with level and never reaches it, time rising with level, walking locked but looking free, full condition when done, refunds on hurt or a removed bench, saves), the storage bin (`tests/storage.test.ts`: 10/15/20 slots, moving stacks and single items in and out, full bin or pack, saves), the axe's blade direction (`tests/axe.test.ts`) and the tabbed menu (`tests/menus.test.ts`: tab order, icons, tooltips, the active tab, badges, the shared column and the CSS that keeps icons full size)
-- round 9: shallow pools (`tests/pools.test.ts`: basin shape across 40 seeds, no step too steep to walk out, banks no higher than the Pacific Northwest lake's, walking in and out, water area, and version-4 desert saves loading with trees, plants, structures, drops and carcasses reseated while Pacific Northwest saves load untouched), stones (`tests/stones.test.ts`: no bursage or small rocks, 1,300–1,900 gatherable piles on open dry ground, and seeded shape, size, rotation and colour variety on both maps), spines (`tests/spines.test.ts`: each spiny plant pricks with one warning, picking every charge unhurt, brushing past, the saguaro, the cooldown, death by spines, none on the Pacific Northwest map), scorpions (`tests/scorpions.test.ts`: an 18% reveal rate over 2,400 gathers, the reveal, chase and sting, one weapon hit or two punches to kill, walking away until it burrows, the chase time limit, the cap, blocked sleep, saves, never on the Pacific Northwest map, the model), javelinas (`tests/javelinas.test.ts`: never faster than a sprint, the warn-charge-butt cycle, sprinting clear from 2, 4 and 8 m, walking away, watching from outside its ground, fighting back and bolting, charging a jackrabbit and a mountain lion, herd-mates joining, blocked sleep, sprinting clear in a real desert world) and the crafting checklist (`tests/checklist.test.ts`: pinning and unpinning, live have/need counts, the three-pin limit, auto-unpin, saves)
+- round 9: shallow pools (`tests/pools.test.ts`: basin shape across 40 seeds, no step too steep to walk out, banks no higher than the Pacific Northwest lake's, walking in and out, water area, and version-4 desert saves loading with trees, plants, structures, drops and carcasses reseated while Pacific Northwest saves load untouched), stones (`tests/stones.test.ts`: no bursage or small rocks, 1,300–1,900 gatherable piles on open dry ground, and seeded shape, size, rotation and colour variety on both maps), spines (`tests/spines.test.ts`: each spiny plant pricks with one warning, picking every charge unhurt, brushing past, the saguaro, the cooldown, death by spines, none on the Pacific Northwest map), scorpions (`tests/scorpions.test.ts`: the reveal rate (9% since round 10), the reveal, chase and sting, one weapon hit or two punches to kill, walking away until it burrows, the chase time limit, the cap, blocked sleep, saves, never on the Pacific Northwest map, the model), javelinas (`tests/javelinas.test.ts`: never faster than a sprint, the warn-charge-butt cycle, sprinting clear from 2, 4 and 8 m, walking away, watching from outside its ground, fighting back and bolting, charging a jackrabbit and a mountain lion, herd-mates joining, blocked sleep, sprinting clear in a real desert world) and the crafting checklist (`tests/checklist.test.ts`: pinning and unpinning, live have/need counts, the three-pin limit, auto-unpin, saves)
 - the Pacific Northwest map unchanged (`tests/pnw-unchanged.test.ts`): a golden fingerprint of the terrain, world gen, starting state and early play on several seeds
 
 - inventory stacking and carry limits
@@ -320,7 +343,7 @@ Rendering is built for 60 fps:
 - round 5 shelters: the tier order, upgrading in place with every material, refusals for missing materials, a blocked spot or the top tier, collider swaps, better sleep per tier, and old saves keeping their shelters
 - round 5 tool upgrades: owning the tool, materials and the level cap, steep costs, persistence, and skill and upgrade bonuses adding up (chop swings, spear damage, landing chance, torch burn and warmth)
 - campfire sleep: the menu option, the normal sleep cycle, warmth by a burning or dead fire, and the usual refusals
-- the 9-step onboarding track walked with real actions, out-of-order progress, spear-only hare kills, old-save migration, and the lake-near spawn across 10 worlds
+- the 11-step onboarding track walked with real actions (with the day-1 limit on), out-of-order progress, spear-only hare kills, old-save migration, and the lake-near spawn across 10 worlds
 - the Foraging guide: first-harvest unlocks, page contents, save/load and old-save unlocks
 - fishing: the pole recipe, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals
 - placement validity against trees, rocks, felled trunks, structures, water, slope and reach, plus rotation
@@ -356,7 +379,7 @@ Rendering is built for 60 fps:
   - round 8: storing and taking from a shared bin across three players, simultaneous deposits, a guest's bin upgrade, and a guest repairing at the host's workbench (others see the working pose, and the mended tool survives a resync)
   - round 9: a guest's checklist staying their own through a resync, spines pricking a guest in their own world, a guest's stone turning up a scorpion the host spawns (every player sees it, it stings the guest, and the guest's spear kills it), and a javelina charging a guest and turning on them when hit
 
-`npm run smoke` boots the real build in headless Chrome as an end-to-end check of the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair from its icon grid (greyed tiles, the ring, locked walking, full condition after), a storage bin (the stacked layout with its upgrade panel on the right, moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
+`npm run smoke` boots the real build in headless Chrome as an end-to-end check of the day-1 crafting lock (every Tools tile locked at the first step, with the Day 1 header), then skips to the next morning with the dev hook and checks the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair from its icon grid (greyed tiles, the ring, locked walking, full condition after), a storage bin (the stacked layout with its upgrade panel on the right, moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
 It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. The multiplayer part runs on a desert server, and the guest's server list shows "Arizona Desert". Along the way it saves four screenshots: each map's title screen and each map in first person.
 
@@ -407,6 +430,48 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - **Upgrades tab.** Tier diamonds are centred along the bottom of each tile. There is one Shelter tile and one Storage tile, for the nearest built one, showing its tier as diamonds and the next tier's cost, gains and **Upgrade** button.
 - **Saves.** Round 9 saves are version 5. Desert saves from before round 9 load with fresh trees and plants (the reshaped pools and new stones renumber the world), and structures, drops and carcasses are set back on the new ground. Pacific Northwest saves load unchanged.
 
+## Round 10
+
+- **Fewer scorpions.** 9% per desert stone gather (was 18%), and each stone pile hides at most one scorpion, ever. The pile remembers it in saves and multiplayer, and the host ignores a second request for a spent pile.
+- **Harvested yuccas are safe.** Only a yucca that's ready to harvest pricks; picked or regrowing, it's harmless.
+- **Agave.** Its spines prick like the cactus, with the same tight hitbox, and it's still gatherable. Cutting its heart has a 30% chance of 1 plant fiber:
+
+  | Plant | Fiber per harvest | Chance | Average per harvest |
+  |---|---|---|---|
+  | Banana yucca | 2 | 100% | 2 |
+  | Parry's agave | 1 | 30% | 0.3 |
+
+- **Knife, skinning and butchering.** The Stone Knife (Crafting > Tools, key 7) wears out (30 uses, a little over time), repairs at the workbench and doubles as a weak melee weapon (0.8 damage, 2.2 m reach: two slashes for a hare). Without a knife you can still kill, but a carcass only says "Needs a knife".
+
+  | Level | Name | Materials | Skinning | Slash damage |
+  |---|---|---|---|---|
+  | Craft | Stone Knife | 10 stone, 5 sticks, 3 cordage | +0% | 0.8 |
+  | I | Knapped Edge | 8 stone, 6 sticks, 2 cordage | +7% | 0.92 (×1.15) |
+  | II | Wrapped Grip | 16 stone, 8 sticks, 6 cordage, 6 bark | +14% | 1.04 (×1.3) |
+  | III | Skinner's Blade | 24 stone, 12 cordage, 8 bark, 3 hides | +20% | 1.16 (×1.45) |
+
+  Repairs cost 3 / 4 / 5 / 6 items at levels 0 / I / II / III (2 stone and 1 stick; then 2 stone, 1 stick, 1 cordage; 3, 1, 1; 3, 2, 1).
+
+  The first cut on a carcass skins it. The new **Skinning** skill (in the Pack's skill list) decides whether the hide comes off whole: a torn hide still leaves the skinned carcass, just with no hide. The second cut butchers it for the meat and the carcass disappears. Quail, roadrunners, lizards and snakes have no hide and go straight to butchering. Skinning chance by level, with a plain knife and each upgrade:
+
+  | Skinning level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+  |---|---|---|---|---|---|---|---|---|---|---|
+  | XP needed | 0 | 10 | 25 | 45 | 70 | 100 | 140 | 190 | 250 | 320 |
+  | Plain knife | 35% | 39% | 43% | 47% | 51% | 54% | 58% | 62% | 66% | 70% |
+  | Level I | 42% | 46% | 50% | 54% | 58% | 61% | 65% | 69% | 73% | 77% |
+  | Level II | 49% | 53% | 57% | 61% | 65% | 68% | 72% | 76% | 80% | 84% |
+  | Level III | 55% | 59% | 63% | 67% | 71% | 74% | 78% | 82% | 86% | 90% |
+
+  A whole hide gives 5 XP and a torn one 2, so a novice reaches level 2 in three or four tries and level 10 after about ninety.
+- **Carcass models.** A dead animal lies as before. Skinned, it swaps to its own model where it lies: no fur, raw muscle with pale sinew streaks, and slimmer (body 20% narrower and 14% shallower, thinner legs, head and tail). Butchered, it's gone. Both states sync in multiplayer and saves.
+- **Onboarding pacing.** "Survive the night" after the fire, meal and wood steps, holding the next steps until the morning, and a knife step after the bow. Day 1 only allows what the onboarding has reached. See **Gradual progression** above.
+- **Health and needs audit.** Checked every path that can hurt the player on both maps, awake and asleep:
+  - awake, the rules already held: each empty meter drains health (15 / 22 / 18 an hour), the drains add up, there's no regen while a meter is empty, and death only comes when health reaches 0, for every cause (needs, animals, spines, scorpions, javelinas). Food that costs health (cholla buds, raw agave) never takes you below 1.
+  - fixed: sleeping ignored empty meters (you even healed), in single player and on a multiplayer night skip. Now they drain at a quarter of the awake rate while asleep, with no healing that night and a wake-up warning. You can die in your sleep; Retry the day then goes back to the dawn of the day you lay down.
+  - fixed: in multiplayer, players lying in bed waiting for the others had frozen needs. They now drain at the same asleep share, and dying gets you out of bed and out of the vote.
+  - kept: the round 3 cold grace holds asleep too, so cold alone stops at 1 health during the first two nights.
+- **Saves and multiplayer.** Round 10 saves are version 6 and the multiplayer protocol is version 7. Older saves load on both maps: carcasses whose hide is already gone count as skinned, skills start Skinning at 0, the onboarding position moves onto the new track (steps from the fishing step on shift one later, and a finished old track picks up the knife step), and a save already past day 1 is never locked or held by the night step. The Pacific Northwest layout is unchanged.
+
 ## Known gaps
 
 - Desktop only: it needs a mouse and keyboard with pointer lock. The layout adapts to small screens, but there are no touch controls yet.
@@ -420,7 +485,7 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - One or two mountain lions and a bear on a 9-hectare map is far above real territory density. That's a deliberate game choice, as it is for the wolves.
 - Saguaros are scenery and can't be chopped or harvested.
 - The title cross-fade fades out a snapshot of the old map's canvas, so the menu itself doesn't fade.
-- Multiplayer protocol version 6 (round 9: the desert's new pool, stone and plant layout, and scorpions), so older clients can't join newer servers (and the other way round).
+- Multiplayer protocol version 7 (round 10: per-pile scorpion flags and skinned carcasses), so older clients can't join newer servers (and the other way round).
 - Hunger, thirst, fire fuel and resource regrowth are still tuned per game hour, so with 24-minute days they tick 2.5× faster in real time than before. Cold and warmth are unchanged per game hour.
 - Trunk and boulder surfaces approximate the rendered meshes (a flat-topped slab and a half-ellipsoid dome).
 - Predators don't follow you into the water.
@@ -443,6 +508,11 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - Workbenches and storage don't wear out. Repairs don't need you to stay near the bench once started, since you can't walk away anyway.
 - Round 8 has had no visual review: the workbench and storage models, the seated pose, the axe angle and the tab layout are checked by tests and the headless smoke run only.
 - Round 9 has had no visual review either: the pool banks, stone shapes and colours, the scorpion model and burrowing, the javelina charge and the new menu layouts are checked by tests and the headless smoke run only.
+- Round 10 has had no visual review: the knife icon (painted to match Jon's set until he draws his own), the knife in hand, the skinned carcass model and the locked crafting tiles are checked by tests and the headless smoke run only.
+- The day-1 limit covers recipes (crafting, cooking and building) but not tool, shelter or storage upgrades, which need materials that are hard to reach on day 1 anyway. The fishing, spear, bow and knife steps list what they open, but those steps only start after the night, when nothing is locked.
+- The day-1 limit, the asleep drain share (a quarter) and the knife and skinning numbers are tuned from the numbers only; Jon will tune them in play.
+- If two players skin the same carcass at the same moment, both may get the hide, like the older butchering race.
+- A carcass from an older save with only its hide left (the pack was full when it was butchered) takes a skinning cut for the hide, then an empty butchering cut to clear it.
 - Desert saves from before round 9 lose their felled trees and picked plants, which come back fresh. A structure built on an old pool bank may now stand in shallow water.
 - With about 1,500 stone piles, a desert building spot is sometimes blocked by a pile until you pick it up.
 - The tinaja was reshaped along with the spring and the alkali pool.
