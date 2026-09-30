@@ -363,6 +363,7 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - Visual and feel tuning (movement, lighting, animal behaviour) has only been checked through automated tests and a headless boot, not a hands-on playtest.
 - There is one world size (320 m square), and no weather yet.
 - The desert is tuned from real-world densities and the numbers only, not a playtest. Its animal models, plants and terrain colours haven't had a visual review.
+- The desert has three pools against the Pacific Northwest map's two bodies of water (a lake and a pond), so it has less water rather than fewer bodies: 8.5% of the area, none bigger than a 7.2 m radius. The spring and the alkali pool are needed for the drinkable/undrinkable rule; the tinaja is the third.
 - The desert has no insects, neither huntable nor ambient.
 - Desert ambience reuses the lake loop and forest birds; there are no cicadas, canyon wrens or coyotes yet.
 - Creosote grows at about 300 bushes per hectare, a little under measured Sonoran stands (about 440 per hectare), to keep the flats walkable.
