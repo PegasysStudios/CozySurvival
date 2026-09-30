@@ -26,6 +26,7 @@ export const PLACEMENT_REASON_TEXT: Record<PlacementReason, string> = {
   structure: 'Overlaps another structure',
   resource: 'Plants or items are in the way',
   cactus: 'A saguaro is in the way',
+  cave: 'The cave wall is in the way',
 };
 
 export interface PlacementEnv {

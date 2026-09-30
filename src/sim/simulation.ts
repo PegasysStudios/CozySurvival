@@ -22,7 +22,7 @@ import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot,
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, surfaceAt, type MoveEnv, type MoveInput } from './movement';
 import { canRepair, repairCost, repairSeconds, type RepairCheck } from './repair';
 import { addToStore, cloneStore, ensureStore } from './storage';
-import { applyDamage, applyFood, applySleep, createNeeds, restWhileWaiting, spendEnergy, updateNeeds, type Activity, type SleepResult } from './needs';
+import { applyDamage, applyFood, applySleep, createNeeds, restWhileWaiting, spendEnergy, updateNeeds, type Activity, type SleepClimate, type SleepResult } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
 import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, skinChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
@@ -30,7 +30,7 @@ import { carcassStep, hidesOn } from './carcass';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
-import { freshTree, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
+import { crownPosition, freshTree, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
 import { getWorldGen, type WorldGen } from './worldgen';
 
 export interface SimInput {
@@ -131,7 +131,7 @@ export type NetRequest =
 export const COOK_RADIUS = 4;
 const ARROW_GRAVITY = 9.8;
 const START_HOURS = BALANCE.time.startHour - BALANCE.time.dayStartHour;
-const CARCASS_HIT_RADIUS: Partial<Record<SpeciesId, number>> = { bear: 1.1, deer: 0.9, cougar: 0.85, javelina: 0.8 };
+const CARCASS_HIT_RADIUS: Partial<Record<SpeciesId, number>> = { bear: 1.1, deer: 0.9, cougar: 0.85, javelina: 0.8, boar: 0.85, goat: 0.8 };
 
 let runCounter = 0;
 
@@ -169,7 +169,7 @@ export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 1
 }
 
 /** What the water under the crosshair is called; an alkali pool only earns its name once you've tasted one. */
-function waterName(lake: Lake | null, knowsAlkali: boolean): string {
+function waterName(lake: Lake | null, knowsAlkali: boolean, terrain: Terrain, x: number, z: number): string {
   switch (lake?.kind) {
     case 'spring':
       return 'Spring Pool';
@@ -177,9 +177,26 @@ function waterName(lake: Lake | null, knowsAlkali: boolean): string {
       return 'Rock Pool';
     case 'alkali':
       return knowsAlkali ? 'Alkali Pool' : 'Milky Pool';
+    case 'stream':
+      return 'Stream';
+    case 'pool':
+      return 'Freshwater Pool';
+    case 'plunge':
+      return 'Waterfall Pool';
+    case 'sea': {
+      const isl = terrain.island!;
+      if (Math.hypot(x - isl.cove.x, z - isl.cove.z) < isl.cove.r + 6) return 'Cove';
+      return isl.pastReef(x, z) > 0 ? 'Open Ocean' : 'Lagoon';
+    }
     default:
       return 'Lake';
   }
+}
+
+/** What a fish from the water at (x, z) is called in messages: trout, or on the island a parrotfish or a goby. */
+function fishWord(terrain: Terrain, x: number, z: number): string {
+  if (!terrain.island) return 'trout';
+  return terrain.island.waterAt(x, z).kind === 'sea' ? 'parrotfish' : 'stream goby';
 }
 
 function drinkableWater(terrain: Terrain, x: number, z: number): boolean {
@@ -314,7 +331,10 @@ export class Simulation {
   private readonly litFires: { x: number; z: number }[] = [];
   private readonly tmpColliders: Collider[] = [];
   private readonly spineColliders: Collider[] = [];
+  private readonly crownColliders: Collider[] = [];
   private spineCooldown = 0;
+  private warnedCurrent = false;
+  private warnedCoconut = false;
   /** Spiny plants that have already pricked this player this session, so the warning shows once each. */
   private readonly prickedBy = new Set<string>();
   private readonly look = { x: 0, y: 0, z: 1 };
@@ -354,6 +374,17 @@ export class Simulation {
       hurtPlayer(amount, source, fromX, fromZ) {
         if (self.aiTarget) self.remoteHits.push({ pid: self.aiTarget.pid, amount, source, fromX, fromZ });
         else self.hurtPlayer(amount, source, fromX, fromZ);
+      },
+      poison(perSecond, seconds, maxSeconds, source, fromX, fromZ) {
+        if (!self.aiTarget) {
+          self.envenom(perSecond, seconds, maxSeconds);
+          return;
+        }
+        // Another player's venom arrives with the bite that carried it, all at once.
+        const pid = self.aiTarget.pid;
+        const bite = self.remoteHits.findLast((h) => h.pid === pid && h.source === source);
+        if (bite) bite.amount += perSecond * seconds;
+        else self.remoteHits.push({ pid, amount: perSecond * seconds, source, fromX, fromZ });
       },
     };
     this.refreshLitFires();
@@ -418,6 +449,18 @@ export class Simulation {
     });
     gen.resources.forEach((r, i) => {
       this.colliders.add(makeCollider('resource', i, null, circle(r.x, r.z, RESOURCES[r.kind].blockRadius)));
+    });
+    this.terrain.island?.caves.forEach((c, i) => {
+      // The rock shell is a ring of posts with a gap for the mouth.
+      const n = 22;
+      const wall = c.r - 0.3;
+      for (let k = 0; k < n; k++) {
+        const a = c.facing + (k / n) * Math.PI * 2;
+        if (Math.abs(Math.atan2(Math.sin(a - c.facing), Math.cos(a - c.facing))) < CAVE_MOUTH) continue;
+        const x = c.x + Math.cos(a) * wall;
+        const z = c.z + Math.sin(a) * wall;
+        this.colliders.add(makeCollider('cave', i, circle(x, z, 0.78), circle(x, z, 0.9)));
+      }
     });
     for (const s of state.structures) this.addStructureCollider(s);
   }
@@ -513,7 +556,9 @@ export class Simulation {
     if (move.splash > 0) this.emit({ type: 'splash', impact: move.splash });
     this.lastLanding = move.landed;
     this.distanceWalked += move.distance;
+    this.applyCurrent(dt);
     this.checkSpines(dt);
+    this.updateVenom(dt);
     const speed = horizontalSpeed(p);
     this.activity = p.swimming ? 'swim' : speed < 0.5 ? 'idle' : p.sprinting ? 'sprint' : 'walk';
     const targetNoise = this.activity === 'idle' ? 0.5 : this.activity === 'sprint' ? 1.6 : 0.6 + 0.4 * Math.min(1, speed / BALANCE.player.walkSpeed);
@@ -548,6 +593,7 @@ export class Simulation {
       warmthRatePerHour: warm.rate,
       sitting: p.sitting,
       coldLethal: this.coldLethal,
+      thirstMul: this.biomeDef.thirstMultiplier,
     });
     if (cause) this.die(cause);
 
@@ -632,6 +678,53 @@ export class Simulation {
     return null;
   }
 
+  /**
+   * Past the island's reef a current sets back toward land: nothing for the first couple of metres over the crest,
+   * then it builds until it outpaces your swimming, so the deep water only lets you out a short way.
+   */
+  private applyCurrent(dt: number): void {
+    const isl = this.terrain.island;
+    const p = this.state.player;
+    if (!isl || (!p.swimming && !p.wading)) return;
+    const C = BALANCE.island.current;
+    const past = isl.pastReef(p.x, p.z);
+    if (past <= C.start) return;
+    const k = clamp((past - C.start) / (C.full - C.start), 0, 1);
+    const r = Math.hypot(p.x, p.z) || 1;
+    p.x -= (p.x / r) * C.speed * k * dt;
+    p.z -= (p.z / r) * C.speed * k * dt;
+    this.emit({ type: 'current', strength: k });
+    if (!this.warnedCurrent) {
+      this.warnedCurrent = true;
+      this.message('A strong current pushes you back toward the reef. The water out here is deep, and tiger sharks hunt it.', 'warn');
+    }
+  }
+
+  /** Metres past the reef crest the player is (negative inside the reef or off the island map). */
+  get pastReef(): number {
+    const isl = this.terrain.island;
+    return isl ? isl.pastReef(this.state.player.x, this.state.player.z) : -Infinity;
+  }
+
+  /** A fer-de-lance bite: the venom keeps taking health for a while; another bite adds to the time. */
+  envenom(perSecond: number, seconds: number, maxSeconds: number): void {
+    const n = this.state.needs;
+    const first = !n.venom;
+    n.venom = { perSecond: Math.max(perSecond, n.venom?.perSecond ?? 0), seconds: Math.min(maxSeconds, (n.venom?.seconds ?? 0) + seconds) };
+    if (first) this.message('Envenomed! A fer-de-lance bite keeps hurting for a while. Get away from the snake and eat to keep your health up.', 'warn');
+  }
+
+  private updateVenom(dt: number): void {
+    const s = this.state;
+    const v = s.needs.venom;
+    if (!v || s.dead) return;
+    const spent = Math.min(dt, v.seconds);
+    v.seconds -= dt;
+    if (v.seconds <= 0) delete s.needs.venom;
+    s.lastDamage = 'viper';
+    if (applyDamage(s.needs, v.perSecond * spent)) this.die('viper');
+  }
+
   private checkSpines(dt: number): void {
     this.spineCooldown = Math.max(0, this.spineCooldown - dt);
     if (this.spineCooldown > 0 || this.state.player.swimming) return;
@@ -671,6 +764,11 @@ export class Simulation {
 
   isNearLitFire(radius = COOK_RADIUS): boolean {
     return this.nearestStructure((id) => !!PREFABS[id].fire, radius, true) !== null;
+  }
+
+  /** How this map's climate changes a night's sleep (the island's thirst and warm nights). */
+  private get sleepClimate(): SleepClimate {
+    return { thirstMul: this.biomeDef.thirstMultiplier, coldWarmthCost: this.biomeDef.sleepWarmthCost };
   }
 
   /** Cold can kill only after the first `coldGraceNights` nights (each night belongs to the day it starts on). */
@@ -827,6 +925,12 @@ export class Simulation {
           return { name, action: s.tools.includes('axe') ? 'Equip axe [2] to chop up' : 'Needs an axe', enabled: false };
         }
         if (s.activeTool === 'axe') return { name: def.name, action: 'Chop down', enabled: true };
+        if (def.crown) {
+          if (dyn.bark <= 0) return { name: def.name, action: def.peelRegrowing ?? 'Nothing up there', enabled: false };
+          const n = `${dyn.bark} coconut${dyn.bark === 1 ? '' : 's'} up top`;
+          if (s.activeTool === 'bow') return { name: def.name, action: `${n}: aim at the crown and shoot`, enabled: true };
+          return { name: def.name, action: s.tools.includes('bow') ? `${n}: equip the bow [${TOOLS.bow.slot}] to shoot them down` : `${n}: too high to reach, knock them down with a bow`, enabled: false };
+        }
         if (def.bark > 0 && s.activeTool === 'hands') {
           return dyn.bark > 0
             ? { name: def.name, action: def.peelVerb ?? 'Peel bark', enabled: true }
@@ -875,7 +979,11 @@ export class Simulation {
       }
       case 'water': {
         const lake = this.terrain.lakeAt(t.x, t.z);
-        const name = waterName(lake, this.knowsAlkali);
+        const name = waterName(lake, this.knowsAlkali, this.terrain, t.x, t.z);
+        if (lake?.kind === 'sea') {
+          if (s.activeTool === 'rod') return { name, action: 'Hold to wind up a cast', enabled: true };
+          return { name, action: 'Salt water: too salty to drink', enabled: false };
+        }
         if (lake && !isDrinkable(lake)) {
           if (s.activeTool === 'rod') return { name, action: 'Nothing lives in it', enabled: false };
           return this.knowsAlkali ? { name, action: 'Too salty to drink', enabled: false } : { name, action: 'Taste the water', enabled: true };
@@ -1055,11 +1163,12 @@ export class Simulation {
       s.stats.events.fishCaught = (s.stats.events.fishCaught ?? 0) + 1;
       const added = this.give('rawFish', 1, f.x, WATER_LEVEL + 0.2, f.z, 'fishing');
       if (added === 0) this.dropAt('rawFish', 1, s.player.x, s.player.z);
-      this.message(added ? 'You landed a trout!' : 'You landed a trout! No room in your pack, so it is at your feet.', 'good');
+      const fish = fishWord(this.terrain, f.x, f.z);
+      this.message(added ? `You landed a ${fish}!` : `You landed a ${fish}! No room in your pack, so it is at your feet.`, 'good');
       this.gainXp('fishing', xp.catch);
       this.endFishing('caught');
     } else {
-      this.message('The trout slipped the hook. Your fishing is improving.');
+      this.message(`The ${fishWord(this.terrain, f.x, f.z)} slipped the hook. Your fishing is improving.`);
       this.gainXp('fishing', xp.slip);
       this.endFishing('slipped');
     }
@@ -1156,6 +1265,11 @@ export class Simulation {
       this.emit({ type: 'chop', tree: index, x: g.x, y: gy + 1.2, z: g.z });
       if (dyn.hp <= 0) this.fellTree(index);
       this.wearTool('axe', 1);
+      return;
+    }
+    if (def.crown) {
+      this.actionCooldown = 0.6;
+      this.emit({ type: 'needTool', message: dyn.bark > 0 ? 'The coconuts are far out of reach. Shoot them down with a bow, or look for one fallen under a palm.' : 'This palm has no coconuts left. New ones will ripen.' });
       return;
     }
     if (def.bark > 0 && s.activeTool === 'hands') {
@@ -1555,6 +1669,12 @@ export class Simulation {
     const s = this.state;
     const t0 = this.target;
     const lake = t0 && t0.kind === 'water' ? this.terrain.lakeAt(t0.x, t0.z) : null;
+    if (lake?.kind === 'sea') {
+      this.actionCooldown = BALANCE.needs.handDrink.cooldown;
+      s.stats.events.saltRefused = (s.stats.events.saltRefused ?? 0) + 1;
+      this.message('Seawater is far too salty to drink, and it won\'t go in the canteen. Follow a stream inland for fresh water.', 'warn');
+      return;
+    }
     if (lake && !isDrinkable(lake)) {
       this.actionCooldown = BALANCE.needs.handDrink.cooldown;
       if (this.knowsAlkali) {
@@ -1650,12 +1770,13 @@ export class Simulation {
     const remaining = def.drops.map((d) => ({ item: d.item, count: d.count }));
     const meat = remaining.find((r) => r.item === 'rawMeat');
     if (meat && by === null && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
-    if (a.species === 'fish') {
-      // A speared trout needs no knife: it goes in the pack, or onto the ground when the pack is full.
+    if (def.habitat === 'water') {
+      // A speared fish needs no knife: it goes in the pack, or onto the ground when the pack is full.
       if (by !== null) return;
       const added = this.give('rawFish', 1, a.x, WATER_LEVEL + 0.2, a.z, 'carcass');
       this.dropAt('rawFish', 1 - added, a.x, a.z);
-      this.message(added > 0 ? 'Caught a trout!' : 'Caught a trout! No room in your pack, so it is on the ground.', 'good');
+      const fish = a.species === 'fish' ? fishWord(this.terrain, a.x, a.z) : speciesName(a.species, this.biome).toLowerCase();
+      this.message(added > 0 ? `Caught a ${fish}!` : `Caught a ${fish}! No room in your pack, so it is on the ground.`, 'good');
       this.worldVersion++;
       this.progress();
       return;
@@ -1710,6 +1831,10 @@ export class Simulation {
           }
         }
         if (done) break;
+        if (this.terrain.island && pr.y > 3 && this.shootCoconut(pr, dx, dy, dz, len)) {
+          done = true;
+          break;
+        }
         this.colliders.query(pr.x, pr.z, len + 1, this.tmpColliders);
         for (const c of this.tmpColliders) {
           if (c.kind !== 'tree') continue;
@@ -1744,6 +1869,46 @@ export class Simulation {
     }
   }
 
+  /**
+   * An arrow through a palm's crown knocks one coconut loose: it drops to the sand beside the trunk (a pickup), and
+   * the arrow usually falls with it. Returns whether the arrow hit a crown.
+   */
+  private shootCoconut(pr: Projectile, dx: number, dy: number, dz: number, len: number): boolean {
+    const s = this.state;
+    this.colliders.query(pr.x, pr.z, len + 4, this.crownColliders);
+    for (const c of this.crownColliders) {
+      if (c.kind !== 'tree') continue;
+      const g = this.gen.trees[c.ref];
+      const def = TREES[g.species];
+      const dyn = s.trees[c.ref];
+      if (!def.crown || dyn.felled || dyn.bark <= 0) continue;
+      const cp = crownPosition(g, this.terrain.heightAt(g.x, g.z))!;
+      const t = raySphere(pr.x, pr.y, pr.z, dx, dy, dz, cp.x, cp.y, cp.z, cp.r);
+      if (t < 0 || t > len) continue;
+      dyn.bark -= 1;
+      if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
+      // It lands on the sand between the trunk and the crown, never in the water.
+      let gx = g.x + (cp.x - g.x) * 0.7 + this.rng.range(-0.6, 0.6);
+      let gz = g.z + (cp.z - g.z) * 0.7 + this.rng.range(-0.6, 0.6);
+      if (this.terrain.heightAt(gx, gz) < WATER_LEVEL + 0.1) {
+        gx = g.x + 0.6;
+        gz = g.z + 0.6;
+      }
+      this.dropAt('coconut', 1, gx, gz);
+      if (this.rng.chance(BALANCE.island.coconutArrowRecover)) this.dropAt('arrow', 1, g.x - (cp.x - g.x) * 0.4 + 0.5, g.z - (cp.z - g.z) * 0.4);
+      s.stats.events.coconutsShot = (s.stats.events.coconutsShot ?? 0) + 1;
+      this.emit({ type: 'arrowHit', x: pr.x + dx * t, y: pr.y + dy * t, z: pr.z + dz * t, target: 'tree' });
+      this.emit({ type: 'coconutDown', tree: c.ref, x: cp.x, y: cp.y, z: cp.z, gx, gz });
+      if (!this.warnedCoconut) {
+        this.warnedCoconut = true;
+        this.message('A coconut thuds down onto the sand. Pick it up: it is a drink and a meal in one.', 'good');
+      }
+      this.worldVersion++;
+      return true;
+    }
+    return false;
+  }
+
   // ------------------------------------------------------------------ world systems
 
   private updateAnimals(dt: number): void {
@@ -1756,6 +1921,7 @@ export class Simulation {
     env.playerDead = s.dead || this.sleepingIn !== null;
     env.playerDeterrent = s.activeTool === 'torch';
     env.night = this.night;
+    this.setWaterFlags(s.player.x, s.player.z);
     const remote = this.remotePlayers.length > 0;
     for (let i = 0; i < s.animals.length; i++) {
       const a = s.animals[i];
@@ -1799,6 +1965,21 @@ export class Simulation {
       env.playerDead = !localOk;
       env.playerDeterrent = s.activeTool === 'torch';
     }
+    this.setWaterFlags(env.playerX, env.playerZ);
+  }
+
+  /** Whether the animals' target stands in the water, and out past the reef (read from the ground under them). */
+  private setWaterFlags(x: number, z: number): void {
+    const env = this.animalEnv;
+    const isl = this.terrain.island;
+    if (!isl) {
+      env.playerInWater = false;
+      env.playerDeep = false;
+      return;
+    }
+    const depth = this.terrain.waterDepth(x, z);
+    env.playerInWater = depth > BALANCE.player.wadeDepth;
+    env.playerDeep = depth > 1.2 && isl.pastReef(x, z) > 2;
   }
 
   private updateFires(gameHours: number): void {
@@ -2228,7 +2409,7 @@ export class Simulation {
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
-    const night = applySleep(s.needs, rest, byFire, elapsed, coldLethal);
+    const night = applySleep(s.needs, rest, byFire, elapsed, coldLethal, this.sleepClimate);
     this.updateWear(elapsed, false);
     if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.standUp();
@@ -2491,7 +2672,7 @@ export class Simulation {
     const st = s.structures.find((x) => x.id === id);
     const rest = st ? restBonus(st.prefab) : null;
     const coldLethal = dayOf(Math.max(0, s.totalHours - elapsed)) > BALANCE.needs.coldGraceNights;
-    const night = rest ? applySleep(s.needs, rest, this.sleepByFire, elapsed, coldLethal) : null;
+    const night = rest ? applySleep(s.needs, rest, this.sleepByFire, elapsed, coldLethal, this.sleepClimate) : null;
     this.updateWear(elapsed, false, false);
     if (st && prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.wasNight = this.night;
@@ -2558,7 +2739,10 @@ export class Simulation {
     const s = this.state;
     this.recordKill(species, tool);
     this.gainXp('hunting', BALANCE.skills.xp.kill);
-    if (species === 'fish' && this.give('rawFish', 1, s.player.x, s.player.y + 1, s.player.z, 'carcass') > 0) this.message('Caught a trout!', 'good');
+    const def = SPECIES[species];
+    if (def.habitat === 'water' && def.drops.length > 0 && this.give('rawFish', 1, s.player.x, s.player.y + 1, s.player.z, 'carcass') > 0) {
+      this.message(`Caught a ${species === 'fish' ? fishWord(this.terrain, s.player.x, s.player.z) : speciesName(species, this.biome).toLowerCase()}!`, 'good');
+    }
     this.progress();
   }
 
@@ -2711,6 +2895,8 @@ export class Simulation {
 }
 
 const NO_SHELTER = { warmthBonus: 0, healthBonus: 0 };
+/** Half-angle of a cave's open mouth, in radians. */
+const CAVE_MOUTH = 0.5;
 /** How a night spent with an empty meter reads in the wake-up message. */
 const SLEPT_EMPTY: Partial<Record<DamageSource, string>> = { starvation: 'hungry', dehydration: 'thirsty', cold: 'cold' };
 

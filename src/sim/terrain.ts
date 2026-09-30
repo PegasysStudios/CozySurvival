@@ -2,7 +2,9 @@ import { lerp, smoothstep } from '../core/math';
 import { Noise2D } from '../core/noise';
 import { Rng } from '../core/rng';
 import { DEFAULT_BIOME, type BiomeId } from '../data/biomes';
+import { IslandLayout, ISLAND_WORLD_SIZE, type IslandWaterKind } from './island';
 
+/** The Pacific Northwest and desert world square; the island is bigger (see `Terrain.size`). */
 export const WORLD_SIZE = 320;
 export const WORLD_HALF = WORLD_SIZE / 2;
 export const TERRAIN_CELL = 2;
@@ -12,8 +14,11 @@ export const WATER_LEVEL = 0;
 /** Walkable area stops a little before the mountain rim. */
 export const PLAY_HALF = WORLD_HALF - 12;
 
-/** `spring` and `tinaja` (a rock pool) are the desert's drinkable water; an `alkali` pool is too salty to drink. */
-export type WaterKind = 'lake' | 'spring' | 'tinaja' | 'alkali';
+/**
+ * `spring` and `tinaja` (a rock pool) are the desert's drinkable water; an `alkali` pool is too salty to drink.
+ * The island's streams and pools are fresh, and its `sea` (lagoon, cove and ocean) is salt.
+ */
+export type WaterKind = 'lake' | 'spring' | 'tinaja' | 'alkali' | IslandWaterKind;
 
 export interface Lake {
   x: number;
@@ -35,7 +40,7 @@ export const holdsFish = (l: Lake): boolean => l.fish !== false;
  * above the water at the shore and rises at `grade` for `reach` metres, so you walk straight down to the water.
  * `edge` is where the floor starts to shelve up toward the shore, as a fraction of the pool radius.
  */
-export const POOL_SHAPE: Record<Exclude<WaterKind, 'lake'>, { depth: number; bank: number; grade: number; reach: number; edge: [number, number] }> = {
+export const POOL_SHAPE: Record<'spring' | 'alkali' | 'tinaja', { depth: number; bank: number; grade: number; reach: number; edge: [number, number] }> = {
   spring: { depth: 1.9, bank: 0.35, grade: 0.24, reach: 22, edge: [0, 1.4] },
   alkali: { depth: 0.6, bank: 0.25, grade: 0.2, reach: 22, edge: [0.2, 1.45] },
   tinaja: { depth: 1.3, bank: 0.4, grade: 0.24, reach: 18, edge: [0.1, 1.5] },
@@ -75,6 +80,15 @@ interface Dike {
 export class Terrain {
   readonly seed: number;
   readonly biome: BiomeId;
+  /** World square side, half side, grid cells per side and vertices per side. */
+  readonly size: number;
+  readonly half: number;
+  readonly cells: number;
+  readonly verts: number;
+  /** The walkable square: `inPlayBounds` stops here. */
+  readonly playHalf: number;
+  /** The island's coast, reef, streams, caves and regions; null on the other maps. */
+  readonly island: IslandLayout | null = null;
   readonly heights: Float32Array;
   readonly lakes: Lake[];
   /** Lakes fish can live in (all of them on the PNW map). */
@@ -93,23 +107,39 @@ export class Terrain {
   constructor(seed: number, biome: BiomeId = DEFAULT_BIOME) {
     this.seed = seed;
     this.biome = biome;
+    this.size = biome === 'island' ? ISLAND_WORLD_SIZE : WORLD_SIZE;
+    this.half = this.size / 2;
+    this.cells = this.size / TERRAIN_CELL;
+    this.verts = this.cells + 1;
+    this.playHalf = this.half - 12;
     this.noise = new Noise2D(seed ^ 0x9e3779b9);
     this.detail = new Noise2D(seed ^ 0x51ed270b);
-    if (biome === 'desert') {
+    let sample: (x: number, z: number) => number;
+    if (biome === 'island') {
+      const island = new IslandLayout(seed);
+      this.island = island;
+      this.lakes = island.pools;
+      this.fishLakes = island.pools;
+      this.spawn.x = island.spawn.x;
+      this.spawn.z = island.spawn.z;
+      sample = (x, z) => island.sample(x, z);
+    } else if (biome === 'desert') {
       this.lakes = this.layoutDesert(seed);
       this.fishLakes = this.lakes.filter(holdsFish);
+      sample = (x, z) => this.sampleDesert(x, z);
     } else {
       this.lakes = this.layoutLakes(seed);
       this.fishLakes = this.lakes;
+      sample = (x, z) => this.sampleRaw(x, z);
     }
-    const sample = biome === 'desert' ? (x: number, z: number) => this.sampleDesert(x, z) : (x: number, z: number) => this.sampleRaw(x, z);
 
-    this.heights = new Float32Array(TERRAIN_VERTS * TERRAIN_VERTS);
-    for (let j = 0; j < TERRAIN_VERTS; j++) {
-      for (let i = 0; i < TERRAIN_VERTS; i++) {
-        const x = -WORLD_HALF + i * TERRAIN_CELL;
-        const z = -WORLD_HALF + j * TERRAIN_CELL;
-        this.heights[j * TERRAIN_VERTS + i] = sample(x, z);
+    const n = this.verts;
+    this.heights = new Float32Array(n * n);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const x = -this.half + i * TERRAIN_CELL;
+        const z = -this.half + j * TERRAIN_CELL;
+        this.heights[j * n + i] = sample(x, z);
       }
     }
   }
@@ -349,8 +379,9 @@ export class Terrain {
     return { rock, volcanic };
   }
 
-  /** The pool or lake a water point belongs to, or null on dry land. */
+  /** The pool or lake a water point belongs to, or null on dry land. On the island any water that isn't fresh is the sea. */
   lakeAt(x: number, z: number): Lake | null {
+    if (this.island) return this.island.waterAt(x, z);
     let best: Lake | null = null;
     let bd = 1.35;
     for (const l of this.lakes) {
@@ -364,22 +395,24 @@ export class Terrain {
   }
 
   private vert(i: number, j: number): number {
+    const cells = this.cells;
     if (i < 0) i = 0;
-    else if (i > TERRAIN_CELLS) i = TERRAIN_CELLS;
+    else if (i > cells) i = cells;
     if (j < 0) j = 0;
-    else if (j > TERRAIN_CELLS) j = TERRAIN_CELLS;
-    return this.heights[j * TERRAIN_VERTS + i];
+    else if (j > cells) j = cells;
+    return this.heights[j * this.verts + i];
   }
 
   heightAt(x: number, z: number): number {
-    const gx = (x + WORLD_HALF) / TERRAIN_CELL;
-    const gz = (z + WORLD_HALF) / TERRAIN_CELL;
+    const cells = this.cells;
+    const gx = (x + this.half) / TERRAIN_CELL;
+    const gz = (z + this.half) / TERRAIN_CELL;
     let i = Math.floor(gx);
     let j = Math.floor(gz);
     if (i < 0) i = 0;
-    else if (i > TERRAIN_CELLS - 1) i = TERRAIN_CELLS - 1;
+    else if (i > cells - 1) i = cells - 1;
     if (j < 0) j = 0;
-    else if (j > TERRAIN_CELLS - 1) j = TERRAIN_CELLS - 1;
+    else if (j > cells - 1) j = cells - 1;
     const fx = Math.min(1, Math.max(0, gx - i));
     const fz = Math.min(1, Math.max(0, gz - j));
     const h00 = this.vert(i, j);
@@ -404,7 +437,7 @@ export class Terrain {
   }
 
   inPlayBounds(x: number, z: number, margin = 0): boolean {
-    return Math.abs(x) <= PLAY_HALF - margin && Math.abs(z) <= PLAY_HALF - margin;
+    return Math.abs(x) <= this.playHalf - margin && Math.abs(z) <= this.playHalf - margin;
   }
 
   /** Low-frequency field for biome decisions (forest density, meadows). */

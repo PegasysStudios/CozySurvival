@@ -43,7 +43,23 @@ export type ItemId =
   | 'roastPinon'
   | 'desertStew'
   | 'pinonTrout'
-  | 'pearTroutSkewer';
+  | 'pearTroutSkewer'
+  // island forage and meals
+  | 'coconut'
+  | 'seaGrapes'
+  | 'banana'
+  | 'breadfruit'
+  | 'taro'
+  | 'purslane'
+  | 'beachSkewer'
+  | 'roastBreadfruit'
+  | 'poi'
+  | 'coconutFish'
+  | 'fishLaulau'
+  | 'islandStew'
+  | 'coconutBananas'
+  | 'seaGrapeTea'
+  | 'fishSkewer';
 
 export interface FoodEffect {
   hunger?: number;
@@ -114,6 +130,21 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   desertStew: { id: 'desertStew', name: 'Desert Stew', plural: 'Desert Stew', stack: 4, color: '#a0663a', meal: true, description: 'Meat, cholla buds and mesquite pods simmered in boiled water.', food: { hunger: 42, thirst: 16, warmth: 20, health: 12, energy: 18 } },
   pinonTrout: { id: 'pinonTrout', name: 'Piñon-Crusted Trout', plural: 'Piñon-Crusted Trout', stack: 4, color: '#b98356', meal: true, description: 'Trout rolled in crushed piñon nuts and grilled.', food: { hunger: 34, thirst: 4, warmth: 8, health: 8, energy: 12 } },
   pearTroutSkewer: { id: 'pearTroutSkewer', name: 'Trout & Prickly Pear Skewer', plural: 'Trout & Prickly Pear Skewers', stack: 6, color: '#c9607a', meal: true, description: 'Roast trout glazed with prickly pear.', food: { hunger: 24, thirst: 5, warmth: 5, health: 5, energy: 10 } },
+  coconut: { id: 'coconut', name: 'Coconut', plural: 'Coconuts', stack: 6, color: '#7a5a3a', description: 'Crack it on a stone, drink the water, then eat the white meat. A drink and a meal in one.', food: { thirst: 18, hunger: 9, energy: 4 } },
+  seaGrapes: { id: 'seaGrapes', name: 'Sea Grapes', plural: 'Sea Grapes', stack: 12, color: '#6a2a5a', description: 'Tart purple fruit from the beach shrubs. Mostly pit, but juicy.', food: { hunger: 4, thirst: 3, energy: 2 } },
+  banana: { id: 'banana', name: 'Wild Banana', plural: 'Wild Bananas', stack: 10, color: '#e8c84a', description: 'Small, sweet and starchy. Quick energy.', food: { hunger: 6, thirst: 1, energy: 5 } },
+  breadfruit: { id: 'breadfruit', name: 'Breadfruit', plural: 'Breadfruit', stack: 6, color: '#9ab04a', description: 'A big starchy fruit. Hard and bland raw; roasted in the coals it tastes like fresh bread.', food: { hunger: 4, health: -1 } },
+  taro: { id: 'taro', name: 'Taro Root', plural: 'Taro Roots', stack: 8, color: '#a08aa0', description: 'A starchy corm full of stinging crystals when raw. Cook it well.', food: { hunger: 3, health: -5 } },
+  purslane: { id: 'purslane', name: 'Purslane', plural: 'Purslane', stack: 12, color: '#7aa84a', description: 'Juicy, salty little leaves from the sand.', food: { hunger: 2, thirst: 3 } },
+  beachSkewer: { id: 'beachSkewer', name: 'Beach Skewer', plural: 'Beach Skewers', stack: 6, color: '#8a4a7a', meal: true, description: 'Sea grapes and purslane roasted on a stick. Nothing but what the beach gives.', food: { hunger: 16, thirst: 6, warmth: 3, health: 2, energy: 6 } },
+  roastBreadfruit: { id: 'roastBreadfruit', name: 'Roast Breadfruit', plural: 'Roast Breadfruit', stack: 4, color: '#b89a4a', meal: true, description: 'Breadfruit roasted whole in the coals until the flesh turns soft and bready.', food: { hunger: 30, warmth: 4, health: 6, energy: 14 } },
+  poi: { id: 'poi', name: 'Poi', plural: 'Poi', stack: 4, color: '#9a86a8', meal: true, description: 'Cooked taro pounded smooth with water. Filling, gentle and a little sour.', food: { hunger: 26, thirst: 10, warmth: 3, health: 5, energy: 12 } },
+  coconutFish: { id: 'coconutFish', name: 'Coconut Fish', plural: 'Coconut Fish', stack: 4, color: '#e6dcc0', meal: true, description: 'Fish simmered in coconut milk. Rich, creamy and very filling.', food: { hunger: 36, thirst: 10, warmth: 5, health: 8, energy: 12 } },
+  fishLaulau: { id: 'fishLaulau', name: 'Fish Laulau', plural: 'Fish Laulau', stack: 4, color: '#5a7a3a', meal: true, description: 'Fish and taro wrapped in taro leaves and steamed in the coals.', food: { hunger: 34, thirst: 4, warmth: 6, health: 8, energy: 12 } },
+  islandStew: { id: 'islandStew', name: 'Island Stew', plural: 'Island Stew', stack: 4, color: '#9a6a3a', meal: true, description: 'Meat, taro and breadfruit simmered in boiled water.', food: { hunger: 44, thirst: 16, warmth: 14, health: 12, energy: 18 } },
+  coconutBananas: { id: 'coconutBananas', name: 'Coconut Bananas', plural: 'Coconut Bananas', stack: 6, color: '#e8d27a', meal: true, description: 'Bananas baked in their skins with grated coconut.', food: { hunger: 22, thirst: 8, warmth: 2, health: 3, energy: 14 } },
+  seaGrapeTea: { id: 'seaGrapeTea', name: 'Sea Grape Tea', plural: 'Sea Grape Tea', stack: 4, color: '#8a4a6a', water: true, meal: true, description: 'Sea grape leaves and fruit steeped in hot water. Tart and refreshing.', food: { hunger: 4, thirst: 32, warmth: 6, health: 2, energy: 10 } },
+  fishSkewer: { id: 'fishSkewer', name: 'Fish & Sea Grape Skewer', plural: 'Fish & Sea Grape Skewers', stack: 6, color: '#b86a7a', meal: true, description: 'Roast fish glazed with sea grapes.', food: { hunger: 24, thirst: 6, warmth: 4, health: 5, energy: 10 } },
 };
 
 /**
@@ -130,6 +161,20 @@ const DESERT_TEXT: Partial<Record<ItemId, Partial<Pick<ItemDef, 'name' | 'plural
   lakeWater: { name: 'Spring Water', plural: 'Spring Water', description: 'Clear, cold water from a spring or rock pool.' },
 };
 
+/** Island names for shared items: pandanus fiber, hau bark, reef and stream fish, stream water. */
+const ISLAND_TEXT: Partial<Record<ItemId, Partial<Pick<ItemDef, 'name' | 'plural' | 'description'>>>> = {
+  stick: { description: 'A dry branch or a piece of sun-bleached driftwood. Handles, kindling, and fuel.' },
+  stone: { description: 'A fist-sized chunk of black basalt.' },
+  fiber: { name: 'Pandanus Fiber', plural: 'Pandanus Fiber', description: 'Strips of pandanus leaf. Twist them into cordage.' },
+  bark: { name: 'Hau Bark', plural: 'Hau Bark', description: 'Tough inner bark peeled from beach hibiscus. Islanders made rope and cloth from it.' },
+  cordage: { description: 'Twisted pandanus fiber. Strong enough to lash tools.' },
+  hide: { description: 'Tough pig or goat hide for packs and tents.' },
+  rawFish: { name: 'Raw Fish', plural: 'Raw Fish', description: 'A parrotfish from the reef or a goby from a stream.' },
+  lakeWater: { name: 'Stream Water', plural: 'Stream Water', description: 'Cool fresh water from a stream or pool.' },
+  grilledTrout: { name: 'Grilled Fish', plural: 'Grilled Fish' },
+  smokedTrout: { name: 'Smoked Fish', plural: 'Smoked Fish', description: 'A strip of smoky fish. Light, and good for a long day.' },
+};
+
 let displayBiome: BiomeId = 'pnw';
 
 /** Which map's names the UI and messages use. Set whenever a world is shown or simulated. */
@@ -143,7 +188,7 @@ export function getDisplayBiome(): BiomeId {
 
 /** An item's definition with the displayed map's names applied. */
 export function itemDef(id: ItemId): ItemDef {
-  const o = displayBiome === 'desert' ? DESERT_TEXT[id] : undefined;
+  const o = displayBiome === 'desert' ? DESERT_TEXT[id] : displayBiome === 'island' ? ISLAND_TEXT[id] : undefined;
   return o ? { ...ITEMS[id], ...o } : ITEMS[id];
 }
 

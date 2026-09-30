@@ -2,12 +2,20 @@ import type { ItemId } from './items';
 
 export type SpeciesId =
   | 'rabbit' | 'deer' | 'fish' | 'wolf' | 'bear'
-  | 'jackrabbit' | 'javelina' | 'quail' | 'roadrunner' | 'lizard' | 'snake' | 'cougar' | 'scorpion';
+  | 'jackrabbit' | 'javelina' | 'quail' | 'roadrunner' | 'lizard' | 'snake' | 'cougar' | 'scorpion'
+  | 'boar' | 'goat' | 'junglefowl' | 'crab' | 'viper' | 'reefFish' | 'jellyfish' | 'shark';
+
+/**
+ * Which island water a water animal keeps to: `fresh` streams and pools, the `lagoon` inside the reef, its sunny
+ * `shallows` near the beaches, or the `deep` water past the reef. Only the island checks it.
+ */
+export type WaterZone = 'fresh' | 'lagoon' | 'shallows' | 'deep';
 
 interface BaseSpecies {
   id: SpeciesId;
   name: string;
   habitat: 'land' | 'water';
+  waters?: WaterZone;
   maxHealth: number;
   /** Body radius for movement collision. */
   radius: number;
@@ -33,9 +41,15 @@ export interface PreySpecies extends BaseSpecies {
   alertTime: [number, number];
   /**
    * Holds its ground instead of bolting (a rattlesnake): it rattles when you come within `alertRadius` and bites
-   * anyone closer than `radius`, at most every `cooldown` seconds. It only slithers off once hurt.
+   * anyone closer than `radius`, at most every `cooldown` seconds. It only slithers off once hurt. A `venom` bite
+   * keeps hurting afterwards: `perSecond` health for `seconds` (another bite adds to the time, up to `maxSeconds`).
    */
-  strike?: { radius: number; damage: number; cooldown: number };
+  strike?: { radius: number; damage: number; cooldown: number; venom?: { perSecond: number; seconds: number; maxSeconds: number } };
+  /**
+   * Drifts with the water and stings anyone swimming or wading within `radius` (a box jellyfish), at most every
+   * `cooldown` seconds. It never flees and never follows you.
+   */
+  drift?: { radius: number; damage: number; cooldown: number };
   /** Defends the ground around its home instead of bolting (javelinas); see `Territory`. */
   territory?: Territory;
 }
@@ -111,7 +125,7 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     drops: [{ item: 'rawMeat', count: 3 }, { item: 'hide', count: 2 }],
   },
   fish: {
-    id: 'fish', name: 'Cutthroat Trout', kind: 'prey', habitat: 'water',
+    id: 'fish', name: 'Cutthroat Trout', kind: 'prey', habitat: 'water', waters: 'fresh',
     maxHealth: 1, radius: 0.2, hitHeight: -0.3, hitRadius: 0.38,
     walkSpeed: 0.7, runSpeed: 4.2, turnRate: 5, wanderRadius: 8,
     alertRadius: 6, fearRadius: 3.2, calmRadius: 8, alertTime: [0.5, 1.2],
@@ -176,6 +190,75 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     walkSpeed: 1.2, runSpeed: 3.4, turnRate: 6, wanderRadius: 2,
     sting: { range: 1.1, damage: 6, cooldown: 1.6 },
     revealTime: 0.8, giveUpDist: 7, giveUpTime: 3, maxChase: 45, burrowTime: 1.5,
+    drops: [],
+  },
+  // ---- island (see data/biomes.ts for populations)
+  boar: {
+    id: 'boar', name: 'Wild Boar', kind: 'prey', habitat: 'land',
+    maxHealth: 4, radius: 0.5, hitHeight: 0.5, hitRadius: 0.62,
+    // Like the javelina, every speed (fleeing hurt is x1.1) stays under the player's 6.8 m/s sprint.
+    walkSpeed: 1.1, runSpeed: 6.0, turnRate: 4.5, wanderRadius: 14,
+    alertRadius: 24, fearRadius: 13, calmRadius: 32, alertTime: [1.0, 2.2],
+    // Feral pigs are bolder than javelinas: a wider patch, a longer look, a harder hit, and slower to give up.
+    territory: {
+      radius: 18, sight: 15, warnTime: 0.7, chargeSpeed: 6.3, range: 1.35, damage: 12, cooldown: 1.4,
+      leash: 1.7, maxCharge: 16, rally: 14, fleeFrac: 0.3,
+    },
+    drops: [{ item: 'rawMeat', count: 3 }, { item: 'hide', count: 2 }],
+  },
+  goat: {
+    id: 'goat', name: 'Feral Goat', kind: 'prey', habitat: 'land',
+    maxHealth: 2, radius: 0.4, hitHeight: 0.62, hitRadius: 0.55,
+    walkSpeed: 1.2, runSpeed: 8.2, turnRate: 5, wanderRadius: 18,
+    alertRadius: 26, fearRadius: 15, calmRadius: 36, alertTime: [1.0, 2.0],
+    drops: [{ item: 'rawMeat', count: 2 }, { item: 'hide', count: 1 }],
+  },
+  junglefowl: {
+    id: 'junglefowl', name: 'Red Junglefowl', kind: 'prey', habitat: 'land',
+    maxHealth: 1, radius: 0.16, hitHeight: 0.2, hitRadius: 0.26,
+    walkSpeed: 1.0, runSpeed: 6.4, turnRate: 8, wanderRadius: 10,
+    alertRadius: 10, fearRadius: 5, calmRadius: 15, alertTime: [0.5, 1.2],
+    drops: [{ item: 'rawMeat', count: 1 }],
+  },
+  crab: {
+    id: 'crab', name: 'Land Crab', kind: 'prey', habitat: 'land',
+    maxHealth: 1, radius: 0.16, hitHeight: 0.1, hitRadius: 0.26,
+    walkSpeed: 0.5, runSpeed: 3.2, turnRate: 7, wanderRadius: 6,
+    alertRadius: 6, fearRadius: 3, calmRadius: 9, alertTime: [0.4, 1.0],
+    drops: [{ item: 'rawMeat', count: 1 }],
+  },
+  viper: {
+    id: 'viper', name: 'Fer-de-Lance', kind: 'prey', habitat: 'land',
+    maxHealth: 1, radius: 0.2, hitHeight: 0.08, hitRadius: 0.3,
+    walkSpeed: 0.45, runSpeed: 1.8, turnRate: 3, wanderRadius: 6,
+    // Well camouflaged in the leaf litter: it doesn't rattle, so you notice it later than a rattlesnake.
+    alertRadius: 5, fearRadius: 0, calmRadius: 6, alertTime: [2.5, 4],
+    strike: { radius: 1.9, damage: 6, cooldown: 2.4, venom: { perSecond: 0.6, seconds: 20, maxSeconds: 45 } },
+    drops: [{ item: 'rawMeat', count: 1 }],
+  },
+  reefFish: {
+    id: 'reefFish', name: 'Parrotfish', kind: 'prey', habitat: 'water', waters: 'lagoon',
+    maxHealth: 1, radius: 0.22, hitHeight: -0.3, hitRadius: 0.4,
+    walkSpeed: 0.8, runSpeed: 4.6, turnRate: 5, wanderRadius: 10,
+    alertRadius: 6, fearRadius: 3.4, calmRadius: 9, alertTime: [0.5, 1.2],
+    drops: [{ item: 'rawFish', count: 1 }],
+  },
+  jellyfish: {
+    id: 'jellyfish', name: 'Box Jellyfish', kind: 'prey', habitat: 'water', waters: 'shallows',
+    maxHealth: 1, radius: 0.2, hitHeight: -0.25, hitRadius: 0.36,
+    walkSpeed: 0.22, runSpeed: 0.3, turnRate: 1.5, wanderRadius: 7,
+    alertRadius: 0, fearRadius: 0, calmRadius: 0, alertTime: [1, 2],
+    drift: { radius: 1.1, damage: 7, cooldown: 1.8 },
+    drops: [],
+  },
+  shark: {
+    id: 'shark', name: 'Tiger Shark', kind: 'predator', habitat: 'water', waters: 'deep',
+    maxHealth: 6, radius: 0.7, hitHeight: -0.2, hitRadius: 0.8,
+    // Faster than you can swim (2.6 m/s): the reef is the way out.
+    walkSpeed: 1.6, runSpeed: 5.4, turnRate: 2.6, wanderRadius: 60,
+    detectRadius: 45, nightDetectMul: 1.2, warnRadius: 0, warnTime: 0,
+    chargeRadius: 14, attackRange: 1.9, attackDamage: 24, attackCooldown: 2.6,
+    leash: 400, retreatHealthFrac: 0.5, aggroCooldown: 20,
     drops: [],
   },
   wolf: {

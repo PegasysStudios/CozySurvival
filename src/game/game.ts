@@ -60,6 +60,12 @@ const COPY: Record<BiomeId, { start: string; dawn: string; dawnLater: string; ni
     dawnLater: 'Dawn light on the mesas. A black bear roams the juniper high country now.',
     nightfall: 'The desert sheds its heat fast after dark. Stay by your fire; a mountain lion hunts at dusk and a torch keeps it at bay.',
   },
+  island: {
+    start: 'Washed up on the sand. The sea is salt: follow the stream inland to drink, then gather sticks, stones and pandanus.',
+    dawn: 'Sunrise over the reef. The heat builds fast here, so drink often.',
+    dawnLater: 'Morning light on the lagoon. More tiger sharks cruise past the reef now; the lagoon is still safe.',
+    nightfall: 'A warm night falls over the island. Keep your fire going and stay out of the deep water past the reef.',
+  },
 };
 
 const FUR: Partial<Record<SpeciesId, string>> = {

@@ -200,6 +200,15 @@ export const BALANCE = {
   onboarding: { dayOneLimit: true as boolean },
   /** Thirst lost the one time you taste alkali water before you learn to recognise it. */
   water: { alkaliTasteThirst: 4 },
+  island: {
+    /**
+     * Past the reef crest the current pushes swimmers back toward the island: it starts `start` m out and reaches
+     * `speed` m/s (faster than you swim, 2.6) by `full` m, so nobody gets much more than 11 m past the reef.
+     */
+    current: { start: 2, full: 14, speed: 3.2 },
+    /** Arrows that knock a coconut down fall back to the ground at the palm's foot this often. */
+    coconutArrowRecover: 0.75,
+  },
 } as const;
 
 export const GAME_HOURS_PER_REAL_SECOND = 24 / BALANCE.time.realSecondsPerDay;

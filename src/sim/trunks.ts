@@ -15,6 +15,14 @@ export function freshTree(species: TreeSpecies): TreeDyn {
   return { hp: def.hp, felled: false, bark: def.bark, barkAt: 0, logs: 0, cuts: 0, fall: 0 };
 }
 
+/** Where a palm's crown (its coconuts) hangs, given the ground height at its foot; null for trees without one. */
+export function crownPosition(tree: TreeGen, groundY: number): { x: number; y: number; z: number; r: number } | null {
+  const c = TREES[tree.species].crown;
+  if (!c) return null;
+  const lean = c.lean * tree.scale;
+  return { x: tree.x + Math.cos(tree.rot) * lean, y: groundY + c.height * tree.scale, z: tree.z - Math.sin(tree.rot) * lean, r: c.radius * tree.scale };
+}
+
 /** A standing birch peeled bare: its lower trunk shows pale wood until the bark regrows. */
 export function barkStripped(species: TreeSpecies, dyn: TreeDyn): boolean {
   return TREES[species].bark > 0 && !dyn.felled && dyn.bark <= 0;

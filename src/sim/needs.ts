@@ -19,6 +19,14 @@ export interface NeedsContext {
   sitting: boolean;
   /** False during the grace nights: freezing still hurts but stops at 1 health. Defaults to true. */
   coldLethal?: boolean;
+  /** Thirst drains this many times faster (the island's humid heat). Defaults to 1. */
+  thirstMul?: number;
+}
+
+/** How a map's climate changes a night's sleep: the thirst it costs and the warmth lost away from a fire. */
+export interface SleepClimate {
+  thirstMul?: number;
+  coldWarmthCost?: number;
 }
 
 export function createNeeds(): NeedsState {
@@ -33,7 +41,7 @@ export function createNeeds(): NeedsState {
 export function updateNeeds(n: NeedsState, ctx: NeedsContext): DamageSource | null {
   const h = ctx.gameHours;
   n.hunger = clamp(n.hunger - N.hungerPerHour * h, 0, 100);
-  n.thirst = clamp(n.thirst - N.thirstPerHour * h, 0, 100);
+  n.thirst = clamp(n.thirst - N.thirstPerHour * (ctx.thirstMul ?? 1) * h, 0, 100);
 
   const step = ctx.warmthRatePerHour * h;
   const diff = ctx.warmthTarget - n.warmth;
@@ -135,19 +143,20 @@ export interface SleepResult {
  * all the while at `emptyDrainShare` of the awake rates, and the drains add up, like awake. Then there is no healing.
  * If that takes health to 0 you die in your sleep; cold can't do that during the grace nights (`coldLethal` false).
  */
-export function applySleep(n: NeedsState, shelter: { warmthBonus: number; healthBonus: number }, byFire = false, hours = 0, coldLethal = true): SleepResult {
+export function applySleep(n: NeedsState, shelter: { warmthBonus: number; healthBonus: number }, byFire = false, hours = 0, coldLethal = true, climate: SleepClimate = {}): SleepResult {
   const s = N.sleep;
+  const coldCost = climate.coldWarmthCost ?? s.coldWarmthCost;
   const wasFed = n.hunger > 25 && n.thirst > 25;
   const empty: EmptyHours = {
     hunger: n.hunger <= 0 ? hours : 0,
     thirst: n.thirst <= 0 ? hours : 0,
-    cold: byFire ? 0 : hours * clamp(1 - n.warmth / s.coldWarmthCost, 0, 1),
+    cold: byFire || coldCost <= 0 ? 0 : hours * clamp(1 - n.warmth / coldCost, 0, 1),
   };
   n.hunger = Math.max(Math.min(n.hunger, s.floor), n.hunger - s.hungerCost);
-  n.thirst = Math.max(Math.min(n.thirst, s.floor), n.thirst - s.thirstCost);
+  n.thirst = Math.max(Math.min(n.thirst, s.floor), n.thirst - s.thirstCost * (climate.thirstMul ?? 1));
   n.energy = 100;
   n.exhausted = false;
-  n.warmth = byFire ? Math.max(n.warmth, clamp(45 + shelter.warmthBonus, 0, 100)) : clamp(n.warmth - s.coldWarmthCost, 0, 100);
+  n.warmth = byFire ? Math.max(n.warmth, clamp(45 + shelter.warmthBonus, 0, 100)) : clamp(n.warmth - coldCost, 0, 100);
   const before = n.health;
   const { hurt, cause, from } = drainHealth(n, empty, s.emptyDrainShare, coldLethal);
   if (!hurt && wasFed) n.health = clamp(n.health + s.healthGain + shelter.healthBonus, 0, 100);

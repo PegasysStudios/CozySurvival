@@ -2,7 +2,8 @@ import type { ItemId } from './items';
 
 export type ResourceKind =
   | 'stickPile' | 'stonePile' | 'berryBush' | 'fern' | 'mushroom' | 'onion'
-  | 'yucca' | 'pricklyPear' | 'cholla' | 'agave' | 'chia' | 'wolfberry';
+  | 'yucca' | 'pricklyPear' | 'cholla' | 'agave' | 'chia' | 'wolfberry'
+  | 'seaGrape' | 'pandanus' | 'taro' | 'banana' | 'purslane' | 'coconut';
 
 export interface ResourceDef {
   kind: ResourceKind;
@@ -53,13 +54,25 @@ export const RESOURCES: Record<ResourceKind, ResourceDef> = {
   agave: { kind: 'agave', name: "Parry's Agave", verb: 'Cut the heart', item: 'agaveHeart', yield: 1, charges: 1, respawnHours: 72, hitRadius: 0.75, hitHeight: 0.35, blockRadius: 0.7, spines: { radius: 0.4, damage: 3 }, bonus: { item: 'fiber', chance: 0.3, count: 1 }, starter: 0, scatter: 0.4 },
   chia: { kind: 'chia', name: 'Desert Chia', verb: 'Shake seeds', item: 'chiaSeeds', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.18, blockRadius: 0.35, starter: 0, scatter: 0.5 },
   wolfberry: { kind: 'wolfberry', name: 'Wolfberry', verb: 'Pick berries', item: 'wolfberries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.7, persistent: true, starter: 1, scatter: 0.5 },
+  // Island plants take the same roles: sea grape is the berry bush, pandanus the fiber plant, taro the cook-me-first
+  // root, purslane the small herb, and bananas a big, slow-to-return bunch. Fallen coconuts lie under the palms.
+  seaGrape: { kind: 'seaGrape', name: 'Sea Grape', verb: 'Pick sea grapes', item: 'seaGrapes', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.85, hitHeight: 0.65, blockRadius: 0.75, persistent: true, starter: 2, scatter: 0.5 },
+  pandanus: { kind: 'pandanus', name: 'Pandanus', verb: 'Strip leaves', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.8, hitHeight: 0.9, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
+  taro: { kind: 'taro', name: 'Wild Taro', verb: 'Pull taro', item: 'taro', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.6, hitHeight: 0.45, blockRadius: 0.5, starter: 1, scatter: 0.5 },
+  banana: { kind: 'banana', name: 'Wild Banana', verb: 'Cut bananas', item: 'banana', yield: 2, charges: 2, respawnHours: 36, hitRadius: 0.85, hitHeight: 1.4, blockRadius: 0.6, persistent: true, starter: 0, scatter: 0.45 },
+  purslane: { kind: 'purslane', name: 'Beach Purslane', verb: 'Pick purslane', item: 'purslane', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.1, blockRadius: 0.35, starter: 1, scatter: 0.5 },
+  coconut: { kind: 'coconut', name: 'Fallen Coconut', verb: 'Pick up the coconut', item: 'coconut', yield: 1, charges: 1, respawnHours: 36, hitRadius: 0.42, hitHeight: 0.16, blockRadius: 0.3, starter: 1, scatter: 0.35 },
 };
 
-export const RESOURCE_KINDS: ResourceKind[] = ['stickPile', 'stonePile', 'berryBush', 'fern', 'mushroom', 'onion', 'yucca', 'pricklyPear', 'cholla', 'agave', 'chia', 'wolfberry'];
+export const RESOURCE_KINDS: ResourceKind[] = [
+  'stickPile', 'stonePile', 'berryBush', 'fern', 'mushroom', 'onion', 'yucca', 'pricklyPear', 'cholla', 'agave', 'chia', 'wolfberry',
+  'seaGrape', 'pandanus', 'taro', 'banana', 'purslane', 'coconut',
+];
 
 export type TreeSpecies =
   | 'fir' | 'cedar' | 'birch' | 'maple'
-  | 'joshua' | 'mesquite' | 'cottonwood' | 'juniper' | 'pinyon' | 'ponderosa';
+  | 'joshua' | 'mesquite' | 'cottonwood' | 'juniper' | 'pinyon' | 'ponderosa'
+  | 'palm' | 'breadfruit' | 'kukui' | 'hau' | 'treeFern';
 
 export interface TreeDef {
   species: TreeSpecies;
@@ -79,6 +92,11 @@ export interface TreeDef {
   peelItem?: ItemId;
   peelVerb?: string;
   peelRegrowing?: string;
+  /**
+   * The harvest hangs in the crown, out of reach: only an arrow knocks it down (coconuts). The crown sits `height` up
+   * and `lean` out along the tree's local x axis (palms lean), at scale 1; an arrow within `radius` of it hits.
+   */
+  crown?: { height: number; radius: number; lean: number };
 }
 
 export const TREES: Record<TreeSpecies, TreeDef> = {
@@ -100,6 +118,19 @@ export const TREES: Record<TreeSpecies, TreeDef> = {
     peelItem: 'pinonNuts', peelVerb: 'Gather piñon nuts', peelRegrowing: 'Cones picked over',
   },
   ponderosa: { species: 'ponderosa', name: 'Ponderosa Pine', hp: 7, logs: 3, sticks: 2, trunkRadius: 0.42, fallLength: 8, height: 12, bark: 0, barkRespawnHours: 0 },
+  // Island trees: coconut palms on the beaches (three coconuts in the crown), breadfruit and kukui in the jungle,
+  // beach hibiscus (hau) by the shore and streams for bark, and tree ferns in the jungle understory.
+  palm: {
+    species: 'palm', name: 'Coconut Palm', hp: 4, logs: 2, sticks: 2, trunkRadius: 0.2, fallLength: 9, height: 10, bark: 3, barkRespawnHours: 30,
+    peelItem: 'coconut', peelVerb: 'Shoot down coconuts', peelRegrowing: 'No coconuts left', crown: { height: 9.3, radius: 1.2, lean: 1.3 },
+  },
+  breadfruit: {
+    species: 'breadfruit', name: 'Breadfruit', hp: 6, logs: 3, sticks: 3, trunkRadius: 0.34, fallLength: 7, height: 10, bark: 2, barkRespawnHours: 36,
+    peelItem: 'breadfruit', peelVerb: 'Pick breadfruit', peelRegrowing: 'Fruit ripening',
+  },
+  kukui: { species: 'kukui', name: 'Kukui (Candlenut)', hp: 7, logs: 3, sticks: 3, trunkRadius: 0.4, fallLength: 8, height: 12, bark: 0, barkRespawnHours: 0 },
+  hau: { species: 'hau', name: 'Hau (Beach Hibiscus)', hp: 4, logs: 2, sticks: 3, trunkRadius: 0.24, fallLength: 4.6, height: 6, bark: 2, barkRespawnHours: 24 },
+  treeFern: { species: 'treeFern', name: 'Tree Fern', hp: 2, logs: 1, sticks: 1, trunkRadius: 0.16, fallLength: 3.4, height: 4.5, bark: 0, barkRespawnHours: 0 },
 };
 
 /** Trees that give a single log (the desert's Joshua trees and mesquite). */

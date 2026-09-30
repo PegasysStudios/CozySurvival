@@ -2,9 +2,9 @@ import { BALANCE } from './balance';
 import { predatorTargets, SPECIES, type SpeciesId } from './species';
 
 /** A playable map. Everything biome-specific hangs off `BIOMES[id]`; `pnw` reproduces the original game exactly. */
-export type BiomeId = 'pnw' | 'desert';
+export type BiomeId = 'pnw' | 'desert' | 'island';
 
-export const BIOME_IDS: readonly BiomeId[] = ['pnw', 'desert'];
+export const BIOME_IDS: readonly BiomeId[] = ['pnw', 'desert', 'island'];
 export const DEFAULT_BIOME: BiomeId = 'pnw';
 
 export function isBiomeId(v: unknown): v is BiomeId {
@@ -53,6 +53,10 @@ export interface BiomeDef {
   storageSuffix: string;
   /** Species shared between maps but called something else here. */
   speciesNames: Partial<Record<SpeciesId, string>>;
+  /** Thirst drains this many times faster (the humid tropics); 1 when absent. It scales the night's thirst cost too. */
+  thirstMultiplier?: number;
+  /** Warmth lost sleeping through the night away from a burning fire, instead of `BALANCE.needs.sleep.coldWarmthCost`. */
+  sleepWarmthCost?: number;
 }
 
 /**
@@ -63,6 +67,11 @@ function desertPredators(day: number): Partial<Record<SpeciesId, number>> {
   const cougar = Math.min(2, 1 + Math.floor((day - 1) / 3));
   const bear = day >= 3 ? 1 : 0;
   return { cougar, bear };
+}
+
+/** Islands have no big land predators; tiger sharks cruise the deep water past the reef, one more from day 3. */
+function islandPredators(day: number): Partial<Record<SpeciesId, number>> {
+  return { shark: day >= 3 ? 3 : 2 };
 }
 
 export const BIOMES: Record<BiomeId, BiomeDef> = {
@@ -113,6 +122,32 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
     uplandOnly: ['bear'],
     storageSuffix: '.desert',
     speciesNames: { fish: 'Gila Trout' },
+  },
+  island: {
+    id: 'island',
+    name: 'Tropical Island',
+    tagline: 'Stranded on a tropical island. The sea is salt, so follow the streams inland for water. Fish the reef, knock down coconuts, and last.',
+    place: 'island',
+    // Warm, humid nights: the air never gets cold, so warmth only dips if you swim after dark or sleep without a fire.
+    warmth: { day: 88, night: 58, warmUp: [5, 8.5], coolDown: [18.5, 22], rate: BALANCE.needs.warmthRatePerHour, coolRate: 12 },
+    thirstMultiplier: 1.45,
+    sleepWarmthCost: 8,
+    // Fish are the main meat, as on real Pacific islands: parrotfish on the reef and gobies in the streams.
+    prey: [
+      { species: 'reefFish', count: 26, minDist: 0 },
+      { species: 'fish', count: 10, minDist: 0 },
+      { species: 'crab', count: 14, minDist: 16 },
+      { species: 'junglefowl', count: 12, minDist: 26 },
+      { species: 'goat', count: 8, minDist: 60 },
+      { species: 'boar', count: 7, minDist: 70 },
+      { species: 'viper', count: 6, minDist: 45 },
+      { species: 'jellyfish', count: 14, minDist: 30 },
+    ],
+    predators: [{ species: 'shark', minDist: 60 }],
+    predatorTargets: islandPredators,
+    uplandOnly: [],
+    storageSuffix: '.island',
+    speciesNames: { fish: 'Stream Goby' },
   },
 };
 

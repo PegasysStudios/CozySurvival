@@ -222,6 +222,8 @@ export function fakeTerrain(height: (x: number, z: number) => number): Terrain {
   const lakes = [{ x: 60, z: 0, r: 10, depth: 3, phase: 0 }];
   const t = {
     biome: 'pnw',
+    playHalf: PLAY_HALF,
+    island: null,
     lakes,
     fishLakes: lakes,
     landforms: [],

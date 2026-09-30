@@ -32,14 +32,20 @@ interface StructureView {
 const STRIDE: Record<SpeciesId, number> = {
   rabbit: 3.4, deer: 2.3, fish: 0, wolf: 2.7, bear: 2.1,
   jackrabbit: 3.0, javelina: 3.6, quail: 7.5, roadrunner: 5.2, lizard: 9, snake: 3.2, cougar: 2.5, scorpion: 10,
+  boar: 3.2, goat: 2.8, junglefowl: 7, crab: 11, viper: 3, reefFish: 0, jellyfish: 0, shark: 0,
 };
 const PIVOT_Y: Record<SpeciesId, number> = {
   rabbit: 0.15, deer: 0.95, fish: 0, wolf: 0.6, bear: 0.62,
   jackrabbit: 0.2, javelina: 0.3, quail: 0.07, roadrunner: 0.2, lizard: 0.05, snake: 0.045, cougar: 0.58, scorpion: 0.05,
+  boar: 0.36, goat: 0.56, junglefowl: 0.12, crab: 0.08, viper: 0.048, reefFish: 0, jellyfish: 0, shark: 0,
 };
+/** How far below the surface each swimmer rides (the shark's fin breaks the water). */
+const SWIM_DEPTH: Partial<Record<SpeciesId, number>> = { fish: 0.32, reefFish: 0.4, jellyfish: 0.34, shark: 0.62 };
 /** How far a burrowing scorpion sinks, below its own height. */
 const BURROW_DEPTH = 0.14;
 const HOPPERS = new Set<SpeciesId>(['rabbit', 'jackrabbit']);
+/** Chained, legless bodies posed by `poseSnake`; the rattlesnake's tail buzzes, the fer-de-lance's doesn't. */
+const RATTLES = new Set<SpeciesId>(['snake']);
 const VIEW_DIST = 110;
 const FISH_VIEW = 45;
 const FIRE_LIGHTS = 2;
@@ -256,18 +262,29 @@ export class EntityView {
     const dx = a.x - camX;
     const dz = a.z - camZ;
     const d2 = dx * dx + dz * dz;
-    const lim = a.species === 'fish' ? FISH_VIEW : VIEW_DIST;
+    const def = SPECIES[a.species];
+    const swims = def.habitat === 'water';
+    const lim = swims && a.species !== 'shark' ? FISH_VIEW : VIEW_DIST;
     const root = v.rig.root;
     root.visible = d2 < lim * lim;
     if (!root.visible) return;
-    const def = SPECIES[a.species];
-    root.position.set(a.x, a.species === 'fish' ? WATER_LEVEL - 0.32 : a.y, a.z);
+    root.position.set(a.x, swims ? WATER_LEVEL - (SWIM_DEPTH[a.species] ?? 0.32) : a.y, a.z);
     root.rotation.y = a.heading;
     const speed = a.speed;
 
-    if (a.species === 'fish') {
-      v.phase += dt * (4 + speed * 6);
-      if (v.rig.tail) v.rig.tail.rotation.y = Math.sin(v.phase * 2.2) * (0.35 + speed * 0.15);
+    if (a.species === 'jellyfish') {
+      // The bell pulses and the whole jelly bobs gently.
+      v.phase += dt * 2.2;
+      const pulse = Math.sin(v.phase * 2);
+      v.rig.pivot.scale.set(1 + pulse * 0.08, 1 - pulse * 0.1, 1 + pulse * 0.08);
+      root.position.y += Math.sin(v.phase * 0.7 + a.id) * 0.05;
+      if (v.rig.tail) v.rig.tail.rotation.x = Math.sin(v.phase * 1.3) * 0.12;
+      return;
+    }
+    if (swims) {
+      const slow = a.species === 'shark' ? 0.45 : 1;
+      v.phase += dt * (4 + speed * 6) * slow;
+      if (v.rig.tail) v.rig.tail.rotation.y = Math.sin(v.phase * 2.2) * (0.35 + speed * 0.15) * (a.species === 'shark' ? 0.6 : 1);
       v.rig.pivot.rotation.y = Math.sin(v.phase * 2.2 + 1) * 0.08;
       return;
     }
@@ -330,11 +347,11 @@ export class EntityView {
       const turn = i === 0 ? slither : slither - Math.sin(v.phase - rig.legs[i - 1].phase) * wave;
       heading += turn * (1 - v.crouch) + (i === 0 ? 0.6 : 0.95) * v.crouch;
       seg.mesh.position.set(x, 0, z);
-      seg.mesh.rotation.set(0, heading, i === rig.legs.length - 1 ? Math.sin(time * 60) * 0.35 * v.crouch : 0);
+      seg.mesh.rotation.set(0, heading, i === rig.legs.length - 1 && RATTLES.has(a.species) ? Math.sin(time * 60) * 0.35 * v.crouch : 0);
       x -= Math.sin(heading) * rig.chain;
       z -= Math.cos(heading) * rig.chain;
     }
-    rig.pivot.position.y = PIVOT_Y.snake;
+    rig.pivot.position.y = PIVOT_Y[a.species];
     rig.head.position.y = 0.005 + v.crouch * 0.16;
     rig.head.rotation.x = -v.crouch * 0.3;
     rig.head.rotation.y = Math.sin(v.phase) * 0.2 * (1 - v.crouch);

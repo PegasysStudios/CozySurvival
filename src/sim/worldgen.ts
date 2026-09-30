@@ -1,8 +1,9 @@
 import { smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
-import { SpatialGrid } from '../core/spatialGrid';
 import { DEFAULT_BIOME, type BiomeId } from '../data/biomes';
 import { RESOURCES, TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
+import { generateIsland } from './islandgen';
+import { Occupancy } from './occupancy';
 import { getTerrain, isDrinkable, PLAY_HALF, type Terrain } from './terrain';
 
 export interface TreeGen {
@@ -65,35 +66,9 @@ export interface WorldGen {
   cacti: CactusGen[];
 }
 
-interface Occ {
-  x: number;
-  z: number;
-  r: number;
-}
-
 export const SPAWN_CLEAR_RADIUS = 12;
 /** Desert rocks smaller than this are gatherable stone piles, not boulders. */
 export const MIN_DESERT_BOULDER = 1;
-
-class Occupancy {
-  private readonly grid = new SpatialGrid<Occ>(6);
-  private readonly tmp: Occ[] = [];
-
-  free(x: number, z: number, r: number): boolean {
-    this.grid.query(x, z, r + 3, this.tmp);
-    for (const o of this.tmp) {
-      const dx = o.x - x;
-      const dz = o.z - z;
-      const min = o.r + r;
-      if (dx * dx + dz * dz < min * min) return false;
-    }
-    return true;
-  }
-
-  add(x: number, z: number, r: number): void {
-    this.grid.insert({ x, z, r }, x, z, r);
-  }
-}
 
 function dryAndGentle(t: Terrain, x: number, z: number, minHeight: number, maxSlope: number): boolean {
   if (!t.inPlayBounds(x, z, 2)) return false;
@@ -431,7 +406,7 @@ export function getWorldGen(seed: number, biome: BiomeId = DEFAULT_BIOME): World
   const key = `${biome}:${seed}`;
   let w = cache.get(key);
   if (!w) {
-    w = biome === 'desert' ? generateDesert(seed) : generateWorld(seed);
+    w = biome === 'island' ? generateIsland(seed) : biome === 'desert' ? generateDesert(seed) : generateWorld(seed);
     cache.set(key, w);
   }
   return w;

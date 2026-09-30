@@ -1,5 +1,5 @@
 import type { BiomeId } from './biomes';
-import type { GearId, ItemId, ToolId } from './items';
+import { getDisplayBiome, type GearId, type ItemId, type ToolId } from './items';
 import type { PrefabId } from './prefabs';
 
 export type RecipeCategory = 'tools' | 'gear' | 'materials' | 'cooking' | 'structures';
@@ -24,6 +24,17 @@ export interface Recipe {
 
 const PNW = 'pnw' as const;
 const DESERT = 'desert' as const;
+const ISLAND = 'island' as const;
+
+/** A shared recipe's wording, with the island's version where trout and lakes don't fit. */
+const onIsland = (island: string, other: string) => () => (getDisplayBiome() === 'island' ? island : other);
+
+function worded(r: Omit<Recipe, 'name' | 'description'>, name: () => string, description: () => string): Recipe {
+  return Object.defineProperties(r, {
+    name: { get: name, enumerable: true },
+    description: { get: description, enumerable: true },
+  }) as Recipe;
+}
 
 /**
  * Gear, tool, structure and material costs are 5x their original counts, except where that would break
@@ -91,12 +102,11 @@ export const RECIPES: Recipe[] = [
     output: { kind: 'gear', gear: 'basket' },
     description: '+4 pack slots.',
   },
-  {
-    id: 'canteen', name: 'Bark Canteen', category: 'gear',
+  worded({
+    id: 'canteen', category: 'gear',
     inputs: [{ item: 'bark', count: 15 }, { item: 'cordage', count: 5 }],
     output: { kind: 'gear', gear: 'canteen' },
-    description: 'Fill at the lake to carry 4 servings of water.',
-  },
+  }, () => 'Bark Canteen', onIsland('Fill at a stream or pool to carry 4 servings of fresh water.', 'Fill at the lake to carry 4 servings of water.')),
   {
     id: 'backpack', name: 'Hide Backpack', category: 'gear',
     inputs: [{ item: 'hide', count: 10 }, { item: 'cordage', count: 10 }, { item: 'stick', count: 10 }],
@@ -116,12 +126,11 @@ export const RECIPES: Recipe[] = [
     output: { kind: 'item', item: 'cookedMeat', count: 1 },
     description: 'Simple and filling.',
   },
-  {
-    id: 'grilledTrout', name: 'Grilled Trout', category: 'cooking', station: 'fire',
+  worded({
+    id: 'grilledTrout', category: 'cooking', station: 'fire',
     inputs: [{ item: 'rawFish', count: 1 }],
     output: { kind: 'item', item: 'grilledTrout', count: 1 },
-    description: 'Flaky and smoky.',
-  },
+  }, onIsland('Grilled Fish', 'Grilled Trout'), () => 'Flaky and smoky.'),
   {
     id: 'skewer', biome: PNW, name: 'Mushroom Skewer', category: 'cooking', station: 'fire',
     inputs: [{ item: 'mushroom', count: 2 }, { item: 'onion', count: 1 }, { item: 'stick', count: 1 }],
@@ -164,12 +173,11 @@ export const RECIPES: Recipe[] = [
     output: { kind: 'item', item: 'troutSkewer', count: 1 },
     description: 'Smoky fish with a sweet, tart glaze.',
   },
-  {
-    id: 'smokedTrout', name: 'Smoked Trout ×2', category: 'cooking', station: 'fire',
+  worded({
+    id: 'smokedTrout', category: 'cooking', station: 'fire',
     inputs: [{ item: 'rawFish', count: 2 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'smokedTrout', count: 2 },
-    description: 'Two strips of smoked trout for the trail.',
-  },
+  }, onIsland('Smoked Fish ×2', 'Smoked Trout ×2'), onIsland('Two strips of smoked fish for the trail.', 'Two strips of smoked trout for the trail.')),
   // ---- desert cooking, from Sonoran and Colorado Plateau foodways
   {
     id: 'desertSkewer', biome: DESERT, name: 'Desert Skewer', category: 'cooking', station: 'fire',
@@ -224,6 +232,61 @@ export const RECIPES: Recipe[] = [
     inputs: [{ item: 'rawFish', count: 1 }, { item: 'pricklyPear', count: 2 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'pearTroutSkewer', count: 1 },
     description: 'Smoky fish with a sweet, bright glaze.',
+  },
+  // ---- island cooking, from Pacific and Caribbean island foodways
+  {
+    id: 'beachSkewer', biome: ISLAND, name: 'Beach Skewer', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'seaGrapes', count: 2 }, { item: 'purslane', count: 1 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'beachSkewer', count: 1 },
+    description: 'A simple forage-only meal.',
+  },
+  {
+    id: 'roastBreadfruit', biome: ISLAND, name: 'Roast Breadfruit', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'breadfruit', count: 1 }, { item: 'stick', count: 2 }],
+    output: { kind: 'item', item: 'roastBreadfruit', count: 1 },
+    description: 'Roast it whole in the coals until the skin blackens and the flesh turns soft.',
+  },
+  {
+    id: 'poi', biome: ISLAND, name: 'Poi', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'taro', count: 2 }, { item: 'boiledWater', count: 1 }],
+    output: { kind: 'item', item: 'poi', count: 1 },
+    description: 'Cook the taro through, then pound it smooth with water.',
+  },
+  {
+    id: 'coconutFish', biome: ISLAND, name: 'Coconut Fish', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 1 }, { item: 'coconut', count: 1 }],
+    output: { kind: 'item', item: 'coconutFish', count: 1 },
+    description: 'Simmer the fish in the milk of a grated coconut.',
+  },
+  {
+    id: 'fishLaulau', biome: ISLAND, name: 'Fish Laulau', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 1 }, { item: 'taro', count: 1 }],
+    output: { kind: 'item', item: 'fishLaulau', count: 1 },
+    description: 'Wrap fish and taro in taro leaves and steam the bundle in the coals.',
+  },
+  {
+    id: 'islandStew', biome: ISLAND, name: 'Island Stew', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'boiledWater', count: 1 }, { item: 'rawMeat', count: 1 }, { item: 'taro', count: 1 }, { item: 'breadfruit', count: 1 }],
+    output: { kind: 'item', item: 'islandStew', count: 1 },
+    description: 'The heartiest pot on the island.',
+  },
+  {
+    id: 'coconutBananas', biome: ISLAND, name: 'Coconut Bananas', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'banana', count: 2 }, { item: 'coconut', count: 1 }],
+    output: { kind: 'item', item: 'coconutBananas', count: 1 },
+    description: 'Bake the bananas in their skins and top them with grated coconut.',
+  },
+  {
+    id: 'seaGrapeTea', biome: ISLAND, name: 'Sea Grape Tea', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'boiledWater', count: 1 }, { item: 'seaGrapes', count: 2 }],
+    output: { kind: 'item', item: 'seaGrapeTea', count: 1 },
+    description: 'A tart, thirst-quenching brew.',
+  },
+  {
+    id: 'fishSkewer', biome: ISLAND, name: 'Fish & Sea Grape Skewer', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 1 }, { item: 'seaGrapes', count: 2 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'fishSkewer', count: 1 },
+    description: 'Smoky fish with a tart, fruity glaze.',
   },
   // ---- structures (placed in the world)
   {

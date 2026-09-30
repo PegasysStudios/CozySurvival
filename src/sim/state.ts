@@ -46,6 +46,8 @@ export interface NeedsState {
   regenBoost: number;
   /** Sprint lockout after running out of energy. */
   exhausted: boolean;
+  /** A fer-de-lance bite still working: seconds left and health lost per second (absent when clean). */
+  venom?: { seconds: number; perSecond: number };
 }
 
 export interface Slot {
@@ -180,7 +182,9 @@ export interface AnimalState {
   foe?: number;
 }
 
-export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'spines' | 'scorpion' | 'javelina' | 'dev';
+export type DamageSource =
+  | 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'spines' | 'scorpion' | 'javelina'
+  | 'boar' | 'viper' | 'jellyfish' | 'shark' | 'dev';
 
 export interface GameState {
   version: number;
