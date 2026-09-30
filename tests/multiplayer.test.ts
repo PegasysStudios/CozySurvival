@@ -7,7 +7,7 @@ import { LobbyWatcher, type ServerInfo } from '../src/net/lobby';
 import type { Profile } from '../src/net/protocol';
 import { ID_BLOCK, type SessionEvent } from '../src/net/session';
 import { LocalTransport, MemoryHub } from '../src/net/transport';
-import { IDLE_INPUT, Simulation } from '../src/sim/simulation';
+import { IDLE_INPUT, Simulation, spawnPlayer } from '../src/sim/simulation';
 import { hourOf } from '../src/sim/time';
 import { countItem } from '../src/sim/inventory';
 import { give, keepAlive, nearestResource, nearestTree, placeStructure, quietSim, teleport } from './helpers';
@@ -355,7 +355,8 @@ describe('multiplayer: death', () => {
     expect(b.state.dead).toBe(false);
     expect(b.state.needs.health).toBe(100);
     expect(b.state.skills.gathering).toBe(0);
-    expect(Math.hypot(b.state.player.x - b.terrain.spawn.x, b.state.player.z - b.terrain.spawn.z)).toBeLessThan(0.01);
+    const start = spawnPlayer(b.terrain);
+    expect(Math.hypot(b.state.player.x - start.x, b.state.player.z - start.z)).toBeLessThan(0.01);
     w.pump(0.5);
     expect(w.host.roster().find((r) => r.name === 'Ben')?.dead).toBe(false);
   });

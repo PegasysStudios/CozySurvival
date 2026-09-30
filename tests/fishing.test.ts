@@ -213,9 +213,10 @@ describe('bites and strikes', () => {
 
 describe('fishing skill', () => {
   /** Strike `n` bites straight away and count the catches. */
-  function strikeRate(xp: number, n: number): number {
+  function strikeRate(xp: number, n: number, rodLevel = 0): number {
     const { sim } = atTheLake();
     sim.state.gear.push('basket', 'backpack');
+    if (rodLevel) sim.state.toolLevels.rod = rodLevel;
     let caught = 0;
     for (let k = 0; k < n; k++) {
       sim.state.skills.fishing = xp;
@@ -229,19 +230,22 @@ describe('fishing skill', () => {
     return caught / n;
   }
 
-  it('catch chance climbs from about one in three to nine in ten', () => {
+  it('catch chance climbs from about one in three to seven in ten with skill alone', () => {
     expect(catchChance(0)).toBeCloseTo(0.35);
-    expect(catchChance(MAX_XP)).toBeCloseTo(0.9);
+    expect(catchChance(MAX_XP)).toBeCloseTo(0.7);
     for (let i = 1; i < K.thresholds.length; i++) expect(catchChance(K.thresholds[i])).toBeGreaterThan(catchChance(K.thresholds[i - 1]));
   });
 
-  it('a beginner lands roughly one bite in three; a master lands nearly all', () => {
+  it('a beginner lands roughly one bite in three; a master with a fully upgraded pole lands nearly all', () => {
     const novice = strikeRate(0, 300);
     const master = strikeRate(MAX_XP, 300);
+    const angler = strikeRate(MAX_XP, 300, 3);
     expect(novice).toBeGreaterThan(0.25);
     expect(novice).toBeLessThan(0.45);
-    expect(master).toBeGreaterThan(0.82);
-    expect(master).toBeLessThan(0.97);
+    expect(master).toBeGreaterThan(0.6);
+    expect(master).toBeLessThan(0.8);
+    expect(angler).toBeGreaterThan(0.84);
+    expect(angler).toBeLessThan(0.97);
   });
 
   it('a few dozen bites are enough to see the skill improve', () => {

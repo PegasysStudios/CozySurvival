@@ -13,6 +13,7 @@ const CUTS = BALANCE.trees.cutsPerLog;
 
 function felledFir() {
   const sim = quietSim();
+  teleport(sim, sim.terrain.spawn.x, sim.terrain.spawn.z);
   sim.state.tools.push('axe');
   sim.selectTool('axe');
   const i = nearestTree(sim, 'fir');

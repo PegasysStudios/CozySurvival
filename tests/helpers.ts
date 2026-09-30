@@ -1,7 +1,9 @@
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
 import type { ItemId } from '../src/data/items';
+import type { PrefabId } from '../src/data/prefabs';
 import { RECIPE_BY_ID } from '../src/data/recipes';
+import { nextShelter, SHELTER_TIERS, SHELTER_UPGRADES } from '../src/data/upgrades';
 import type { AnimalEnv } from '../src/sim/animals';
 import type { Collider } from '../src/sim/colliders';
 import type { SimEvent } from '../src/sim/events';
@@ -46,7 +48,7 @@ export function give(sim: Simulation, items: Partial<Record<ItemId, number>>): v
 }
 
 /** Find a spot near the player where a prefab can be placed. */
-export function findValidSpot(sim: Simulation, prefab: Parameters<typeof checkPlacement>[1], rot = 0): { x: number; z: number } {
+export function findValidSpot(sim: Simulation, prefab: Parameters<typeof checkPlacement>[1], rot = sim.placement?.rot ?? 0): { x: number; z: number } {
   const p = sim.state.player;
   const env = sim.placementEnv();
   for (let r = 2; r < 7; r += 0.5) {
@@ -106,7 +108,7 @@ export function giveRecipe(sim: Simulation, recipe: string): void {
  * Builds `recipe` from freshly given ingredients without draining events; whatever the pack held beforehand is set
  * aside and put back, since the bigger structures fill a starting pack on their own.
  */
-export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench' | 'hideTent'): StructureState {
+export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench'): StructureState {
   if (!sim.state.known.includes(recipe)) sim.state.known.push(recipe);
   const inv = sim.state.inventory;
   const held = inv.slots.slice();
@@ -121,10 +123,67 @@ export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'ben
 }
 
 /** Like `buildFresh`, then drains the events. */
-export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench' | 'hideTent'): StructureState {
+export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench'): StructureState {
   const s = buildFresh(sim, recipe);
   drain(sim);
   return s;
+}
+
+/**
+ * A shelter of any tier: builds a lean-to where a hide tent (the biggest footprint) also fits, then upgrades it in
+ * place with freshly given materials, setting the pack aside as `buildFresh` does. Drains the events.
+ */
+export function placeShelter(sim: Simulation, tier: PrefabId): StructureState {
+  if (!sim.state.known.includes('leanTo')) sim.state.known.push('leanTo');
+  const inv = sim.state.inventory;
+  const held = inv.slots.slice();
+  const gear = sim.state.gear.slice();
+  if (!sim.state.gear.includes('basket')) sim.state.gear.push('basket');
+  ensureSlots(sim);
+  inv.slots.fill(null);
+  giveRecipe(sim, 'leanTo');
+  sim.beginPlacement('leanTo');
+  const rot = sim.placement!.rot;
+  const env = sim.placementEnv();
+  const p = sim.state.player;
+  let spot: { x: number; z: number } | null = null;
+  for (let r = 3; r < 9 && !spot; r += 0.5) {
+    for (let a = 0; a < Math.PI * 2; a += Math.PI / 16) {
+      const x = p.x + Math.cos(a) * r;
+      const z = p.z + Math.sin(a) * r;
+      if (SHELTER_TIERS.every((t) => checkPlacement(env, t, x, z, rot).valid)) {
+        spot = { x, z };
+        break;
+      }
+    }
+  }
+  if (!spot) throw new Error('no spot for a shelter of every tier');
+  sim.setPlacementAt(spot.x, spot.z);
+  if (!sim.confirmPlacement()) throw new Error('could not place leanTo');
+  const st = sim.state.structures[sim.state.structures.length - 1];
+  while (st.prefab !== tier) {
+    const next = nextShelter(st.prefab);
+    if (!next) throw new Error(`${tier} is not a shelter tier`);
+    inv.slots.fill(null);
+    give(sim, Object.fromEntries(SHELTER_UPGRADES[next]!.map((i) => [i.item, i.count])));
+    const res = sim.upgradeShelter(st.id);
+    if (!res.ok) throw new Error(`could not upgrade to ${next}: ${res.reason}`);
+  }
+  inv.slots.fill(null);
+  sim.state.gear = gear;
+  ensureSlots(sim);
+  held.forEach((s, i) => (inv.slots[i] = s));
+  drain(sim);
+  return st;
+}
+
+/** Match the pack's slot count to the carried gear. */
+function ensureSlots(sim: Simulation): void {
+  const c = BALANCE.carry;
+  const want = c.baseSlots + (sim.state.gear.includes('basket') ? c.basketSlots : 0) + (sim.state.gear.includes('backpack') ? c.backpackSlots : 0);
+  const slots = sim.state.inventory.slots;
+  while (slots.length < want) slots.push(null);
+  if (slots.length > want) slots.length = want;
 }
 
 /** Aim the camera at a world point. */

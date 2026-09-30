@@ -190,7 +190,6 @@ const ROUND3_COSTS: Record<string, Record<string, number>> = {
   campfire: { stone: 5, stick: 4, fiber: 1 },
   leanTo: { log: 3, stick: 4, fiber: 4, cordage: 1 },
   bench: { log: 2 },
-  hideTent: { hide: 3, log: 2, cordage: 2 },
 };
 
 describe('round 4 crafting costs', () => {
@@ -201,7 +200,7 @@ describe('round 4 crafting costs', () => {
   });
 
   it('every gear, tool, structure and material recipe costs more, 5x unless it is a listed exception', () => {
-    const exceptions = new Set(['cordage', 'axe', 'leanTo', 'hideTent']);
+    const exceptions = new Set(['cordage', 'axe', 'leanTo']);
     for (const [id, before] of Object.entries(ROUND3_COSTS)) {
       const after = cost(id);
       expect(Object.keys(after).sort(), id).toEqual(Object.keys(before).sort());
@@ -236,10 +235,15 @@ describe('round 4 crafting costs', () => {
     expect(RECIPE_BY_ID.rod.output).toEqual({ kind: 'tool', tool: 'rod' });
   });
 
-  it('the canteen objective counts toward the new bark cost', () => {
+  it('the campfire objective counts toward the 5x campfire cost', () => {
     const s = fresh();
-    s.stats.gathered.bark = 4;
-    const canteen = OBJECTIVES.find((o) => o.id === 'canteen')!;
-    expect(canteen.progress!(s)).toBe('Birch bark 4/15');
+    s.stats.gathered.stone = 9;
+    s.stats.gathered.stick = 30;
+    const camp = OBJECTIVES.find((o) => o.id === 'camp')!;
+    expect(camp.progress!(s)).toBe('Stones 9/25 · Sticks 20/20 · Fiber 0/5');
+  });
+
+  it('the hide tent is no longer a recipe: it is only reached by upgrading a shelter', () => {
+    expect(RECIPE_BY_ID.hideTent).toBeUndefined();
   });
 });

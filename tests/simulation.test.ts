@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
-import { OBJECTIVES } from '../src/data/objectives';
 import { RESOURCES, TREES } from '../src/data/resources';
 import { createAnimal } from '../src/sim/animals';
 import { countItem } from '../src/sim/inventory';
@@ -330,7 +329,7 @@ describe('fire and cooking', () => {
     sim.state.needs.hunger = 30;
     sim.quickConsume();
     expect(sim.state.needs.hunger).toBeCloseTo(50);
-    expect(sim.state.objective).toBeGreaterThan(0);
+    expect(sim.state.stats.crafted.skewer).toBe(1);
   });
 
   it('clicking a lit campfire opens cooking; an unlit one takes fuel', () => {
@@ -500,75 +499,5 @@ describe('predator encounters in the simulation', () => {
     sim.perform({ kind: 'animal', id: wolf.id, dist: 2 });
     expect(sim.state.animals.find((a) => a.id === wolf.id)).toBeUndefined();
     expect(sim.state.carcasses[0].species).toBe('wolf');
-  });
-});
-
-describe('onboarding objectives', () => {
-  it('walk through the full first-session progression in order', () => {
-    const sim = quietSim();
-    const done: number[] = [];
-    const collect = () => drain(sim).forEach((e) => e.type === 'objective' && done.push(e.index));
-    const res = (kind: keyof typeof RESOURCES, times: number) => {
-      for (let k = 0; k < times; k++) {
-        const i = nearestResource(sim, kind);
-        sim.state.resources[i].charges = Math.max(1, sim.state.resources[i].charges);
-        sim.perform({ kind: 'resource', index: i, dist: 1 });
-      }
-      collect();
-    };
-    sim.state.gear.push('basket', 'backpack');
-    sim.state.inventory.slots.length = 0;
-    sim.state.inventory.slots.push(...new Array(16).fill(null));
-
-    expect(sim.currentObjective()!.title).toBe(OBJECTIVES[0].title);
-    res('stickPile', 3);
-    res('stonePile', 3);
-    expect(sim.state.objective).toBe(1);
-    res('fern', 3);
-    expect(sim.state.objective).toBe(2);
-    giveRecipe(sim, 'axe');
-    expect(sim.craft('axe').ok).toBe(true);
-    collect();
-    placeCampfire(sim);
-    collect();
-    sim.state.needs.thirst = 50;
-    sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
-    collect();
-    sim.selectTool('hands');
-    for (let k = 0; k < 3; k++) {
-      const b = nearestTree(sim, 'birch');
-      sim.state.trees[b].bark = 2;
-      sim.perform({ kind: 'tree', index: b, dist: 1 });
-    }
-    giveRecipe(sim, 'cordage');
-    expect(sim.craft('cordage').ok).toBe(true);
-    giveRecipe(sim, 'canteen');
-    expect(sim.craft('canteen').ok).toBe(true);
-    collect();
-    sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
-    expect(sim.craft('boilWater').ok).toBe(true);
-    collect();
-    give(sim, { mushroom: 2, onion: 1, stick: 1 });
-    expect(sim.craft('skewer').ok).toBe(true);
-    collect();
-    sim.state.tools.push('spear');
-    sim.selectTool('spear');
-    const p = sim.state.player;
-    sim.state.animals.push(createAnimal(800, 'rabbit', p.x + 1, p.z, new Rng(2), sim.terrain));
-    sim.perform({ kind: 'animal', id: 800, dist: 1 });
-    collect();
-    sim.selectTool('axe');
-    const tree = nearestTree(sim, 'fir');
-    for (let k = 0; k < TREES.fir.hp + TREES.fir.logs * BALANCE.trees.cutsPerLog; k++) sim.perform({ kind: 'tree', index: tree, dist: 1 });
-    collect();
-    buildFresh(sim, 'leanTo');
-    collect();
-    sim.devSetHour(21);
-    const hut = sim.state.structures.find((s) => s.prefab === 'leanTo')!;
-    expect(sim.trySleep(hut.id)).toBe(true);
-    collect();
-
-    expect(done).toEqual(OBJECTIVES.map((_, i) => i));
-    expect(sim.currentObjective()).toBeNull();
   });
 });

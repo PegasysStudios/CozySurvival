@@ -159,7 +159,7 @@ export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 1
  * A new player near the world spawn, facing the water. If the nearest shore is more than a short walk away, the
  * start point slides toward it (never more than `SPAWN_MAX_NUDGE`, so the starter patch stays close).
  */
-function spawnPlayer(terrain: Terrain): PlayerState {
+export function spawnPlayer(terrain: Terrain): PlayerState {
   let sx = terrain.spawn.x;
   let sz = terrain.spawn.z;
   const shore = nearestShore(terrain, sx, sz);
