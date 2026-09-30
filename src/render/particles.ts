@@ -238,6 +238,11 @@ export class Effects {
     if (Math.random() < 0.5) this.glow.emit(x, y, z, 1, 0.6, 0.25, { vy: 0.9, spread: 0.12, size: 0.03, life: 0.6, alpha: 0.9 });
   }
 
+  /** Spray drifting up from where a waterfall lands. */
+  mist(x: number, y: number, z: number, spread = 3): void {
+    this.soft.emit(x + (Math.random() - 0.5) * spread, y, z + (Math.random() - 0.5) * spread, 0.92, 0.96, 1, { vy: 0.9, spread: 0.7, size: 0.9, life: 2.4, drag: 0.8, grow: 2.2, alpha: 0.2 });
+  }
+
   firefly(x: number, y: number, z: number): void {
     this.glow.emit(x, y, z, 0.75, 1, 0.45, { spread: 0.25, size: 0.09, life: 4 + Math.random() * 3, drag: 0.05, alpha: 0.85 });
   }

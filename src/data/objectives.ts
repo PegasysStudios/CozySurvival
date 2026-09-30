@@ -22,6 +22,8 @@ export interface Objective {
   hint: string;
   /** Same step on the desert map, worded for its water, plants and animals. */
   desert?: { title?: string; hint?: string };
+  /** Same step on the island. */
+  island?: { title?: string; hint?: string };
   /** Recipes this step opens up on day 1 (see `lockedToday`): what it asks you to make, and what it needs. */
   unlocks?: string[];
   /** Runs every time the step is checked while it's the current one (it must be safe to repeat). */
@@ -35,12 +37,15 @@ const got = (s: GameState, item: keyof GameState['stats']['gathered']) => s.stat
 const made = (s: GameState, id: string) => s.stats.crafted[id] ?? 0;
 const ev = (s: GameState, id: string) => s.stats.events[id] ?? 0;
 const desert = (s: GameState) => s.biome === 'desert';
-const SKEWERS = ['forageSkewer', 'skewer', 'desertSkewer'];
-const FISH_DISHES = ['grilledTrout', 'cedarTrout', 'troutChowder', 'troutSkewer', 'smokedTrout', 'pinonTrout', 'pearTroutSkewer'];
-const FORAGE_ITEMS: ItemId[] = ['berries', 'onion', 'mushroom', 'pricklyPear', 'chollaBuds', 'wolfberries'];
+const island = (s: GameState) => s.biome === 'island';
+/** One wording per map: the Pacific Northwest's, the desert's and the island's. */
+const pick = (s: GameState, pnw: string, dry: string, isle: string) => (island(s) ? isle : desert(s) ? dry : pnw);
+const SKEWERS = ['forageSkewer', 'skewer', 'desertSkewer', 'beachSkewer'];
+const FISH_DISHES = ['grilledTrout', 'cedarTrout', 'troutChowder', 'troutSkewer', 'smokedTrout', 'pinonTrout', 'pearTroutSkewer', 'coconutFish', 'fishLaulau', 'fishSkewer'];
+const FORAGE_ITEMS: ItemId[] = ['berries', 'onion', 'mushroom', 'pricklyPear', 'chollaBuds', 'wolfberries', 'seaGrapes', 'purslane', 'banana', 'coconut'];
 const FORAGE_FOOD = 3;
 const foraged = (s: GameState) => FORAGE_ITEMS.reduce((n, i) => n + got(s, i), 0);
-const hareKills = (s: GameState) => ev(s, killKey('spear', 'rabbit')) + ev(s, killKey('spear', 'jackrabbit'));
+const hareKills = (s: GameState) => ev(s, killKey('spear', 'rabbit')) + ev(s, killKey('spear', 'jackrabbit')) + ev(s, killKey('spear', 'junglefowl'));
 const FIREWOOD = 2;
 /** `stats.events` key: the day the "Survive the night" step began (it holds until the next morning). */
 export const NIGHT_FROM = 'nightFrom';
@@ -74,13 +79,18 @@ export const OBJECTIVES: Objective[] = [
       title: 'Find water and drink from the spring',
       hint: 'A spring pool lies a short walk away where the cottonwoods grow. Left-click the water to drink. Pools ringed with white crust are alkali: too salty to drink.',
     },
+    island: {
+      title: 'Find fresh water and drink from a stream',
+      hint: "The sea is salt and you can't drink it. A stream runs into the sea a short walk along the beach: follow it a little way inland and left-click the water to drink.",
+    },
     done: (s) => ev(s, 'drankByHand') >= 1 || got(s, 'lakeWater') >= 1,
-    needs: (s) => [goal(desert(s) ? 'Drink from the spring' : 'Drink from the lake', 'lakeWater', ev(s, 'drankByHand') + got(s, 'lakeWater'))],
+    needs: (s) => [goal(pick(s, 'Drink from the lake', 'Drink from the spring', 'Drink from a stream or pool'), 'lakeWater', ev(s, 'drankByHand') + got(s, 'lakeWater'))],
   },
   {
     id: 'camp', title: 'Set up camp: build a campfire',
     hint: 'Gather stones, sticks and fern fiber, then Crafting (C) > Build > Campfire and left-click flat ground.',
     desert: { hint: 'Gather stones, sticks and yucca fiber, then Crafting (C) > Build > Campfire and left-click flat ground. Desert nights get cold fast, so build before sundown.' },
+    island: { hint: 'Gather stones, sticks (driftwood counts) and pandanus fiber, then Crafting (C) > Build > Campfire and left-click flat sand or ground.' },
     unlocks: ['campfire'],
     done: (s) => made(s, 'campfire') >= 1,
     needs: (s) => [...ingredients(s, ['campfire']), goal('Campfire built', 'campfire', made(s, 'campfire'))],
@@ -89,19 +99,23 @@ export const OBJECTIVES: Objective[] = [
     id: 'forage', title: 'Food keeps you alive: forage',
     hint: 'Pick salmonberries, wild onions or chanterelles. Each new plant gets a page in your Foraging guide (Tab).',
     desert: { hint: 'Pick prickly pear fruit, cholla buds or wolfberries. Each new plant gets a page in your Foraging guide (Tab).' },
+    island: { hint: 'Pick sea grapes and purslane on the beach, or find a coconut fallen under a palm. Each new plant gets a page in your Foraging guide (Tab).' },
     done: (s) => foraged(s) >= FORAGE_FOOD,
     needs: (s) => [
-      desert(s) ? goal('Prickly pear, cholla buds or wolfberries', 'pricklyPear', foraged(s), FORAGE_FOOD) : goal('Berries, onions or chanterelles', 'berries', foraged(s), FORAGE_FOOD),
+      island(s)
+        ? goal('Sea grapes, purslane or coconuts', 'seaGrapes', foraged(s), FORAGE_FOOD)
+        : desert(s) ? goal('Prickly pear, cholla buds or wolfberries', 'pricklyPear', foraged(s), FORAGE_FOOD) : goal('Berries, onions or chanterelles', 'berries', foraged(s), FORAGE_FOOD),
     ],
   },
   {
     id: 'skewer', title: 'Cook your first meal at the campfire',
     hint: "Click your lit campfire and roast a Forager's Skewer (salmonberries + wild onion + a stick) or a Mushroom Skewer.",
     desert: { hint: 'Click your lit campfire and roast a Desert Skewer (2 prickly pear fruit + cholla buds + a stick).' },
+    island: { hint: 'Click your lit campfire and roast a Beach Skewer (2 sea grapes + purslane + a stick).' },
     unlocks: SKEWERS,
     done: (s) => SKEWERS.some((m) => made(s, m) >= 1),
     needs: (s) => {
-      const skewer = desert(s) ? 'desertSkewer' : 'forageSkewer';
+      const skewer = pick(s, 'forageSkewer', 'desertSkewer', 'beachSkewer') as ItemId;
       return [...ingredients(s, [skewer]), goal('Skewer cooked', skewer, SKEWERS.some((m) => made(s, m) >= 1) ? 1 : 0)];
     },
   },
@@ -118,6 +132,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'axe', title: 'Craft an axe, then chop a tree',
     hint: 'Craft a Stone Axe, equip it (2) and hold left-click on a trunk to fell it, then keep chopping the fallen trunk for logs.',
     desert: { hint: 'Craft a Stone Axe, equip it (2) and hold left-click on a trunk to fell it. Joshua trees and mesquite give one log; junipers and pines in the high country give more.' },
+    island: { hint: 'Craft a Stone Axe, equip it (2) and hold left-click on a trunk to fell it, then keep chopping the fallen trunk for logs. Palms give two logs; the big kukui and breadfruit trees in the jungle give three.' },
     unlocks: ['axe'],
     done: (s) => made(s, 'axe') >= 1 && got(s, 'log') >= 1,
     needs: (s) => [...ingredients(s, ['axe']), goal('Stone Axe crafted', 'axe', made(s, 'axe')), goal('Log chopped', 'log', got(s, 'log'))],
@@ -126,6 +141,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'night', title: 'Survive the night',
     hint: 'Night is coming. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. The rest of your crafting unlocks tomorrow.',
     desert: { hint: 'Desert nights turn cold fast. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. The rest of your crafting unlocks tomorrow.' },
+    island: { hint: 'The night is warm, but the heat makes you thirsty. Keep the fire fed, eat and drink, then sleep in a lean-to or by the fire. The rest of your crafting unlocks tomorrow.' },
     unlocks: ['cordage', 'leanTo', 'torch'],
     start: (s) => {
       if (nightFrom(s) <= 0) s.stats.events[NIGHT_FROM] = dayOf(s.totalHours);
@@ -137,13 +153,14 @@ export const OBJECTIVES: Objective[] = [
     id: 'fish', title: 'Other food: catch and cook a fish',
     hint: 'Twist fiber into cordage and craft a Fishing Pole. Hold left-click to cast, click when the float dips, then cook the trout at the fire.',
     desert: { hint: 'Twist fiber into cordage and craft a Fishing Pole. Gila trout live only in the spring pool: cast there, click when the float dips, then cook it at the fire.' },
+    island: { hint: 'Fish are the island\'s main meat. Twist fiber into cordage and craft a Fishing Pole, cast into the lagoon, the cove or a stream, click when the float dips, then cook your catch at the fire.' },
     unlocks: ['rod', 'grilledTrout'],
     done: (s) => made(s, 'rod') >= 1 && got(s, 'rawFish') >= 1 && FISH_DISHES.some((m) => made(s, m) >= 1),
     needs: (s) => [
       ...ingredients(s, ['rod']),
       goal('Fishing Pole crafted', 'rod', made(s, 'rod')),
-      goal('Trout caught', 'rawFish', got(s, 'rawFish')),
-      goal('Trout cooked', 'grilledTrout', FISH_DISHES.some((m) => made(s, m) >= 1) ? 1 : 0),
+      goal(island(s) ? 'Fish caught' : 'Trout caught', 'rawFish', got(s, 'rawFish')),
+      goal(island(s) ? 'Fish cooked' : 'Trout cooked', 'grilledTrout', FISH_DISHES.some((m) => made(s, m) >= 1) ? 1 : 0),
     ],
   },
   {
@@ -153,14 +170,19 @@ export const OBJECTIVES: Objective[] = [
       title: 'Craft a spear and hunt a jackrabbit',
       hint: 'Spear hunting is hard: jackrabbits bolt when you get close. Creep up slowly, stay still when they look up, then strike. Give rattlesnakes a wide berth.',
     },
+    island: {
+      title: 'Craft a spear and hunt a junglefowl',
+      hint: 'Spear hunting is hard: junglefowl scurry off when you get close. Creep up slowly at the jungle edge, stay still when they look up, then strike. Watch the leaf litter for the fer-de-lance.',
+    },
     unlocks: ['spear'],
     done: (s) => made(s, 'spear') >= 1 && hareKills(s) >= 1,
-    needs: (s) => [...ingredients(s, ['spear']), goal('Spear crafted', 'spear', made(s, 'spear')), goal(desert(s) ? 'Jackrabbit hunted with the spear' : 'Hare hunted with the spear', 'hide', hareKills(s))],
+    needs: (s) => [...ingredients(s, ['spear']), goal('Spear crafted', 'spear', made(s, 'spear')), goal(pick(s, 'Hare hunted with the spear', 'Jackrabbit hunted with the spear', 'Junglefowl hunted with the spear'), 'hide', hareKills(s))],
   },
   {
     id: 'bow', title: 'Craft a bow and arrows, then hunt with the bow',
     hint: 'Hold left-click to draw and release to shoot. Deer spook from far away, so a bow is the way to reach them.',
     desert: { hint: 'Hold left-click to draw and release to shoot. Javelina and roadrunners bolt early, so a bow is the way to reach them.' },
+    island: { hint: 'Hold left-click to draw and release to shoot. Feral goats spook from far off on the grassland, so a bow is the way to reach them. Shoot at a palm\'s crown to knock down a coconut.' },
     unlocks: ['bow', 'arrows', 'cookedMeat'],
     done: (s) => made(s, 'bow') >= 1 && made(s, 'arrows') >= 1 && ev(s, killKey('bow')) >= 1,
     needs: (s) => [
@@ -174,6 +196,7 @@ export const OBJECTIVES: Objective[] = [
     id: 'knife', title: 'Craft a knife, then skin and butcher your kill',
     hint: 'A carcass needs a knife. Craft a Stone Knife, equip it (7) and click the kill: the first cut skins it for the hide, the second butchers it for the meat.',
     desert: { hint: 'A carcass needs a knife. Craft a Stone Knife, equip it (7) and click the kill: the first cut skins it for the hide, the second butchers it for the meat. Quail, roadrunners, lizards and snakes have no hide, so they go straight to butchering.' },
+    island: { hint: 'A carcass needs a knife. Craft a Stone Knife, equip it (7) and click the kill: the first cut skins a goat or boar for its hide, the second butchers it for the meat. Junglefowl, crabs and snakes have no hide, so they go straight to butchering.' },
     unlocks: ['knife'],
     done: (s) => made(s, 'knife') >= 1 && ev(s, 'skinned') >= 1 && ev(s, 'butchered') >= 1,
     needs: (s) => [
@@ -207,11 +230,12 @@ export const FREEPLAY_OBJECTIVE = {
   title: 'Survive as many days as you can',
   hint: 'Keep fed, watered and warm, and upgrade your shelter and tools. Wolves and bears roam after the first days; fire and torches keep them away.',
   desert: { hint: 'Keep fed, watered and warm, and upgrade your shelter and tools. A mountain lion hunts at dusk and a black bear roams the high country; fire and torches keep them away.' },
+  island: { hint: 'Keep fed and watered (the heat makes you thirsty), and upgrade your shelter and tools. Wild boars guard the jungle, and tiger sharks hunt past the reef.' },
 };
 
 /** A step's title and hint as worded for the map. */
-export function objectiveText(o: Pick<Objective, 'title' | 'hint' | 'desert'>, biome: BiomeId | undefined): { title: string; hint: string } {
-  const d = biome === 'desert' ? o.desert : undefined;
+export function objectiveText(o: Pick<Objective, 'title' | 'hint' | 'desert' | 'island'>, biome: BiomeId | undefined): { title: string; hint: string } {
+  const d = biome === 'desert' ? o.desert : biome === 'island' ? o.island : undefined;
   return { title: d?.title ?? o.title, hint: d?.hint ?? o.hint };
 }
 

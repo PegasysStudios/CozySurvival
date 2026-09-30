@@ -10,12 +10,13 @@ import type { WorldGen } from '../sim/worldgen';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
 import { creosoteGeometry, desertFlowerGeometry, desertGrassGeometry, SAGUARO_HEIGHT, saguaroGeometry, sagebrushGeometry } from './desertModels';
+import { coconutCrownGeometry, islandFlowerGeometry, islandGrassGeometry, jungleUnderstoryGeometry, naupakaGeometry } from './islandModels';
 import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, STONE_VARIANTS, stoneLook, stonePileGeometry, stumpGeometry, treeGeometry, trunkGeometry } from './models';
 
 const ALL_SPECIES = Object.keys(TREES) as TreeSpecies[];
 /** Plants that shrink to a stub when picked instead of vanishing. */
-const SHRINK_WHEN_PICKED = new Set<ResourceKind>(['fern', 'yucca']);
-const SWAYING = new Set<ResourceKind>(['berryBush', 'fern', 'onion', 'yucca', 'chia', 'wolfberry']);
+const SHRINK_WHEN_PICKED = new Set<ResourceKind>(['fern', 'yucca', 'pandanus']);
+const SWAYING = new Set<ResourceKind>(['berryBush', 'fern', 'onion', 'yucca', 'chia', 'wolfberry', 'seaGrape', 'pandanus', 'taro', 'banana']);
 const GRASS_VIEW = 85;
 const FLOWER_VIEW = 70;
 const RESOURCE_VIEW = 140;
@@ -72,6 +73,10 @@ export class NatureView {
    */
   private readonly strippedTrees: Partial<Record<TreeSpecies, ChunkedInstances>> = {};
   private readonly strippedGeos: Partial<Record<TreeSpecies, THREE.BufferGeometry>> = {};
+  /** A palm's three coconuts, each its own instance set drawn with the palm's matrix, hidden as they're shot down. */
+  private readonly coconuts: ChunkedInstances[] = [];
+  /** Coconuts showing per tree (palms only). */
+  private readonly nutsShown: Int8Array;
   private readonly treeLocal: Int32Array;
   private readonly resources = {} as Record<ResourceKind, ChunkedInstances>;
   /** Loose stones, one instance set per shape. */
@@ -111,12 +116,15 @@ export class NatureView {
     this.treeLocal = new Int32Array(gen.trees.length);
     this.resLocal = new Int32Array(gen.resources.length);
     this.stoneVariant = new Uint8Array(gen.resources.length);
+    this.nutsShown = new Int8Array(gen.trees.length).fill(-1);
     this.buildTrees();
     this.buildRocksAndLogs();
     this.buildResources();
     if (gen.biome === 'desert') {
       this.buildCacti();
       this.buildDesertGround();
+    } else if (gen.biome === 'island') {
+      this.buildIslandGround();
     } else {
       this.buildGround();
     }
@@ -153,6 +161,14 @@ export class NatureView {
       for (let i = 0; i < stumpSpecs.length; i++) this.stumps[s].setHidden(i, true);
       this.group.add(this.stumps[s].group);
       this.trunkGeos[s] = this.own(trunkGeometry(s));
+      if (TREES[s].crown && specs[s].length) {
+        for (let k = 0; k < TREES[s].bark; k++) {
+          const inst = new ChunkedInstances(this.own(coconutCrownGeometry(k)), this.mats.foliage, specs[s].map((sp) => ({ matrix: sp.matrix.clone() })), { chunkSize: 48, castShadow: true, name: `coconuts-${k}` });
+          this.coconuts.push(inst);
+          this.group.add(inst.group);
+        }
+        continue;
+      }
       if (TREES[s].bark <= 0 || !specs[s].length) continue;
       const geo = this.own(treeGeometry(s, 0, true));
       const strippedSpecs = specs[s].map((sp) => ({ matrix: sp.matrix.clone(), color: sp.color?.clone() }));
@@ -200,7 +216,8 @@ export class NatureView {
   private buildRocksAndLogs(): void {
     const t = this.terrain;
     const desert = this.gen.biome === 'desert';
-    const palettes = desert ? (['sandstone', 'basalt'] as const) : (['pnw'] as const);
+    const island = this.gen.biome === 'island';
+    const palettes = desert ? (['sandstone', 'basalt'] as const) : island ? (['basalt'] as const) : (['pnw'] as const);
     const bins: InstanceSpec[][] = palettes.flatMap(() => [[], [], []]);
     for (const r of this.gen.rocks) {
       const y = t.heightAt(r.x, r.z) - r.r * 0.12;
@@ -214,12 +231,15 @@ export class NatureView {
       this.others.push(inst);
       this.group.add(inst.group);
     });
-    const logSpecs = this.gen.logs.map((l) => {
-      const y = t.heightAt(l.x, l.z) + l.r * 0.7;
-      return { matrix: tf(l.x, y, l.z, 0, l.rot, 0, l.length, l.r, l.r) };
-    });
-    if (logSpecs.length) {
-      const inst = new ChunkedInstances(this.own(fallenLogGeometry(desert)), this.mats.solid, logSpecs, { chunkSize: 64, castShadow: true, name: 'logs' });
+    // Island logs on the sand are sun-bleached driftwood; the rest are mossy.
+    const bleached = (l: { x: number; z: number }) => desert || (island && t.island!.land(l.x, l.z) < 30);
+    for (const weathered of [false, true]) {
+      const logSpecs = this.gen.logs.filter((l) => bleached(l) === weathered).map((l) => {
+        const y = t.heightAt(l.x, l.z) + l.r * 0.7;
+        return { matrix: tf(l.x, y, l.z, 0, l.rot, 0, l.length, l.r, l.r) };
+      });
+      if (!logSpecs.length) continue;
+      const inst = new ChunkedInstances(this.own(fallenLogGeometry(weathered)), this.mats.solid, logSpecs, { chunkSize: 64, castShadow: true, name: 'logs' });
       this.others.push(inst);
       this.group.add(inst.group);
     }
@@ -263,7 +283,7 @@ export class NatureView {
       const model = resourceGeometry(k);
       this.own(model.main);
       const mat = model.doubleSided ? this.mats.plant : SWAYING.has(k) ? this.mats.foliage : this.mats.solid;
-      const shadow = k === 'berryBush' || k === 'pricklyPear' || k === 'cholla' || k === 'wolfberry' || k === 'agave';
+      const shadow = k === 'berryBush' || k === 'pricklyPear' || k === 'cholla' || k === 'wolfberry' || k === 'agave' || k === 'seaGrape' || k === 'pandanus' || k === 'banana';
       this.resources[k] = new ChunkedInstances(model.main, mat, specs[k], { chunkSize: 48, castShadow: shadow, name: 'res-' + k });
       this.group.add(this.resources[k].group);
       if (model.extra) {
@@ -369,6 +389,78 @@ export class NatureView {
     }
   }
 
+  /**
+   * Island ground cover, zoned like the trees: naupaka shrubs, sedges and morning glory on the sand; ferns, ti plants
+   * and elephant ears under the jungle; waist-high golden grass over the leeward grassland.
+   */
+  private buildIslandGround(): void {
+    const t = this.terrain;
+    const isl = t.island!;
+    const rng = new Rng(this.gen.seed ^ 0x6a57);
+    const shrubs: InstanceSpec[][] = [[], []];
+    const sedge: InstanceSpec[][] = [[], [], []];
+    const tall: InstanceSpec[][] = [[], [], []];
+    const under: InstanceSpec[][] = [[], [], []];
+    const flowers: InstanceSpec[][] = [[], [], [], []];
+    const pos: { list: InstanceSpec[][]; set: number; local: number; x: number; z: number }[] = [];
+    const put = (list: InstanceSpec[][], set: number, x: number, h: number, z: number, s: number, sy = s) => {
+      pos.push({ list, set, local: list[set].length, x, z });
+      list[set].push({ matrix: tf(x, h - 0.03, z, 0, rng.range(0, 6.28), 0, s, sy, s) });
+    };
+    for (let i = 0; i < 80000; i++) {
+      const a = rng.range(0, Math.PI * 2);
+      const r = Math.sqrt(rng.next()) * (isl.coastAt(a) + 4);
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      const h = t.heightAt(x, z);
+      if (h < 0.25 || t.slopeAt(x, z) > 0.7) continue;
+      if (Math.hypot(x - t.spawn.x, z - t.spawn.z) < 3.5) continue;
+      const L = isl.land(x, z);
+      const roll = rng.next();
+      if (L < 30 && h < 2.4) {
+        if (L > 5 && roll < 0.14) put(shrubs, rng.chance(0.4) ? 1 : 0, x, h, z, rng.range(0.8, 1.3));
+        else if (roll < 0.42) put(sedge, rng.int(0, 2), x, h, z, rng.range(0.8, 1.3));
+        else if (roll < 0.46) put(flowers, rng.chance(0.7) ? 0 : 3, x, h, z, rng.range(0.8, 1.2));
+        continue;
+      }
+      const j = isl.jungle(x, z);
+      if (j > 0.45) {
+        if (roll < 0.2) put(under, 0, x, h, z, rng.range(0.8, 1.3));
+        else if (roll < 0.27) put(under, 1, x, h, z, rng.range(0.8, 1.2));
+        else if (roll < 0.34) put(under, 2, x, h, z, rng.range(0.8, 1.3));
+        continue;
+      }
+      const pl = isl.plains(x, z);
+      if (pl > 0.4) {
+        if (roll < 0.78) put(tall, rng.int(0, 2), x, h, z, rng.range(0.8, 1.25), rng.range(0.8, 1.3));
+        else if (roll < 0.8) put(flowers, rng.pick([1, 2]), x, h, z, rng.range(0.8, 1.1));
+        else if (roll < 0.815) put(shrubs, 0, x, h, z, rng.range(0.7, 1.0));
+        continue;
+      }
+      if (roll < 0.4) put(sedge, rng.int(0, 2), x, h, z, rng.range(0.9, 1.3));
+      else if (roll < 0.45) put(under, 0, x, h, z, rng.range(0.7, 1.1));
+    }
+    const add = (list: InstanceSpec[][], geo: (v: number) => THREE.BufferGeometry, into: ChunkedInstances[], name: string, mat: THREE.Material, lod?: (v: number) => THREE.BufferGeometry) =>
+      list.map((specs, v) => {
+        if (!specs.length) return null;
+        const inst = new ChunkedInstances(this.own(geo(v)), mat, specs, { chunkSize: 40, name, lod: lod ? this.own(lod(v)) : undefined });
+        into.push(inst);
+        this.group.add(inst.group);
+        return inst;
+      });
+    const made = new Map<InstanceSpec[][], (ChunkedInstances | null)[]>([
+      [shrubs, add(shrubs, (v) => naupakaGeometry(v), this.scrub, 'naupaka', this.mats.foliage, (v) => naupakaGeometry(v, 1))],
+      [sedge, add(sedge, (v) => islandGrassGeometry(v), this.grass, 'grass', this.mats.plant)],
+      [tall, add(tall, (v) => islandGrassGeometry(v, true), this.grass, 'grass', this.mats.plant)],
+      [under, add(under, (v) => jungleUnderstoryGeometry(v), this.flowers, 'understory', this.mats.plant)],
+      [flowers, add(flowers, (v) => islandFlowerGeometry(v), this.flowers, 'flowers', this.mats.plant)],
+    ]);
+    for (const p of pos) {
+      const inst = made.get(p.list)?.[p.set];
+      if (inst) this.grassPos.push({ inst, local: p.local, x: p.x, z: p.z });
+    }
+  }
+
   private buildGround(): void {
     const t = this.terrain;
     const rng = new Rng(this.gen.seed ^ 0x6a55);
@@ -417,7 +509,15 @@ export class NatureView {
   sync(state: GameState, animate: boolean): void {
     for (let i = 0; i < this.gen.trees.length; i++) {
       const sp = this.gen.trees[i].species;
-      const strip = barkStripped(sp, state.trees[i]) ? 1 : 0;
+      const crown = !!TREES[sp].crown;
+      const strip = !crown && barkStripped(sp, state.trees[i]) ? 1 : 0;
+      if (crown) {
+        const nuts = state.trees[i].felled ? 0 : state.trees[i].bark;
+        if (nuts !== this.nutsShown[i]) {
+          this.nutsShown[i] = nuts;
+          this.coconuts.forEach((c, k) => c.setHidden(this.treeLocal[i], k >= nuts));
+        }
+      }
       const twin = this.strippedTrees[sp];
       if (strip !== this.stripped[i] && !state.trees[i].felled) {
         this.stripped[i] = strip;
@@ -499,6 +599,7 @@ export class NatureView {
       this.extras[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
     }
     for (const s of this.stones) s.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
+    for (const c of this.coconuts) c.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
     for (const o of this.others) o.cullByDistance(px, pz, viewDist);
     for (let i = this.falling.length - 1; i >= 0; i--) {
       const f = this.falling[i];
@@ -541,7 +642,7 @@ export class NatureView {
       this.resources[k]?.dispose();
       this.extras[k]?.dispose();
     }
-    for (const g of [...this.grass, ...this.flowers, ...this.scrub, ...this.stones, ...this.others]) g.dispose();
+    for (const g of [...this.grass, ...this.flowers, ...this.scrub, ...this.stones, ...this.others, ...this.coconuts]) g.dispose();
     for (const g of this.ownedGeos) g.dispose();
   }
 }

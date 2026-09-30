@@ -18,9 +18,10 @@ function harvest(sim: Simulation, kind: ResourceKind) {
 describe('Foraging guide', () => {
   it('has a page for every harvestable plant, and none for sticks or stones', () => {
     const plants = (Object.keys(RESOURCES) as ResourceKind[]).filter((k) => forageForResource(k));
-    expect(plants.sort()).toEqual(['agave', 'berryBush', 'chia', 'cholla', 'fern', 'mushroom', 'onion', 'pricklyPear', 'wolfberry', 'yucca']);
+    expect(plants.sort()).toEqual(['agave', 'banana', 'berryBush', 'chia', 'cholla', 'coconut', 'fern', 'mushroom', 'onion', 'pandanus', 'pricklyPear', 'purslane', 'seaGrape', 'taro', 'wolfberry', 'yucca']);
     expect(forageGuideFor('pnw').map((e) => e.id).sort()).toEqual(['berryBush', 'birch', 'fern', 'mushroom', 'onion']);
     expect(forageGuideFor('desert').map((e) => e.id).sort()).toEqual(['agave', 'chia', 'cholla', 'juniper', 'mesquite', 'pinyon', 'pricklyPear', 'wolfberry', 'yucca']);
+    expect(forageGuideFor('island').map((e) => e.id).sort()).toEqual(['banana', 'breadfruit', 'coconut', 'hau', 'pandanus', 'purslane', 'seaGrape', 'taro']);
     for (const k of plants) expect(FORAGE_GUIDE.some((e) => e.id === forageForResource(k))).toBe(true);
     for (const e of FORAGE_GUIDE) {
       expect(e.name.length).toBeGreaterThan(3);

@@ -130,7 +130,7 @@ export function generateIsland(seed: number): WorldGen {
       if (L < 14) continue;
       const j = isl.jungle(x, z);
       const fresh = isl.freshNear(x, z);
-      const density = 0.012 + 0.8 * smoothstep(0.2, 0.75, j);
+      const density = 0.012 + 0.64 * smoothstep(0.2, 0.75, j);
       if (!rng.chance(density * smoothstep(12, 26, spawnDist(x, z)))) continue;
       if (!dry(t, x, z, 0.6, 0.85)) continue;
       const roll = rng.next();

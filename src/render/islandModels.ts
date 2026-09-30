@@ -24,7 +24,7 @@ const PALM_TOP = PALM.height + 0.35;
  * A leaf blade as a strip of quads from `base` along `dir` (unit, in the xz plane), arching up by `lift` and drooping
  * by `droop` at the tip, folded into a shallow V, drawn from both sides.
  */
-function leafStrip(b: GeoBuilder, base: V3, dir: [number, number], len: number, width: number, lift: number, droop: number, segs: number, color: (t: number) => THREE.Color, sway: number, fold = 0.25): void {
+function leafStrip(b: GeoBuilder, base: V3, dir: [number, number], len: number, width: number, lift: number, droop: number, segs: number, color: (t: number) => THREE.Color, sway: number, fold = 0.25, twoSided = true): void {
   const pos: number[] = [];
   const px = -dir[1];
   const pz = dir[0];
@@ -39,7 +39,10 @@ function leafStrip(b: GeoBuilder, base: V3, dir: [number, number], len: number, 
     const t1 = (i + 1) / segs;
     const c0 = pt(t0, 0), l0 = pt(t0, -1), r0 = pt(t0, 1), c1 = pt(t1, 0), l1 = pt(t1, -1), r1 = pt(t1, 1);
     const quads: V3[][] = [[c0, l0, c1], [l0, l1, c1], [c0, c1, r0], [r0, c1, r1]];
-    for (const [a, bb, c] of quads) pos.push(...a, ...bb, ...c, ...a, ...c, ...bb);
+    for (const [a, bb, c] of quads) {
+      pos.push(...a, ...bb, ...c);
+      if (twoSided) pos.push(...a, ...c, ...bb);
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
@@ -62,13 +65,13 @@ function palm(b: GeoBuilder, near: boolean): void {
   b.add(new CylinderGeometry(0.26, 0.34, 0.5, near ? 7 : 5), { matrix: tf(0, 0.2, 0), color: '#6a5e4c' });
   const top: V3 = [PALM.lean, PALM_TOP, 0];
   b.add(new IcosahedronGeometry(0.3, near ? 1 : 0), { matrix: tf(top[0], top[1] - 0.1, top[2], 0, 0, 0, 1, 1.2, 1), color: '#6f7a3a', sway: 0.12 });
-  const n = near ? 11 : 7;
+  const n = near ? 9 : 7;
   const rng = new Rng(311);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rng.range(-0.2, 0.2);
     const old = i % 5 === 3;
     const len = rng.range(3.1, 3.8);
-    leafStrip(b, top, [Math.cos(a), Math.sin(a)], len, near ? 0.42 : 0.36, old ? 0.1 : rng.range(0.55, 0.9), old ? 2.6 : rng.range(1.5, 2.1), near ? 6 : 3,
+    leafStrip(b, top, [Math.cos(a), Math.sin(a)], len, near ? 0.42 : 0.36, old ? 0.1 : rng.range(0.55, 0.9), old ? 2.6 : rng.range(1.5, 2.1), near ? 4 : 3,
       (t) => (old ? mix('#9a8a4a', '#c0a860', t) : mix('#3f7a32', '#8fbe52', t * 0.9 + 0.1)), 0.14);
   }
   if (near) {
@@ -81,7 +84,7 @@ function palm(b: GeoBuilder, near: boolean): void {
 export function coconutCrownGeometry(k: number): THREE.BufferGeometry {
   const b = new GeoBuilder(700 + k);
   const a = k * 2.1 + 0.4;
-  b.add(new IcosahedronGeometry(0.19, 1), {
+  b.add(new IcosahedronGeometry(0.19, 0), {
     matrix: tf(PALM.lean + Math.cos(a) * 0.3, PALM_TOP - 0.45 - (k === 1 ? 0.12 : 0), Math.sin(a) * 0.3, 0, a, 0, 1, 1.12, 1),
     color: (_x, _y, _z, n) => (n.y > 0.5 ? col('#7a8a3a') : mix('#5f6a2e', '#8a7a3a', 0.5 + n.x * 0.3)),
     jitter: 0.02, vary: 0.06, sway: 0.1,
@@ -169,11 +172,11 @@ function treeFern(b: GeoBuilder, near: boolean): void {
     color: (x, y, z) => (hash2(Math.round(x * 30) + Math.round(y * 12), Math.round(z * 30), 9) < 0.35 ? col('#3a2a1e') : col('#5a4230')),
     jitter: 0.04,
   });
-  const n = near ? 10 : 6;
+  const n = near ? 8 : 6;
   const rng = new Rng(1201);
   for (let i = 0; i < n; i++) {
     const a = (i / n) * Math.PI * 2 + rng.range(-0.2, 0.2);
-    leafStrip(b, [0, H, 0], [Math.cos(a), Math.sin(a)], rng.range(2.0, 2.5), near ? 0.36 : 0.3, rng.range(0.5, 0.8), rng.range(1.1, 1.5), near ? 5 : 3, (t) => mix('#2f6a2a', '#7ab04a', t), 0.12, 0.12);
+    leafStrip(b, [0, H, 0], [Math.cos(a), Math.sin(a)], rng.range(2.0, 2.5), near ? 0.36 : 0.3, rng.range(0.5, 0.8), rng.range(1.1, 1.5), near ? 4 : 3, (t) => mix('#2f6a2a', '#7ab04a', t), 0.12, 0.12);
   }
   // Coiled fiddleheads in the middle of the crown.
   if (near) for (let i = 0; i < 3; i++) b.add(new IcosahedronGeometry(0.07, 0), { matrix: tf(Math.cos(i * 2) * 0.1, H + 0.25, Math.sin(i * 2) * 0.1), color: '#8a9a4a' });
@@ -312,7 +315,7 @@ export function naupakaGeometry(variant: number, lod = 0): THREE.BufferGeometry 
     const a = (i / n) * Math.PI * 2 + rng.range(-0.3, 0.3);
     const r = i === 0 ? 0 : rng.range(0.3, 0.55);
     const y = rng.range(0.4, 0.7);
-    b.add(new IcosahedronGeometry(near ? 0.34 : 0.4, near ? 1 : 0), {
+    b.add(new IcosahedronGeometry(near ? 0.36 : 0.42, 0), {
       matrix: tf(Math.cos(a) * r, y, Math.sin(a) * r, rng.range(0, 3), rng.range(0, 3), 0, 1, 0.75, 1),
       color: foliage('#4f8a34', '#9ad05a', '#3a6a28'),
       jitter: near ? 0.16 : 0.06, vary: 0.12, sway: 0.03,
@@ -343,14 +346,14 @@ export function jungleUnderstoryGeometry(variant: number): THREE.BufferGeometry 
   if (variant === 0) {
     for (let i = 0; i < 9; i++) {
       const a = (i / 9) * Math.PI * 2 + rng.range(-0.2, 0.2);
-      leafStrip(b, [0, 0.05, 0], [Math.cos(a), Math.sin(a)], rng.range(0.7, 1.0), 0.16, rng.range(0.3, 0.5), 0.5, 4, (t) => mix('#2a5a28', '#5a9a3a', t), 0.1, 0.1);
+      leafStrip(b, [0, 0.05, 0], [Math.cos(a), Math.sin(a)], rng.range(0.7, 1.0), 0.16, rng.range(0.3, 0.5), 0.5, 3, (t) => mix('#2a5a28', '#5a9a3a', t), 0.1, 0.1, false);
     }
   } else if (variant === 1) {
     const red = rng.chance(0.5);
     b.add(new CylinderGeometry(0.02, 0.03, 1.3, 5), { matrix: tf(0, 0.65, 0), color: '#6a5a3a', sway: 0.05 });
     for (let i = 0; i < 12; i++) {
       const a = i * 2.4;
-      leafStrip(b, [0, 1.3, 0], [Math.cos(a), Math.sin(a)], rng.range(0.4, 0.6), 0.07, rng.range(0.1, 0.35), 0.35, 3, (t) => (red ? mix('#6a1a2a', '#b83a4a', t) : mix('#2a6a2a', '#6aa84a', t)), 0.1, 0.2);
+      leafStrip(b, [0, 1.3, 0], [Math.cos(a), Math.sin(a)], rng.range(0.4, 0.6), 0.07, rng.range(0.1, 0.35), 0.35, 2, (t) => (red ? mix('#6a1a2a', '#b83a4a', t) : mix('#2a6a2a', '#6aa84a', t)), 0.1, 0.2, false);
     }
   } else {
     for (let i = 0; i < 4; i++) {

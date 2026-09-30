@@ -11,7 +11,7 @@ import { RECIPE_BY_ID, recipeOnMap } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
 import { LEVEL_NUMERALS, nextTier, tierCost, tierLine, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type PestSpecies, type SpeciesId } from '../data/species';
-import { burrowed, createAnimal, damageAnimal, findSpawnPoint, hostile, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
+import { burrowed, createAnimal, damageAnimal, findSpawnPoint, hostile, isHabitable, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
@@ -1897,6 +1897,8 @@ export class Simulation {
       this.dropAt('coconut', 1, gx, gz);
       if (this.rng.chance(BALANCE.island.coconutArrowRecover)) this.dropAt('arrow', 1, g.x - (cp.x - g.x) * 0.4 + 0.5, g.z - (cp.z - g.z) * 0.4);
       s.stats.events.coconutsShot = (s.stats.events.coconutsShot ?? 0) + 1;
+      const entry = forageForTree(g.species);
+      if (entry) this.discoverForage(entry);
       this.emit({ type: 'arrowHit', x: pr.x + dx * t, y: pr.y + dy * t, z: pr.z + dz * t, target: 'tree' });
       this.emit({ type: 'coconutDown', tree: c.ref, x: cp.x, y: cp.y, z: cp.z, gx, gz });
       if (!this.warnedCoconut) {
@@ -2869,6 +2871,20 @@ export class Simulation {
 
   devSpawn(species: SpeciesId, distance = 22): AnimalState | null {
     const p = this.state.player;
+    if (SPECIES[species].habitat === 'water') {
+      // Swimmers go in the nearest water they live in.
+      for (let r = 4; r < 160; r += 4) {
+        for (let k = 0; k < 24; k++) {
+          const x = p.x + Math.cos((k / 24) * Math.PI * 2) * r;
+          const z = p.z + Math.sin((k / 24) * Math.PI * 2) * r;
+          if (!isHabitable(this.terrain, species, x, z)) continue;
+          const a = createAnimal(this.state.nextId++, species, x, z, this.rng, this.terrain);
+          this.state.animals.push(a);
+          return a;
+        }
+      }
+      return null;
+    }
     for (let i = 0; i < 24; i++) {
       const ang = p.yaw + Math.PI + (i * Math.PI * 2) / 24;
       const x = p.x - Math.sin(ang) * distance;

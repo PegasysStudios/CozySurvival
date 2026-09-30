@@ -423,6 +423,8 @@ export function dropGeometry(item: ItemId): THREE.BufferGeometry {
     }
   } else if (item === 'stone') {
     for (let i = 0; i < 3; i++) stone(b, rng, rng.range(-0.12, 0.12), 0.07, rng.range(-0.12, 0.12), 0.1);
+  } else if (item === 'coconut') {
+    b.add(new IcosahedronGeometry(0.17, 1), { matrix: tf(0, 0.15, 0, 0.3, 0, 0.2, 1, 0.9, 1.15), color: '#76603a', vary: 0.12 });
   } else {
     b.add(new IcosahedronGeometry(0.17, 0), { matrix: tf(0, 0.14, 0, 0, 0, 0, 1, 0.8, 1), color: '#b99668', vary: 0.1 });
     b.add(new IcosahedronGeometry(0.1, 0), { matrix: tf(0, 0.3, 0), color: c });
