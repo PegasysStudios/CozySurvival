@@ -12,6 +12,7 @@ import type { Simulation } from '../sim/simulation';
 import { countItem, usedSlots } from '../sim/inventory';
 import type { GameState } from '../sim/state';
 import { formatClock } from '../sim/time';
+import { COMPASS_NAMES, compassPoint, headingDegrees } from './compass';
 import { el, escapeHtml, setHtml, setText, toggle } from './dom';
 import { anyIcon, itemIcon, MISC_ICONS, NEED_ICONS, toolIcon } from './icons';
 
@@ -64,6 +65,10 @@ export class Hud {
   private readonly clockTime = el('div', 'clock-time');
   private readonly clockIcon = el('div', 'clock-icon');
   private readonly clockBar = el('div', 'clock-bar-fill');
+  private readonly compass = el('div', 'clock-compass');
+  private readonly compassNeedle = el('div', 'compass-needle');
+  private readonly compassPoint = el('div', 'compass-point');
+  private compassDeg = NaN;
   private readonly devBadge = el('div', 'dev-badge');
   private readonly objTitle = el('div', 'obj-title');
   private readonly objHint = el('div', 'obj-hint');
@@ -109,7 +114,10 @@ export class Hud {
     clockText.append(this.clockDay, this.clockTime);
     const clockBar = el('div', 'clock-bar');
     clockBar.append(this.clockBar);
-    clock.append(this.clockIcon, clockText, this.devBadge, clockBar);
+    const dial = el('div', 'compass-dial');
+    dial.append(this.compassNeedle);
+    this.compass.append(dial, this.compassPoint);
+    clock.append(this.clockIcon, clockText, this.compass, this.devBadge, clockBar);
 
     const objLabel = el('div', 'obj-label', 'Next goal');
     objLabel.append(this.objStep);
@@ -209,6 +217,20 @@ export class Hud {
     }
   }
 
+  /** The Day card's compass: the needle turns to the facing on a north-up dial, and the label names the nearest point. */
+  private updateCompass(yaw: number): void {
+    const deg = headingDegrees(yaw);
+    if (Math.abs(deg - this.compassDeg) < 0.5) return;
+    this.compassDeg = deg;
+    this.compassNeedle.style.transform = `rotate(${deg.toFixed(1)}deg)`;
+    const point = compassPoint(yaw);
+    if (this.compass.dataset.point !== point) {
+      this.compass.dataset.point = point;
+      this.compass.title = `Facing ${COMPASS_NAMES[point]}`;
+      setText(this.compassPoint, point);
+    }
+  }
+
   update(sim: Simulation, dt: number, timeScale: number): void {
     const s = sim.state;
     this.hurtT = Math.max(0, this.hurtT - dt * 1.6);
@@ -232,6 +254,7 @@ export class Hud {
     }
 
     this.updateCenter(sim);
+    this.updateCompass(s.player.yaw);
 
     this.uiTimer -= dt;
     if (this.uiTimer > 0) return;
