@@ -271,8 +271,8 @@ export class NatureView {
   }
 
   /**
-   * Desert ground cover. Creosote sits on a jittered ~5 m grid on the low flats (about 370 bushes per hectare, close to
-   * measured Sonoran stands of 440/ha) with white bursage between; big sagebrush and bunchgrass take over in the high
+   * Desert ground cover. Creosote fills 80% of a jittered 5.2 m grid on the low flats (about 300 bushes per hectare,
+   * a little under measured Sonoran stands of 440/ha) with white bursage between; big sagebrush and bunchgrass take over in the high
    * country; wildflowers are scattered thinly; bare slickrock, cliffs and pools stay open.
    */
   private buildDesertGround(): void {
