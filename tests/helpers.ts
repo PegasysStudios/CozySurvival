@@ -1,6 +1,6 @@
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
-import type { ItemId } from '../src/data/items';
+import { ITEMS, type ItemId } from '../src/data/items';
 import type { PrefabId } from '../src/data/prefabs';
 import { RECIPE_BY_ID } from '../src/data/recipes';
 import { nextShelter, SHELTER_TIERS, SHELTER_UPGRADES } from '../src/data/upgrades';
@@ -42,8 +42,12 @@ export function drain(sim: Simulation): SimEvent[] {
   return sim.takeEvents([]);
 }
 
+/** Adds items to the pack; water goes into the canteen, which is handed over first if missing. */
 export function give(sim: Simulation, items: Partial<Record<ItemId, number>>): void {
-  for (const [item, n] of Object.entries(items)) sim.devGive(item as ItemId, n!);
+  for (const [item, n] of Object.entries(items)) {
+    if (ITEMS[item as ItemId].canteen && !sim.state.gear.includes('canteen')) sim.state.gear.push('canteen');
+    sim.devGive(item as ItemId, n!);
+  }
   drain(sim);
 }
 

@@ -13,7 +13,8 @@ import { LEVEL_NUMERALS, nextShelter, SHELTER_UPGRADES, TOOL_UPGRADES, isUpgrada
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type SpeciesId } from '../data/species';
 import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
-import { canCraft, canteenRoom, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
+import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
+import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearResult } from './durability';
 import type { SimEvent } from './events';
 import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
@@ -221,6 +222,7 @@ export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): Ga
     player: spawnPlayer(terrain),
     needs: createNeeds(),
     inventory: createInventory(BALANCE.carry.baseSlots),
+    canteen: emptyCanteen(),
     tools: ['hands'],
     activeTool: 'hands',
     toolWear: {},
@@ -1033,12 +1035,15 @@ export class Simulation {
   /** Adds items with stats + feedback. Returns the amount that fit. */
   give(item: ItemId, count: number, x: number, y: number, z: number, source: Extract<SimEvent, { type: 'gathered' }>['source']): number {
     const s = this.state;
-    const added = addItem(s.inventory, item, count);
+    const water = inCanteen(item);
+    const added = water ? fillCanteen(s, item, count) : addItem(s.inventory, item, count);
     if (added > 0) {
       s.stats.gathered[item] = (s.stats.gathered[item] ?? 0) + added;
       this.emit({ type: 'gathered', item, count: added, x, y, z, source });
     }
-    if (added < count) {
+    if (added < count && water) {
+      this.message(canteenCapacity(s) === 0 ? 'You need a canteen to carry water.' : 'Your canteen is full.', 'warn');
+    } else if (added < count) {
       s.stats.events.packFull = (s.stats.events.packFull ?? 0) + 1;
       this.emit({ type: 'packFull', item });
     }
@@ -1289,21 +1294,14 @@ export class Simulation {
     if (i < 0) return;
     const dr = s.drops[i];
     this.actionCooldown = BALANCE.gather.cooldown;
-    let count = dr.count;
-    if (ITEMS[dr.item].water) {
-      if (!s.gear.includes('canteen')) {
-        this.message('You need a canteen to carry water.', 'warn');
-        return;
-      }
-      count = Math.min(count, canteenRoom(s));
-      if (count <= 0) {
-        this.message('Your canteen is full.', 'warn');
-        return;
-      }
+    const water = inCanteen(dr.item);
+    if (water && canteenRoom(s) === 0) {
+      this.message(canteenCapacity(s) === 0 ? 'You need a canteen to carry water.' : 'Your canteen is full.', 'warn');
+      return;
     }
-    const added = this.give(dr.item, count, dr.x, dr.y + 0.2, dr.z, 'drop');
+    const added = this.give(dr.item, dr.count, dr.x, dr.y + 0.2, dr.z, 'drop');
     if (added === 0) {
-      this.message('Your pack is full.', 'warn');
+      if (!water) this.message('Your pack is full.', 'warn');
       return;
     }
     dr.count -= added;
@@ -1353,9 +1351,9 @@ export class Simulation {
     }
   }
 
-  /** Servings a lake click would put in the canteen (limited by canteen and pack space). */
+  /** Servings a lake click would put in the canteen. */
   private canteenFillAmount(): number {
-    return Math.min(canteenRoom(this.state), roomFor(this.state.inventory, 'lakeWater'));
+    return canteenRoom(this.state);
   }
 
   /** Whether this player has tasted alkali water and now recognises it. */
@@ -1389,8 +1387,7 @@ export class Simulation {
     }
     this.actionCooldown = BALANCE.needs.handDrink.cooldown;
     if (s.needs.thirst >= 99.5) {
-      if (canteenRoom(s) > 0) this.message('No room in your pack for water.', 'warn');
-      else this.message("You're not thirsty.");
+      this.message("You're not thirsty.");
       return;
     }
     applyFood(s.needs, { thirst: BALANCE.needs.handDrink.thirst, warmth: BALANCE.needs.handDrink.warmth });
@@ -1855,7 +1852,7 @@ export class Simulation {
       this.emit({ type: 'placeFailed', reason: res.reason! });
       return false;
     }
-    if (!removeAll(this.state.inventory, recipe.inputs)) {
+    if (!takeItems(this.state, recipe.inputs)) {
       this.message('Missing ingredients.', 'warn');
       this.placement = null;
       return false;
@@ -1896,27 +1893,45 @@ export class Simulation {
   quickConsume(): boolean {
     const s = this.state;
     const n = s.needs;
+    const scoreOf = (item: ItemId): number => {
+      const f = ITEMS[item].food;
+      if (!f) return 0;
+      return (
+        (100 - n.hunger) * (f.hunger ?? 0) +
+        (100 - n.thirst) * (f.thirst ?? 0) * 1.2 +
+        (100 - n.warmth) * (f.warmth ?? 0) * 0.3 +
+        (f.health ?? 0) * 40
+      );
+    };
     let best = -1;
     let bestScore = 0;
     s.inventory.slots.forEach((slot, i) => {
       if (!slot) return;
-      const f = ITEMS[slot.item].food;
-      if (!f) return;
-      const score =
-        (100 - n.hunger) * (f.hunger ?? 0) +
-        (100 - n.thirst) * (f.thirst ?? 0) * 1.2 +
-        (100 - n.warmth) * (f.warmth ?? 0) * 0.3 +
-        (f.health ?? 0) * 40;
+      const score = scoreOf(slot.item);
       if (score > bestScore) {
         bestScore = score;
         best = i;
       }
     });
+    const serving = nextServing(s);
+    if (serving && scoreOf(serving) > bestScore) return this.drinkCanteen();
     if (best < 0) {
       this.message('Nothing useful to eat or drink.', 'warn');
       return false;
     }
     return this.useSlot(best);
+  }
+
+  /** Drink one serving from the canteen: raw water first, then boiled. */
+  drinkCanteen(): boolean {
+    const s = this.state;
+    const item = nextServing(s);
+    if (!item || s.dead) return false;
+    s.canteen[item]--;
+    applyFood(s.needs, ITEMS[item].food!);
+    s.stats.events.canteenDrinks = (s.stats.events.canteenDrinks ?? 0) + 1;
+    this.emit({ type: 'drank', byHand: false });
+    return true;
   }
 
   dropSlot(index: number): boolean {
@@ -2176,6 +2191,7 @@ export class Simulation {
     s.player = spawnPlayer(this.terrain);
     s.needs = createNeeds();
     s.inventory = createInventory(BALANCE.carry.baseSlots);
+    s.canteen = emptyCanteen();
     s.tools = ['hands'];
     s.activeTool = 'hands';
     s.toolWear = {};
@@ -2362,6 +2378,5 @@ function canBurn(item: ItemId): boolean {
 }
 
 function removeAllDryRun(state: GameState, inputs: readonly { item: ItemId; count: number }[]): boolean {
-  for (const i of inputs) if (countItem(state.inventory, i.item) < i.count) return false;
-  return true;
+  return hasItems(state, inputs);
 }

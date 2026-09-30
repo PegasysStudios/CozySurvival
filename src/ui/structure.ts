@@ -3,7 +3,7 @@ import { ITEMS, itemName, type ItemId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { nextShelter, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier } from '../data/upgrades';
 import { wearFraction } from '../sim/durability';
-import { countItem } from '../sim/inventory';
+import { haveItem, inCanteen } from '../sim/canteen';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
 import type { GameState } from '../sim/state';
@@ -43,12 +43,12 @@ export interface ShelterMenu {
 }
 
 export function ingredients(sim: Simulation, inputs: readonly { item: ItemId; count: number }[]): Ingredient[] {
-  return inputs.map((i) => ({ item: i.item, name: itemName(i.item, i.count), need: i.count, have: countItem(sim.state.inventory, i.item) }));
+  return inputs.map((i) => ({ item: i.item, name: itemName(i.item, i.count), need: i.count, have: haveItem(sim.state, i.item) }));
 }
 
 /** Pack slots it takes to carry `inputs` all at once. */
 export function slotsNeeded(inputs: readonly { item: ItemId; count: number }[]): number {
-  return inputs.reduce((n, i) => n + Math.ceil(i.count / ITEMS[i.item].stack), 0);
+  return inputs.reduce((n, i) => n + (inCanteen(i.item) ? 0 : Math.ceil(i.count / ITEMS[i.item].stack)), 0);
 }
 
 /** When the pack is too small to ever hold `inputs` at once: how many slots it takes and which gear makes room. */

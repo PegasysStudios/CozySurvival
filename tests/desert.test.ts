@@ -123,9 +123,9 @@ describe('undrinkable water', () => {
     const sim = quietDesert();
     sim.state.gear.push('canteen');
     clickWater(sim, lakeOf(sim, 'alkali'));
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(0);
+    expect(sim.state.canteen.lakeWater).toBe(0);
     clickWater(sim, lakeOf(sim, 'spring'));
-    expect(countItem(sim.state.inventory, 'lakeWater')).toBe(BALANCE.carry.canteenCapacity);
+    expect(sim.state.canteen.lakeWater).toBe(BALANCE.carry.canteenCapacity);
   });
 
   it('spring and rock-pool water quench thirst', () => {

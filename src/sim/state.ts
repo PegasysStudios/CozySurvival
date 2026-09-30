@@ -4,7 +4,7 @@ import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 
-export const STATE_VERSION = 3;
+export const STATE_VERSION = 4;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
@@ -29,6 +29,8 @@ export interface PlayerState {
   wading: boolean;
   swimming: boolean;
   sitting: boolean;
+  /** While sitting: the bench and the way you face on it (outward, toward the side you sat down from). */
+  seat?: { id: number; yaw: number };
   /** Seconds since the last hit (brief invulnerability window). */
   hurtTimer: number;
 }
@@ -52,6 +54,12 @@ export interface Slot {
 
 export interface InventoryState {
   slots: (Slot | null)[];
+}
+
+/** Servings of water in the canteen, by kind. */
+export interface CanteenState {
+  lakeWater: number;
+  boiledWater: number;
 }
 
 export interface StatsState {
@@ -164,6 +172,8 @@ export interface GameState {
   player: PlayerState;
   needs: NeedsState;
   inventory: InventoryState;
+  /** Water lives here, not in the pack; it only holds anything while `gear` includes the canteen. */
+  canteen: CanteenState;
   tools: ToolId[];
   activeTool: ToolId;
   /** Durability of each owned tool (hands never wear). */

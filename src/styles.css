@@ -566,6 +566,36 @@ b {
   background: #e0664d;
 }
 
+.tile .dur {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 5px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 0, 0, 0.35);
+  overflow: hidden;
+}
+
+.tile .dur i {
+  display: block;
+  height: 100%;
+  background: #8fc46a;
+  transform-origin: left center;
+}
+
+.tile .dur.low i {
+  background: #e0664d;
+}
+
+.tile .dur.water i {
+  background: #6fb3d6;
+}
+
+.tile .dur.water.empty {
+  outline: 1px solid rgba(111, 179, 214, 0.45);
+}
+
 .tool .lock {
   color: var(--ink-mute);
 }
@@ -1095,6 +1125,19 @@ b {
   transform-origin: left center;
   background: linear-gradient(90deg, #d8572d, var(--amber), #ffd98a);
   box-shadow: 0 0 10px rgba(242, 167, 75, 0.6);
+}
+
+.fuel-fill.water {
+  background: linear-gradient(90deg, #3f86b0, #6fb3d6, #bfe6f7);
+  box-shadow: 0 0 10px rgba(111, 179, 214, 0.5);
+}
+
+.canteen-meter {
+  margin: 10px 0 6px;
+}
+
+.canteen-meter b {
+  color: #a9dcef;
 }
 
 .fuel-btn {

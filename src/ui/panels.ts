@@ -4,6 +4,7 @@ import { GEAR, ITEMS, TOOLS, TOOL_ORDER, itemName, type GearId, type ToolId } fr
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { CATEGORY_LABELS, RECIPE_BY_ID, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { isUpgradable, LEVEL_NUMERALS, MAX_TOOL_LEVEL, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier, TOOL_UPGRADES, UPGRADABLE_TOOLS, type Cost, type UpgradableTool } from '../data/upgrades';
+import { CANTEEN_ITEMS, canteenFill, canteenServings, nextServing } from '../sim/canteen';
 import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
 import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } from '../sim/durability';
 import { usedSlots } from '../sim/inventory';
@@ -15,7 +16,7 @@ import { campfireTiles, craftTiles, recipeFor, recipeIcon, recipeTile, toolTile,
 import { attachTooltip, button, el, escapeHtml } from './dom';
 import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
-import { itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
+import { gearIcon, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
 import { ingredients, packRoomNote, restText, shelterMenu, type Ingredient } from './structure';
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
@@ -213,7 +214,10 @@ export class Panels {
     const gearGrid = el('div', 'tile-grid small');
     for (const g of ['basket', 'backpack', 'canteen'] as const) {
       const r = recipeFor.gear(g)!;
-      const b = tileButton({ ...recipeTile(sim, r), greyed: !s.gear.includes(g), ready: false, badge: null }, this.selectedGear === g);
+      const tile = { ...recipeTile(sim, r), greyed: !s.gear.includes(g), ready: false, badge: null };
+      if (g === 'canteen' && s.gear.includes(g)) tile.name = `${GEAR.canteen.name} · ${canteenServings(s)}/${BALANCE.carry.canteenCapacity} water`;
+      const b = tileButton(tile, this.selectedGear === g);
+      if (g === 'canteen' && s.gear.includes(g)) b.insertAdjacentHTML('beforeend', `<span class="dur water ${canteenServings(s) === 0 ? 'empty' : ''}"><i style="transform:scaleX(${canteenFill(s).toFixed(3)})"></i></span>`);
       b.addEventListener('click', () => select(null, g));
       gearGrid.append(b);
     }
@@ -231,6 +235,8 @@ export class Panels {
     const slot = this.selectedSlot >= 0 ? s.inventory.slots[this.selectedSlot] : null;
     if (this.selectedTool) {
       right = this.toolDetail(this.selectedTool);
+    } else if (this.selectedGear === 'canteen' && s.gear.includes('canteen')) {
+      right = this.canteenDetail();
     } else if (this.selectedGear) {
       right = this.recipeDetail(recipeFor.gear(this.selectedGear)!);
     } else if (slot) {
@@ -253,6 +259,33 @@ export class Panels {
     right.classList.add('inv-detail');
     body.append(left, right);
     return body;
+  }
+
+  /** The canteen's info panel: how full it is, what the next drink is, and a Drink button. */
+  private canteenDetail(): HTMLElement {
+    const sim = this.host.sim();
+    const s = sim.state;
+    const cap = BALANCE.carry.canteenCapacity;
+    const n = canteenServings(s);
+    const next = nextServing(s);
+    const d = el('div', 'canteen-detail');
+    const kinds = CANTEEN_ITEMS.filter((i) => s.canteen[i] > 0).map((i) => `${s.canteen[i]} ${itemName(i, s.canteen[i]).toLowerCase()}`);
+    const source = sim.biome === 'desert' ? 'a spring or a rock pool' : 'the lake';
+    d.innerHTML = `<div class="detail-icon big">${gearIcon('canteen')}</div><h3>${escapeHtml(GEAR.canteen.name)}</h3><p>${escapeHtml(GEAR.canteen.description)}</p>`
+      + `<div class="fuel-meter canteen-meter"><span>Water</span><div class="fuel-track"><div class="fuel-fill water" style="transform:scaleX(${canteenFill(s).toFixed(3)})"></div></div><b>${n} / ${cap}</b></div>`
+      + `<div class="effects">${n ? escapeHtml(`Holds ${kinds.join(' and ')}.`) : 'Empty.'}</div>`
+      + (next ? `<div class="effects muted">${escapeHtml(`Next sip: ${ITEMS[next].name} · ${effectSummary(next)}`)}</div>` : `<div class="effects muted">${escapeHtml(`Click ${source} to fill it, or boil water at a campfire.`)}</div>`);
+    const actions = el('div', 'detail-actions');
+    const drink = button('Drink', `btn primary ${next ? '' : 'disabled'}`, () => {
+      if (sim.drinkCanteen()) this.host.sfx('drink');
+      else this.host.sfx('deny');
+      this.render();
+    });
+    drink.disabled = !next;
+    actions.append(drink);
+    d.append(actions);
+    d.append(el('div', 'effects muted', 'Water only travels in the canteen, one serving per sip. Raw water goes first; boiled water is saved for teas and stews.'));
+    return d;
   }
 
   private useSlot(i: number): void {

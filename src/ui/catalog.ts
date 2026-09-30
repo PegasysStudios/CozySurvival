@@ -2,7 +2,7 @@ import { GEAR, TOOLS, type GearId, type ToolId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPES, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { LEVEL_NUMERALS, SHELTER_TIERS, SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../data/upgrades';
-import { hasAll } from '../sim/inventory';
+import { hasItems } from '../sim/canteen';
 import type { Simulation } from '../sim/simulation';
 import { nextToolUpgrade, toolLevel } from '../sim/upgrades';
 import { gearIcon, itemIcon, prefabIcon, toolIcon } from './icons';
@@ -53,7 +53,7 @@ export function recipeTile(sim: Simulation, r: Recipe): Tile {
   const check = sim.canCraft(r.id);
   const o = r.output;
   const owned = (o.kind === 'tool' && s.tools.includes(o.tool)) || (o.kind === 'gear' && s.gear.includes(o.gear));
-  const missing = !hasAll(s.inventory, r.inputs);
+  const missing = !hasItems(s, r.inputs);
   return {
     key: `r:${r.id}`,
     kind: 'recipe',
@@ -79,7 +79,7 @@ export function toolTile(sim: Simulation, t: ToolId): Tile {
     id: t,
     name: toolLabel(s, t),
     icon: toolIcon(t, lv),
-    greyed: !owned || (upgradable && !!next && !hasAll(s.inventory, next.inputs)),
+    greyed: !owned || (upgradable && !!next && !hasItems(s, next.inputs)),
     ready: owned && upgradable && sim.canUpgradeTool(t).ok,
     badge: owned && upgradable && !next ? 'max' : null,
     level: upgradable ? lv : null,
@@ -93,7 +93,7 @@ export function shelterTile(sim: Simulation, p: PrefabId): Tile {
     id: p,
     name: PREFABS[p].name,
     icon: prefabIcon(p),
-    greyed: !hasAll(sim.state.inventory, SHELTER_UPGRADES[p] ?? []),
+    greyed: !hasItems(sim.state, SHELTER_UPGRADES[p] ?? []),
     ready: false,
     badge: 'upgrade',
     level: null,

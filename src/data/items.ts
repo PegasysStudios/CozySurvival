@@ -60,8 +60,10 @@ export interface ItemDef {
   stack: number;
   description: string;
   food?: FoodEffect;
-  /** Counts toward canteen capacity. */
+  /** A drink: using it counts as drinking, and it never chars over the fire. */
   water?: boolean;
+  /** Carried only in the canteen, one serving per unit, never in a pack slot. */
+  canteen?: boolean;
   /** Used as campfire fuel, value in game hours. */
   fuelHours?: number;
   /** Cooked/crafted meals get a cozy highlight in the UI. */
@@ -82,8 +84,8 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   rawMeat: { id: 'rawMeat', name: 'Raw Meat', plural: 'Raw Meat', stack: 6, color: '#c8574f', description: 'Should really be cooked.', food: { hunger: 6, health: -6 } },
   rawFish: { id: 'rawFish', name: 'Raw Trout', plural: 'Raw Trout', stack: 6, color: '#8fb3c9', description: 'A speckled lake trout.', food: { hunger: 5, thirst: 1, health: -4 } },
   hide: { id: 'hide', name: 'Hide', plural: 'Hides', stack: 6, color: '#b98a5a', description: 'Warm animal hide for packs and tents.' },
-  lakeWater: { id: 'lakeWater', name: 'Lake Water', plural: 'Lake Water', stack: 4, color: '#6fb3d6', water: true, description: 'Cold and a little cloudy.', food: { thirst: 18, warmth: -3 } },
-  boiledWater: { id: 'boiledWater', name: 'Boiled Water', plural: 'Boiled Water', stack: 4, color: '#a9dcef', water: true, description: 'Clean and warm. A base for teas and stews.', food: { thirst: 28, warmth: 6, energy: 3 } },
+  lakeWater: { id: 'lakeWater', name: 'Lake Water', plural: 'Lake Water', stack: 4, color: '#6fb3d6', water: true, canteen: true, description: 'Cold and a little cloudy.', food: { thirst: 18, warmth: -3 } },
+  boiledWater: { id: 'boiledWater', name: 'Boiled Water', plural: 'Boiled Water', stack: 4, color: '#a9dcef', water: true, canteen: true, description: 'Clean and warm. A base for teas and stews.', food: { thirst: 28, warmth: 6, energy: 3 } },
   cookedMeat: { id: 'cookedMeat', name: 'Roast Meat', plural: 'Roast Meat', stack: 6, color: '#9c5a36', meal: true, description: 'Charred over the fire.', food: { hunger: 24, warmth: 4, health: 4, energy: 6 } },
   grilledTrout: { id: 'grilledTrout', name: 'Grilled Trout', plural: 'Grilled Trout', stack: 6, color: '#d9a56b', meal: true, description: 'Flaky and smoky.', food: { hunger: 20, thirst: 2, warmth: 4, health: 4, energy: 6 } },
   skewer: { id: 'skewer', name: 'Mushroom Skewer', plural: 'Mushroom Skewers', stack: 6, color: '#d99a3c', meal: true, description: 'Chanterelles and wild onion, fire-roasted on a stick.', food: { hunger: 20, warmth: 5, health: 3, energy: 8 } },

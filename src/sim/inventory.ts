@@ -102,9 +102,3 @@ export function cloneInventory(inv: InventoryState): InventoryState {
 export function setCapacity(inv: InventoryState, n: number): void {
   while (inv.slots.length < n) inv.slots.push(null);
 }
-
-export function waterUnits(inv: InventoryState): number {
-  let n = 0;
-  for (const s of inv.slots) if (s && ITEMS[s.item].water) n += s.count;
-  return n;
-}

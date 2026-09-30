@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ITEMS } from '../src/data/items';
-import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor, setCapacity, usedSlots, waterUnits } from '../src/sim/inventory';
+import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor, setCapacity, usedSlots } from '../src/sim/inventory';
 
 describe('inventory', () => {
   it('stacks up to the item stack size, then uses new slots', () => {
@@ -63,16 +63,12 @@ describe('inventory', () => {
     expect(removeFromSlot(inv, 1, 1)).toBeNull();
   });
 
-  it('capacity only grows and water units are counted', () => {
+  it('capacity only grows', () => {
     const inv = createInventory(2);
     setCapacity(inv, 6);
     expect(inv.slots.length).toBe(6);
     setCapacity(inv, 3);
     expect(inv.slots.length).toBe(6);
-    addItem(inv, 'lakeWater', 2);
-    addItem(inv, 'boiledWater', 1);
-    addItem(inv, 'berryTea', 1);
-    expect(waterUnits(inv)).toBe(4);
   });
 });
 
