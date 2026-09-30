@@ -26,7 +26,7 @@ import { GameView, type CameraPose } from '../render/view';
 import type { ViewModelInput } from '../render/viewmodel';
 import { DevPanel, TIME_SCALES } from '../ui/dev';
 import { effectSummary, Hud } from '../ui/hud';
-import { itemIcon, toolIcon } from '../ui/icons';
+import { itemIcon, MISC_ICONS, toolIcon } from '../ui/icons';
 import { MpHud, MpMenu } from '../ui/multiplayer';
 import { Panels } from '../ui/panels';
 import { Screens } from '../ui/screens';
@@ -310,12 +310,12 @@ export class Game {
     if (this.sim.fishing?.phase === 'charging') this.sim.cancelFishing();
   }
 
-  private openPanel(kind: 'inventory' | 'crafting' | 'campfire', fireId?: number): void {
+  private openPanel(kind: 'inventory' | 'crafting' | 'campfire' | 'structure', targetId?: number): void {
     if (this.mode !== 'playing' && this.mode !== 'panel') return;
     this.sim.cancelPlacement();
     this.dropCharge();
     if (this.dev?.open) this.dev.toggle();
-    this.panels.open(kind, { fireId });
+    this.panels.open(kind, { targetId });
     if (kind === 'crafting') this.hud.clearNewRecipes();
     this.mode = 'panel';
     this.expectUnlock = true;
@@ -772,6 +772,24 @@ export class Game {
       }
       case 'openCooking':
         this.openPanel('campfire', e.structure);
+        break;
+      case 'openStructure':
+        this.openPanel('structure', e.structure);
+        break;
+      case 'upgraded': {
+        if ('tool' in e) {
+          this.sfx('craft');
+        } else {
+          const st = sim.state.structures.find((s) => s.id === e.structure);
+          this.sfx('place');
+          if (st) fx.dust(st.x, st.y + 0.1, st.z, 28, 2.8);
+          this.hud.toast(`Upgraded the ${PREFABS[e.from].name} into a ${PREFABS[e.prefab].name}`, 'good', MISC_ICONS[e.prefab]);
+        }
+        this.panels.refresh();
+        break;
+      }
+      case 'forageUnlocked':
+        this.panels.refresh();
         break;
       case 'sat':
         this.hud.toast('You sit and rest. Energy recovers faster here.', 'good');

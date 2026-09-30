@@ -2098,6 +2098,300 @@ b {
   color: var(--amber-hi);
 }
 
+/* ------------------------------------------------------------------ upgrades, structures, foraging guide */
+
+button.inv-tool {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+button.inv-tool:hover {
+  background: rgba(255, 240, 215, 0.13);
+}
+
+.inv-tool.selected {
+  border-color: var(--amber);
+  background: rgba(242, 167, 75, 0.14);
+}
+
+.inv-tool .up-ready {
+  display: inline-grid;
+  place-items: center;
+  color: var(--moss);
+}
+
+.inv-tool .up-ready svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tab svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tab-count {
+  font-size: 11px;
+  color: var(--ink-mute);
+}
+
+.level-pips {
+  display: inline-flex;
+  gap: 3px;
+  vertical-align: middle;
+  margin-left: 4px;
+}
+
+.level-pips i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  transform: rotate(45deg);
+  background: rgba(255, 240, 215, 0.16);
+}
+
+.level-pips i.on {
+  background: var(--amber);
+  box-shadow: 0 0 6px rgba(242, 167, 75, 0.6);
+}
+
+.tool-detail h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.breakdown {
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.upgrade-next {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(242, 167, 75, 0.25);
+  background: rgba(242, 167, 75, 0.06);
+}
+
+.upgrade-next.maxed {
+  border-color: rgba(143, 196, 106, 0.35);
+  background: rgba(143, 196, 106, 0.07);
+}
+
+.upgrade-next h4,
+.structure-body h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.upgrade-next h4 svg,
+.structure-body h3 svg,
+.sleep-btn svg {
+  width: 18px;
+  height: 18px;
+  color: var(--amber);
+}
+
+.upgrade-next .detail-actions {
+  margin-top: 10px;
+}
+
+.panel h2 svg {
+  width: 26px;
+  height: 26px;
+  vertical-align: -4px;
+}
+
+.tier-ladder {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  padding: 0 22px 14px;
+  flex: none;
+}
+
+.tier {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 750;
+  color: var(--ink-mute);
+  background: rgba(255, 240, 215, 0.05);
+  opacity: 0.6;
+}
+
+.tier svg {
+  width: 18px;
+  height: 18px;
+}
+
+.tier.done {
+  opacity: 0.9;
+}
+
+.tier.current {
+  opacity: 1;
+  color: var(--amber-hi);
+  background: rgba(242, 167, 75, 0.18);
+  border: 1px solid rgba(242, 167, 75, 0.5);
+}
+
+.tier-arrow {
+  font-style: normal;
+  color: var(--ink-mute);
+}
+
+.structure-body {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+}
+
+.structure-rest,
+.structure-upgrade,
+.forage-detail {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 236, 205, 0.07);
+  border-radius: 16px;
+  padding: 18px;
+}
+
+.structure-body p,
+.forage-detail p {
+  margin: 0 0 10px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
+.fire-sleep-note {
+  font-weight: 650;
+}
+
+.forage-grid {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  grid-auto-rows: min-content;
+  gap: 8px;
+}
+
+.forage-card {
+  position: relative;
+  font: inherit;
+  color: var(--ink);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 22px 8px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--card-line);
+  background: linear-gradient(180deg, rgba(143, 196, 106, 0.1), rgba(0, 0, 0, 0.1));
+  cursor: pointer;
+  transition: transform 0.12s, border-color 0.12s;
+}
+
+.forage-card:hover {
+  transform: translateY(-2px);
+}
+
+.forage-card svg {
+  width: 44px;
+  height: 44px;
+}
+
+.forage-card.locked {
+  background: rgba(0, 0, 0, 0.2);
+  color: var(--ink-mute);
+}
+
+.forage-card.locked svg {
+  width: 30px;
+  height: 30px;
+  margin: 7px 0;
+  opacity: 0.5;
+}
+
+.forage-card.selected {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 1px var(--amber);
+}
+
+.forage-no {
+  position: absolute;
+  top: 6px;
+  left: 9px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+
+.forage-name {
+  font-size: 12.5px;
+  font-weight: 750;
+  text-align: center;
+}
+
+.forage-detail h3 {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  font-size: 21px;
+}
+
+.forage-latin {
+  margin-bottom: 10px;
+  font-style: italic;
+  font-size: 12.5px;
+  color: var(--ink-mute);
+}
+
+.forage-row {
+  display: grid;
+  grid-template-columns: 76px 1fr;
+  gap: 8px;
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 236, 205, 0.07);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.forage-row b {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding-top: 2px;
+}
+
+.forage-notes {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(143, 196, 106, 0.08);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-soft);
+}
+
 /* ------------------------------------------------------------------ responsive */
 
 @media (max-width: 900px) {
@@ -2213,6 +2507,18 @@ b {
   }
   .tabs {
     padding: 0 14px 10px;
+  }
+  .tier-ladder {
+    padding: 0 14px 10px;
+  }
+  .tier span {
+    display: none;
+  }
+  .tier.current span {
+    display: inline;
+  }
+  .forage-grid {
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
   }
   .title-screen {
     justify-content: center;
