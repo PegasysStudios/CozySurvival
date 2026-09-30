@@ -474,25 +474,35 @@ async function main() {
     await page.keyboard.press('Escape');
     await sleep(200);
 
-    const build = (id, inputs) =>
+    // `roomy`: only keep a spot where the next tier also fits (the player walks a frame-rate dependent distance
+    // first, so a spot right beside them may leave no room to upgrade).
+    const build = (id, inputs, roomy = false) =>
       page.evaluate(
-        ([prefab, give]) => {
+        ([prefab, give, room]) => {
           const sim = window.__cozy.game.sim;
           const s = sim.state;
-          s.inventory.slots.fill(null);
-          for (const [item, n] of Object.entries(give)) sim.devGive(item, n);
+          const stock = () => {
+            s.inventory.slots.fill(null);
+            for (const [item, n] of Object.entries(give)) sim.devGive(item, n);
+          };
+          stock();
           if (!sim.beginPlacement(prefab)) return null;
           const p = s.player;
-          for (let r = 2.5; r < 8; r += 0.5) {
+          for (let r = room ? 3.5 : 2.5; r < 9; r += 0.5) {
             for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
               sim.setPlacementAt(p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
-              if (sim.placement?.valid && sim.confirmPlacement()) return s.structures[s.structures.length - 1].id;
+              if (!sim.placement?.valid || !sim.confirmPlacement()) continue;
+              const placed = s.structures[s.structures.length - 1].id;
+              if (!room || sim.upgradeBlocker(placed) === null) return placed;
+              sim.deleteStructure(placed);
+              stock();
+              sim.beginPlacement(prefab);
             }
           }
           sim.cancelPlacement();
           return null;
         },
-        [id, inputs],
+        [id, inputs, roomy],
       );
     const openStructure = (id) => page.evaluate((sid) => window.__cozy.game.sim.perform({ kind: 'structure', id: sid, dist: 1 }), id);
 
@@ -574,7 +584,7 @@ async function main() {
       check('the repair finishes and restores full condition', !mended.repair && mended.dur > mended.max - 0.5 && !mended.ring, JSON.stringify(mended));
     }
 
-    const binId = await build('storageBin', { stick: 24, fiber: 20, cordage: 3 });
+    const binId = await build('storageBin', { stick: 24, fiber: 20, cordage: 3 }, true);
     check('the storage bin can be built', binId !== null);
     if (binId !== null) {
       await page.evaluate(() => {
@@ -618,12 +628,14 @@ async function main() {
       });
       await openStructure(binId);
       await waitFrames(3);
+      const canGrow = await page.evaluate((id) => ({ check: window.__cozy.game.sim.canUpgradeStructure(id), blocker: window.__cozy.game.sim.upgradeBlocker(id) }), binId);
       await page.click('.storage-body > .structure-upgrade .btn.primary');
       await sleep(150);
       const grown = await page.evaluate((id) => {
         const st = window.__cozy.game.sim.state.structures.find((x) => x.id === id);
         return { prefab: st.prefab, slots: st.store.length, sticks: st.store.reduce((n, x) => n + (x && x.item === 'stick' ? x.count : 0), 0), shown: document.querySelectorAll('.store-grid .slot').length };
       }, binId);
+      Object.assign(grown, { before: canGrow });
       check('upgrading the bin in place grows it to fifteen slots and keeps what is inside', grown.prefab === 'storageCrate' && grown.slots === 15 && grown.sticks === 5 && grown.shown === 15, JSON.stringify(grown));
       await page.keyboard.press('Escape');
       await sleep(150);
@@ -895,6 +907,41 @@ async function main() {
     );
     await page.keyboard.press('Escape');
     await sleep(200);
+    await lock();
+    // The heaviest view: in the jungle down the main stream, looking up at the waterfall.
+    const junglePos = await page.evaluate(() => {
+      const g = window.__cozy.game;
+      const sim = g.sim;
+      const isl = sim.terrain.island;
+      const w = isl.waterfall;
+      const st = isl.streams[0];
+      const k = Math.min(st.pts.length / 2 - 1, 16) * 2;
+      for (let side = 5; side < 16; side += 1) {
+        for (const s of [1, -1]) {
+          const dx = st.pts[k + 2] - st.pts[k];
+          const dz = st.pts[k + 3] - st.pts[k + 1];
+          const l = Math.hypot(dx, dz) || 1;
+          const x = st.pts[k] - (dz / l) * side * s;
+          const z = st.pts[k + 1] + (dx / l) * side * s;
+          if (sim.terrain.heightAt(x, z) < 0.4 || sim.terrain.slopeAt(x, z) > 0.5) continue;
+          const p = sim.state.player;
+          Object.assign(p, { x, z, y: sim.terrain.heightAt(x, z), vx: 0, vy: 0, vz: 0, grounded: true, swimming: false });
+          p.yaw = Math.atan2(-(w.x - x), -(w.z - z));
+          p.pitch = 0.12;
+          g.syncCameraToPlayer();
+          return { x, z, jungle: isl.jungle(x, z), toFall: Math.hypot(w.x - x, w.z - z) };
+        }
+      }
+      return null;
+    });
+    await waitFrames(8);
+    await shoot(page, 'gameplay-island-waterfall');
+    const junglePerf = await measure(page, 'Tropical Island (jungle, facing the waterfall)');
+    check(
+      'even the jungle view by the waterfall stays within twice the forest\'s frame time',
+      !!junglePos && junglePerf.medianMs <= pnwPerf.medianMs * 2,
+      JSON.stringify({ junglePos, jungle: junglePerf, pnw: pnwPerf }),
+    );
     await quit();
     await settleTitle(page);
     await page.keyboard.press('ArrowLeft');

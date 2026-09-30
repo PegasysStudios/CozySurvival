@@ -6,7 +6,7 @@ import { between, col, GeoBuilder, mix, tf } from './geo';
 import type { ResourceModel } from './models';
 import { blades, foliage } from './plantParts';
 
-const { CylinderGeometry, ConeGeometry, IcosahedronGeometry, DodecahedronGeometry, OctahedronGeometry } = THREE;
+const { CylinderGeometry, ConeGeometry, IcosahedronGeometry, OctahedronGeometry } = THREE;
 
 type V3 = [number, number, number];
 
@@ -51,13 +51,13 @@ function leafStrip(b: GeoBuilder, base: V3, dir: [number, number], len: number, 
 }
 
 function palm(b: GeoBuilder, near: boolean): void {
-  const segs = near ? 9 : 4;
+  const segs = near ? 7 : 4;
   const ring = (y: number) => (Math.sin(y * 9) > 0.55 ? col('#6a5e4c') : mix('#8f826c', '#a89a80', hash2(Math.floor(y * 4), 3, 7)));
   for (let i = 0; i < segs; i++) {
     const t0 = i / segs;
     const t1 = (i + 1) / segs;
     const r = 0.23 - 0.08 * t0;
-    b.add(new CylinderGeometry(r * 0.94, r, 1, near ? 7 : 5), {
+    b.add(new CylinderGeometry(r * 0.94, r, 1, near ? 6 : 5, 1, true), {
       matrix: between(PALM.lean * t0 * t0, PALM_TOP * t0, 0, PALM.lean * t1 * t1, PALM_TOP * t1, 0),
       color: (_x, y) => ring(y), jitter: 0.02, vary: 0.05, sway: (y) => clamp(y / 12, 0, 1) * 0.12,
     });
@@ -99,8 +99,8 @@ function breadfruit(b: GeoBuilder, near: boolean, stripped: boolean): void {
   if (near) for (const [x, y, z] of limbs) b.add(new CylinderGeometry(0.08, 0.15, 1, 6), { matrix: between(0, 4.2, 0, x, y, z), color: '#62584a' });
   const rng = new Rng(521);
   const blobs: [number, number, number, number][] = [[0, 8.2, 0, 2.2], [1.9, 7.2, 0.6, 1.8], [-1.8, 7.3, -0.7, 1.9], [0.5, 7.0, 1.9, 1.7], [-0.6, 7.0, -2.0, 1.7], [1.1, 8.8, -0.9, 1.3]];
-  for (const [x, y, z, r] of near ? blobs : blobs.slice(0, 4)) {
-    b.add(near ? new DodecahedronGeometry(r, 1) : new IcosahedronGeometry(r * 1.12, 0), {
+  for (const [x, y, z, r] of near ? blobs.slice(0, 5) : blobs.slice(0, 4)) {
+    b.add(near ? new IcosahedronGeometry(r * 1.06, 1) : new IcosahedronGeometry(r * 1.12, 0), {
       matrix: tf(x, y, z, rng.range(0, 3), rng.range(0, 3), 0, 1, 0.74, 1),
       color: foliage('#23551f', '#5f9a3a', '#1a3f18'),
       jitter: near ? 0.4 : 0.16, vary: 0.1, sway: 0.08,
@@ -110,7 +110,7 @@ function breadfruit(b: GeoBuilder, near: boolean, stripped: boolean): void {
   for (let i = 0; i < 9; i++) {
     const [x, y, z, r] = blobs[i % 5];
     const a = rng.range(0, Math.PI * 2);
-    b.add(new IcosahedronGeometry(0.2, near ? 1 : 0), {
+    b.add(new IcosahedronGeometry(0.2, 0), {
       matrix: tf(x + Math.cos(a) * r * 0.75, y - r * 0.55, z + Math.sin(a) * r * 0.75),
       color: (px, py, pz) => (hash2(Math.round(px * 40), Math.round((py + pz) * 40), 5) < 0.3 ? col('#7a9a3a') : col('#a8c05a')),
       vary: 0.05, sway: 0.08,
@@ -126,8 +126,8 @@ function kukui(b: GeoBuilder, near: boolean): void {
   }
   const rng = new Rng(733);
   const blobs: [number, number, number, number][] = [[0, 10.4, 0, 2.5], [2.2, 9.2, 0.7, 2.1], [-2.1, 9.4, -0.6, 2.1], [0.6, 9.0, 2.2, 1.9], [-0.7, 9.1, -2.2, 1.9], [1.4, 10.9, -1.2, 1.6], [-1.3, 10.8, 1.3, 1.6]];
-  for (const [x, y, z, r] of near ? blobs : blobs.slice(0, 4)) {
-    b.add(near ? new DodecahedronGeometry(r, 1) : new IcosahedronGeometry(r * 1.15, 0), {
+  for (const [x, y, z, r] of near ? blobs.slice(0, 5) : blobs.slice(0, 4)) {
+    b.add(near ? new IcosahedronGeometry(r * 1.08, 1) : new IcosahedronGeometry(r * 1.15, 0), {
       matrix: tf(x, y, z, rng.range(0, 3), rng.range(0, 3), 0, 1, 0.7, 1),
       color: foliage('#5a7a4a', '#b4c894', '#3f5a36'),
       jitter: near ? 0.42 : 0.16, vary: 0.1, sway: 0.08,
@@ -149,8 +149,8 @@ function hau(b: GeoBuilder, near: boolean, stripped: boolean): void {
   if (near) for (const [, c] of stems) b.add(new CylinderGeometry(0.05, 0.09, 1, 5), { matrix: between(c[0], c[1], c[2], c[0] * 1.6, c[1] + 1.1, c[2] * 1.6), color: bark });
   const rng = new Rng(907);
   const blobs: [number, number, number, number][] = [[1.4, 3.7, 0.5, 1.5], [-1.3, 3.5, 0.8, 1.45], [0.2, 3.9, -1.4, 1.5], [0.1, 4.6, 0.1, 1.5], [1.6, 3.1, -1.1, 1.1], [-1.5, 3.0, -0.9, 1.1]];
-  for (const [x, y, z, r] of near ? blobs : blobs.slice(0, 4)) {
-    b.add(new IcosahedronGeometry(near ? r : r * 1.1, near ? 1 : 0), {
+  for (const [x, y, z, r] of near ? blobs.slice(0, 5) : blobs.slice(0, 4)) {
+    b.add(new IcosahedronGeometry(near ? r * 1.04 : r * 1.1, near ? 1 : 0), {
       matrix: tf(x, y, z, rng.range(0, 3), rng.range(0, 3), 0, 1, 0.62, 1),
       color: foliage('#3f6f2e', '#7aac48', '#2c4f22'),
       jitter: near ? 0.34 : 0.14, vary: 0.1, sway: 0.08,
@@ -158,11 +158,11 @@ function hau(b: GeoBuilder, near: boolean, stripped: boolean): void {
   }
   if (!near) return;
   // Yellow hibiscus flowers dotted through the leaves.
-  for (let i = 0; i < 14; i++) {
-    const [x, y, z, r] = blobs[i % blobs.length];
+  for (let i = 0; i < 8; i++) {
+    const [x, y, z, r] = blobs[i % 5];
     const a = rng.range(0, Math.PI * 2);
     const up = rng.range(-0.2, 0.5);
-    b.add(new CylinderGeometry(0.1, 0.03, 0.08, 5), { matrix: tf(x + Math.cos(a) * r * 0.9, y + up * r * 0.6, z + Math.sin(a) * r * 0.9, rng.range(0, 1), a, rng.range(0, 1)), color: rng.pick(['#f2d23a', '#f5c030', '#e8a030']), vary: 0.05, sway: 0.08 });
+    b.add(new CylinderGeometry(0.1, 0.03, 0.08, 4, 1, true), { matrix: tf(x + Math.cos(a) * r * 0.9, y + up * r * 0.6, z + Math.sin(a) * r * 0.9, rng.range(0, 1), a, rng.range(0, 1)), color: rng.pick(['#f2d23a', '#f5c030', '#e8a030']), vary: 0.05, sway: 0.08 });
   }
 }
 

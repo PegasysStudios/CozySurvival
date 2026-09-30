@@ -22,8 +22,9 @@ const FLOWER_VIEW = 70;
 const RESOURCE_VIEW = 140;
 const SCRUB_VIEW = 120;
 const SCRUB_LOD_DIST = 60;
-/** Chunk-centre distance beyond which trees switch to their low-detail model. */
+/** Chunk-centre distance beyond which trees switch to their low-detail model (sooner in the island's thick jungle). */
 const TREE_LOD_DIST = 90;
+const ISLAND_TREE_LOD_DIST = 58;
 
 interface Falling {
   index: number;
@@ -589,10 +590,11 @@ export class NatureView {
     for (const g of this.grass) g.cullByDistance(px, pz, GRASS_VIEW);
     for (const f of this.flowers) f.cullByDistance(px, pz, FLOWER_VIEW);
     for (const s of this.scrub) s.cullByDistance(px, pz, Math.min(SCRUB_VIEW, viewDist), SCRUB_LOD_DIST);
+    const lod = this.gen.biome === 'island' ? ISLAND_TREE_LOD_DIST : TREE_LOD_DIST;
     for (const s of this.species) {
-      this.trees[s].cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
+      this.trees[s].cullByDistance(px, pz, viewDist, lod);
       this.stumps[s].cullByDistance(px, pz, viewDist);
-      this.strippedTrees[s]?.cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
+      this.strippedTrees[s]?.cullByDistance(px, pz, viewDist, lod);
     }
     for (const k of RESOURCE_KINDS) {
       this.resources[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
