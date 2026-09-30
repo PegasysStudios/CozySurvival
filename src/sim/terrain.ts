@@ -30,6 +30,25 @@ export interface Lake {
 export const isDrinkable = (l: Lake): boolean => l.drinkable !== false;
 export const holdsFish = (l: Lake): boolean => l.fish !== false;
 
+/**
+ * How a desert pool sits in the ground, built like the PNW lakes: a shallow basin whose bank stands `bank` metres
+ * above the water at the shore and rises at `grade` for `reach` metres, so you walk straight down to the water.
+ * `edge` is where the floor starts to shelve up toward the shore, as a fraction of the pool radius.
+ */
+export const POOL_SHAPE: Record<Exclude<WaterKind, 'lake'>, { depth: number; bank: number; grade: number; reach: number; edge: [number, number] }> = {
+  spring: { depth: 1.9, bank: 0.35, grade: 0.24, reach: 22, edge: [0, 1.4] },
+  alkali: { depth: 0.6, bank: 0.25, grade: 0.2, reach: 22, edge: [0.2, 1.45] },
+  tinaja: { depth: 1.3, bank: 0.4, grade: 0.24, reach: 18, edge: [0.1, 1.5] },
+};
+
+const poolShape = (l: Lake) => POOL_SHAPE[l.kind === 'alkali' || l.kind === 'tinaja' ? l.kind : 'spring'];
+
+/** Polynomial smooth minimum: `min(a, b)` with the crease rounded over `k`. */
+function smin(a: number, b: number, k: number): number {
+  const h = Math.max(k - Math.abs(a - b), 0) / k;
+  return Math.min(a, b) - h * h * k * 0.25;
+}
+
 /** A desert landform raised out of the plain. */
 export interface Landform {
   kind: 'mesa' | 'butte' | 'spire';
@@ -123,22 +142,25 @@ export class Terrain {
 
     const springAngle = upAngle + rng.range(-1.2, 1.2);
     const sp = polar(springAngle, rng.range(24, 27));
-    const lakes: Lake[] = [{ ...sp, r: rng.range(6.2, 7.2), depth: 2.6, phase: rng.range(0, 10), kind: 'spring', drinkable: true, fish: true }];
-    const clearOf = (x: number, z: number, r: number) => lakes.every((l) => Math.hypot(l.x - x, l.z - z) > (l.r + r) * 1.7 + 14);
+    const lakes: Lake[] = [{ ...sp, r: rng.range(6.2, 7.2), depth: POOL_SHAPE.spring.depth, phase: rng.range(0, 10), kind: 'spring', drinkable: true, fish: true }];
+    // Pools stay on the low desert: the high country stands metres above the water, and reaching down to it there
+    // would take a pit or a long valley.
+    const clearOf = (x: number, z: number, r: number) =>
+      this.upland(x, z) < 0.08 && lakes.every((l) => Math.hypot(l.x - x, l.z - z) > (l.r + r) * 1.7 + 14);
 
     for (let i = 0; i < 40; i++) {
       const a = springAngle + Math.PI + rng.range(-1.3, 1.3);
       const p = polar(a, rng.range(44, 78));
       const r = rng.range(5, 6.4);
       if (!clearOf(p.x, p.z, r) && i < 39) continue;
-      lakes.push({ ...p, r, depth: 0.7, phase: rng.range(0, 10), kind: 'alkali', drinkable: false, fish: false });
+      lakes.push({ ...p, r, depth: POOL_SHAPE.alkali.depth, phase: rng.range(0, 10), kind: 'alkali', drinkable: false, fish: false });
       break;
     }
     for (let i = 0; i < 40; i++) {
       const p = polar(rng.range(0, Math.PI * 2), rng.range(62, 112));
       const r = rng.range(3.3, 4);
       if (!clearOf(p.x, p.z, r) && i < 39) continue;
-      lakes.push({ ...p, r, depth: 1.3, phase: rng.range(0, 10), kind: 'tinaja', drinkable: true, fish: false });
+      lakes.push({ ...p, r, depth: POOL_SHAPE.tinaja.depth, phase: rng.range(0, 10), kind: 'tinaja', drinkable: true, fish: false });
       this.slickPatches.push({ x: p.x, z: p.z, r: rng.range(15, 21) });
       break;
     }
@@ -162,7 +184,7 @@ export class Terrain {
         const r = rng.range(r0, r1);
         const reach = r * 1.9;
         if (Math.abs(p.x) + reach > PLAY_HALF + 6 || Math.abs(p.z) + reach > PLAY_HALF + 6) continue;
-        if (lakes.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < l.r * 1.7 + reach + 12)) continue;
+        if (lakes.some((l) => Math.hypot(l.x - p.x, l.z - p.z) < l.r * 1.2 + poolShape(l).reach + reach)) continue;
         if (this.landforms.some((m) => Math.hypot(m.x - p.x, m.z - p.z) < m.r * 1.9 + reach + 10)) continue;
         this.landforms.push({ kind, x: p.x, z: p.z, r, h: rng.range(h0, h1), phase: rng.range(0, 10) });
         break;
@@ -229,15 +251,19 @@ export class Terrain {
     for (const lake of this.lakes) {
       const dx = x - lake.x;
       const dz = z - lake.z;
+      const dist = Math.hypot(dx, dz);
+      const shape = poolShape(lake);
+      if (dist > lake.r * 1.2 + shape.reach) continue;
       const ang = Math.atan2(dz, dx);
       const wobble = 1 + 0.14 * this.detail.get(Math.cos(ang) * 1.3 + lake.phase, Math.sin(ang) * 1.3 - lake.phase);
-      const d = Math.hypot(dx, dz) / (lake.r * wobble);
-      if (d < 1.9) {
+      const shore = lake.r * wobble;
+      // The ground eases down to a low bank at the water's edge, fading back to the plain at the apron's reach.
+      const bank = shape.bank + this.detail.get(x * 0.09, z * 0.09) * 0.1 + Math.max(0, dist - shore) * shape.grade;
+      h = lerp(smin(h, bank, 1.5), h, smoothstep(shore + shape.reach * 0.55, shore + shape.reach, dist));
+      const d = dist / shore;
+      if (d < 1.6) {
         const floor = -lake.depth + this.detail.get(x * 0.07, z * 0.07) * 0.25;
-        // Rock pools are steep-sided; the alkali pan is a wide, flat, shallow dish.
-        // The pool's flat floor has to span a terrain cell or high slickrock blurs a tinaja into a puddle.
-        const edge = lake.kind === 'tinaja' ? smoothstep(0.55, 1.25, d) : lake.kind === 'alkali' ? smoothstep(0.55, 1.8, d) : smoothstep(0.3, 1.5, d);
-        h = Math.min(h, lerp(floor, h, edge));
+        h = Math.min(h, lerp(floor, h, smoothstep(shape.edge[0], shape.edge[1], d)));
       }
     }
 

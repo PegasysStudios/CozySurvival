@@ -57,6 +57,14 @@ export function colliderShape(prefab: PrefabId, x: number, z: number, rot: numbe
 const samples: number[] = [];
 const nearby: Collider[] = [];
 
+/** The height a structure is seated at: the mean ground height under its footprint. */
+export function seatHeight(t: Terrain, prefab: PrefabId, x: number, z: number, rot: number): number {
+  footprintSamples(footprintShape(prefab, x, z, rot), samples);
+  let sum = 0;
+  for (let i = 0; i < samples.length; i += 2) sum += t.heightAt(samples[i], samples[i + 1]);
+  return sum / (samples.length / 2);
+}
+
 /**
  * Validates a building spot. Checks run cheapest-first: bounds, reach, water, slope,
  * then footprint overlap against the player, trees, stumps, rocks, logs, structures, and resources.

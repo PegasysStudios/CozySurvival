@@ -5,7 +5,7 @@ import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 import type { WearingTool } from './durability';
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
