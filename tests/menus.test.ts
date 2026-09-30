@@ -7,7 +7,10 @@ import type { Simulation } from '../src/sim/simulation';
 import { campfireTiles, craftTiles, UPGRADE_ONLY_SHELTERS, upgradeTiles } from '../src/ui/catalog';
 import { attachTooltip, el } from '../src/ui/dom';
 import { CRAFT_TABS, Panels } from '../src/ui/panels';
-import { buildFresh, give, quietSim } from './helpers';
+import { BALANCE } from '../src/data/balance';
+import { countItem } from '../src/sim/inventory';
+import { repairCost } from '../src/sim/repair';
+import { buildFresh, give, giveRecipe, placeStructure, quietSim } from './helpers';
 
 const RECIPES = recipesFor('pnw');
 
@@ -228,5 +231,88 @@ describe('tabbed crafting menu (round 8)', () => {
     const min = Number(/minmax\((\d+)px/.exec(rule('.craft-tabbed'))![1]);
     expect(min).toBeGreaterThanOrEqual(CRAFT_TABS.length * w + (CRAFT_TABS.length - 1) * gap);
     expect(rule('.craft-tab .icon-img')).toContain('flex: none');
+  });
+});
+
+describe('the workbench menu as an icon grid (round 9)', () => {
+  /** A workbench, a worn axe with its repair materials, a worn spear without them, and a torch in perfect condition. */
+  function workbench() {
+    const sim = quietSim();
+    const bench = placeStructure(sim, 'workbench');
+    for (const tool of ['axe', 'spear', 'torch'] as const) {
+      giveRecipe(sim, tool);
+      expect(sim.craft(tool).ok).toBe(true);
+    }
+    const s = sim.state;
+    s.toolWear.axe!.dur = s.toolWear.axe!.max / 4;
+    s.toolWear.spear!.dur = 1;
+    s.inventory.slots.fill(null);
+    give(sim, Object.fromEntries(repairCost('axe', 0).map((c) => [c.item, c.count])));
+    const { panels, root } = openPanels(sim);
+    panels.open('structure', { targetId: bench.id });
+    const tile = (tool: string) => root.querySelector<HTMLElement>(`.panel .tile-grid .tile[data-key="w:${tool}"]`)!;
+    const detail = () => root.querySelector<HTMLElement>('.panel .repair-detail')!;
+    return { sim, bench, panels, root, tile, detail };
+  }
+
+  it('has one crafting-style tile per carried tool that wears, greyed exactly when the repair materials are missing', () => {
+    const { sim, root, tile } = workbench();
+    expect(tiles(root, '.tile-grid .tile').map((t) => t.dataset.key)).toEqual(['w:axe', 'w:spear', 'w:torch']);
+    for (const tool of ['axe', 'spear', 'torch'] as const) {
+      const missing = repairCost(tool, 0).some((c) => countItem(sim.state.inventory, c.item) < c.count);
+      expect(tile(tool).classList.contains('greyed'), tool).toBe(missing);
+    }
+    expect(tile('axe').classList.contains('greyed')).toBe(false);
+    expect(tile('axe').classList.contains('ready')).toBe(true);
+    expect(tile('spear').classList.contains('greyed')).toBe(true);
+    expect(tile('torch').querySelector('.tile-badge.owned')).not.toBeNull();
+    expect(tile('axe').querySelector<HTMLElement>('.dur i')!.style.transform).toBe('scaleX(0.250)');
+    expect(tile('spear').querySelector('.dur.low')).not.toBeNull();
+    expect(tile('axe').dataset.tip).toBe('Stone Axe · 25%');
+  });
+
+  it('drops the "how repairs work" section', () => {
+    const { root } = workbench();
+    expect(root.querySelector('.workbench-info, .repair-table, .repair-list, .repair-row')).toBeNull();
+    expect(root.textContent).not.toContain('How repairs work');
+  });
+
+  it("clicking a tile shows that tool's durability, materials as have/need, repair time and the Repair button", () => {
+    const { root, tile, detail } = workbench();
+    expect(tile('axe').classList.contains('selected')).toBe(true);
+    expect(detail().dataset.tool).toBe('axe');
+    expect(detail().querySelector('.repair-cond span')!.textContent).toBe('25%');
+    expect(detail().textContent).toContain('uses left');
+    expect([...detail().querySelectorAll('.ingredient')].map((i) => i.querySelector('b')!.textContent)).toEqual(['1/1', '1/1', '1/1']);
+    expect(detail().querySelector('.repair-time')!.textContent).toContain(`${BALANCE.repair.seconds[0]} s`);
+    expect(detail().querySelector<HTMLButtonElement>('.btn.primary')!.disabled).toBe(false);
+
+    tile('spear').click();
+    expect(tile('spear').classList.contains('selected')).toBe(true);
+    expect(detail().dataset.tool).toBe('spear');
+    expect(detail().querySelectorAll('.ingredient.missing').length).toBeGreaterThan(0);
+    expect(detail().querySelector<HTMLButtonElement>('.btn.primary')!.disabled).toBe(true);
+    expect(detail().querySelector('.craft-reason')!.textContent).toBe('Missing materials.');
+
+    tile('torch').click();
+    expect(detail().textContent).toContain('In perfect condition');
+    expect(detail().querySelector<HTMLButtonElement>('.btn.primary')!.disabled).toBe(true);
+    expect(root.querySelectorAll('.panel .repair-detail')).toHaveLength(1);
+  });
+
+  it('Repair starts mending the selected tool and closes the menu', () => {
+    const { sim, panels, detail } = workbench();
+    detail().querySelector<HTMLButtonElement>('.btn.primary')!.click();
+    expect(sim.state.repair?.tool).toBe('axe');
+    expect(panels.mode).toBe('none');
+  });
+
+  it('explains what to bring when nothing carried wears', () => {
+    const sim = quietSim();
+    const bench = placeStructure(sim, 'workbench');
+    const { panels, root } = openPanels(sim);
+    panels.open('structure', { targetId: bench.id });
+    expect(root.querySelector('.panel .tile-grid')).toBeNull();
+    expect(root.querySelector('.panel .detail-empty')!.textContent).toContain("You aren't carrying anything that wears.");
   });
 });

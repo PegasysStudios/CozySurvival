@@ -425,22 +425,47 @@ async function main() {
       await page.evaluate(() => {
         const sim = window.__cozy.game.sim;
         const s = sim.state;
-        if (!s.tools.includes('axe')) s.tools.push('axe');
+        for (const tool of ['axe', 'spear']) if (!s.tools.includes(tool)) s.tools.push(tool);
         s.toolWear.axe = { dur: 2, max: Math.max(10, s.toolWear.axe?.max ?? 10) };
+        s.toolWear.spear = { dur: 1, max: Math.max(10, s.toolWear.spear?.max ?? 10) };
         s.inventory.slots.fill(null);
         for (const item of ['stick', 'stone', 'fiber']) sim.devGive(item, 1);
         Object.assign(s.needs, { health: 100, hunger: 100, thirst: 100 });
       });
       await openStructure(benchId);
       await waitFrames(3);
-      const menu = await page.evaluate(() => ({
-        mode: window.__cozy.game.mode,
-        rows: [...document.querySelectorAll('.panel .repair-row')].map((r) => r.dataset.tool),
-        ready: !document.querySelector('.repair-row[data-tool="axe"] .btn.primary')?.disabled,
-        table: document.querySelectorAll('.repair-table > div').length,
-      }));
-      check('the workbench menu lists carried tools with durability and a Repair button', menu.mode === 'panel' && menu.rows.includes('axe') && menu.ready && menu.table === 4, JSON.stringify(menu));
-      await page.click('.repair-row[data-tool="axe"] .btn.primary');
+      const menu = await page.evaluate(() => {
+        const tile = (tool) => document.querySelector(`.panel .tile-grid .tile[data-key="w:${tool}"]`);
+        return {
+          mode: window.__cozy.game.mode,
+          tiles: [...document.querySelectorAll('.panel .tile-grid .tile')].map((t) => t.dataset.key),
+          axe: { ready: tile('axe')?.classList.contains('ready') ?? false, greyed: tile('axe')?.classList.contains('greyed') ?? true, dur: !!tile('axe')?.querySelector('.dur i') },
+          spearGreyed: tile('spear')?.classList.contains('greyed') ?? false,
+          oldLayout: !!document.querySelector('.workbench-info, .repair-table, .repair-row'),
+        };
+      });
+      check('the workbench menu is an icon grid of carried tools with durability bars, greyed without repair materials, and no how-repairs-work section', menu.mode === 'panel' && menu.tiles.includes('w:axe') && menu.axe.ready && !menu.axe.greyed && menu.axe.dur && menu.spearGreyed && !menu.oldLayout, JSON.stringify(menu));
+      await page.click('.panel .tile-grid .tile[data-key="w:spear"]');
+      await waitFrames(2);
+      const spear = await page.evaluate(() => {
+        const d = document.querySelector('.panel .repair-detail');
+        return { tool: d?.dataset.tool, disabled: d?.querySelector('.btn.primary')?.disabled ?? false, missing: d?.querySelectorAll('.ingredient.missing').length ?? 0 };
+      });
+      check('clicking the greyed spear shows its missing materials and a disabled Repair button', spear.tool === 'spear' && spear.disabled && spear.missing > 0, JSON.stringify(spear));
+      await page.click('.panel .tile-grid .tile[data-key="w:axe"]');
+      await waitFrames(2);
+      const detail = await page.evaluate(() => {
+        const d = document.querySelector('.panel .repair-detail');
+        return {
+          tool: d?.dataset.tool,
+          durability: d?.querySelector('.repair-cond span')?.textContent ?? '',
+          counts: [...(d?.querySelectorAll('.ingredient b') ?? [])].map((b) => b.textContent),
+          time: d?.querySelector('.repair-time')?.textContent ?? '',
+          ready: d ? !d.querySelector('.btn.primary')?.disabled : false,
+        };
+      });
+      check('clicking the axe shows its durability, materials as have/need, repair time and an enabled Repair button', detail.tool === 'axe' && /^\d+%$/.test(detail.durability) && detail.counts.length === 3 && detail.counts.every((c) => c === '1/1') && /\d s/.test(detail.time) && detail.ready, JSON.stringify(detail));
+      await page.click('.panel .repair-detail .btn.primary');
       await waitFrames(3);
       const started = await page.evaluate(() => ({
         mode: window.__cozy.game.mode,

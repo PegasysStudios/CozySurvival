@@ -7,7 +7,7 @@ import { isUpgradable, LEVEL_NUMERALS, MAX_TOOL_LEVEL, SHELTER_TIERS, SHELTER_UP
 import { CANTEEN_ITEMS, canteenFill, canteenServings, nextServing } from '../sim/canteen';
 import { isPinned, MAX_PINS } from '../sim/checklist';
 import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
-import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } from '../sim/durability';
+import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction, type WearingTool } from '../sim/durability';
 import { usedSlots } from '../sim/inventory';
 import { REPAIR_FAILURE_TEXT } from '../sim/repair';
 import type { Slot } from '../sim/state';
@@ -20,7 +20,7 @@ import { attachTooltip, button, el, escapeHtml } from './dom';
 import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
 import { CRAFT_TAB_ICON_DIR, gearIcon, iconImg, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
-import { ingredients, packRoomNote, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type ShelterMenu } from './structure';
+import { ingredients, packRoomNote, repairTile, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type RepairRow, type ShelterMenu } from './structure';
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
 export type CraftTab = RecipeCategory | 'upgrades';
@@ -60,7 +60,10 @@ const TILE_BADGES: Record<NonNullable<Tile['badge']>, string> = {
   fire: `<span class="tile-badge fire">${MISC_ICONS.fire}</span>`,
   upgrade: `<span class="tile-badge up">${MISC_ICONS.upgrade}</span>`,
   max: '<span class="tile-badge max">MAX</span>',
+  full: '<span class="tile-badge owned">✓</span>',
 };
+
+const lowCondition = (pct: number) => pct <= BALANCE.durability.lowFraction * 100;
 
 /** A square grid tile. Its name is the hover tooltip (`data-tip`) and a visually hidden label. */
 export function tileButton(t: Tile, selected: boolean): HTMLButtonElement {
@@ -69,7 +72,8 @@ export function tileButton(t: Tile, selected: boolean): HTMLButtonElement {
   b.dataset.tip = t.name;
   b.dataset.key = t.key;
   b.setAttribute('aria-label', t.name);
-  b.innerHTML = `<span class="tile-icon">${t.icon}</span>${t.badge ? TILE_BADGES[t.badge] : ''}${t.level !== null ? levelPips(t.level, false) : ''}<span class="tile-label">${escapeHtml(t.name)}</span>`;
+  const dur = t.condition === undefined ? '' : `<span class="dur ${lowCondition(t.condition) ? 'low' : ''}"><i style="transform:scaleX(${(t.condition / 100).toFixed(3)})"></i></span>`;
+  b.innerHTML = `<span class="tile-icon">${t.icon}</span>${t.badge ? TILE_BADGES[t.badge] : ''}${t.level !== null ? levelPips(t.level, false) : ''}${dur}<span class="tile-label">${escapeHtml(t.name)}</span>`;
   return b;
 }
 
@@ -87,6 +91,7 @@ export class Panels {
   private selectedTool: ToolId | null = null;
   private selectedGear: GearId | null = null;
   private selectedForage: ForageId | null = null;
+  private selectedRepair: WearingTool | null = null;
   /** The campfire or structure the panel belongs to. */
   private targetId: number | null = null;
 
@@ -650,42 +655,62 @@ export class Panels {
       this.card.append(this.head('Repair Workbench', 'This workbench is gone.'));
       return;
     }
-    const head = this.head(`${prefabIcon('workbench')} Repair Workbench`, 'Mend worn tools and weapons for a small share of what they cost to make. Anyone in camp can use this bench.');
-    const body = el('div', 'panel-body workbench-body');
-    const list = el('div', 'repair-list');
+    const head = this.head(`${prefabIcon('workbench')} Repair Workbench`, 'Mend worn tools and weapons for a small share of what they cost to make. Greyed-out tools need more materials. Anyone in camp can use this bench.');
     if (!m.rows.length) {
-      list.innerHTML = '<div class="detail-empty"><p>You aren\'t carrying anything that wears.</p><p class="muted">The axe, spear, bow, torch and fishing pole lose condition as you use them. Bring them here to mend them.</p></div>';
+      const empty = el('div', 'panel-body workbench-empty');
+      empty.innerHTML = '<div class="detail-empty"><p>You aren\'t carrying anything that wears.</p><p class="muted">The axe, spear, bow, torch and fishing pole lose condition as you use them. Bring them here to mend them.</p></div>';
+      this.card.append(head, empty);
+      return;
     }
-    const low = BALANCE.durability.lowFraction * 100;
+    if (!m.rows.some((r) => r.tool === this.selectedRepair)) this.selectedRepair = (m.rows.find((r) => r.check.ok) ?? m.rows.find((r) => r.condition < 100) ?? m.rows[0]).tool;
+    const body = el('div', 'panel-body craft-body workbench-body');
+    const grid = el('div', 'tile-grid');
     for (const r of m.rows) {
-      const row = el('div', `repair-row ${r.check.ok ? 'ready' : ''}`);
-      row.dataset.tool = r.tool;
-      const status = r.condition >= 100 ? 'In perfect condition' : `Back to 100% after ${r.seconds} s at the bench`;
-      row.innerHTML = `<div class="repair-icon">${toolIcon(r.tool, r.level)}</div><div class="repair-info"><b>${escapeHtml(r.name)}</b><div class="repair-cond ${r.condition <= low ? 'low' : ''}"><div class="repair-track"><i style="transform:scaleX(${(r.condition / 100).toFixed(3)})"></i></div><span>${r.condition}%</span></div><div class="repair-meta muted">${escapeHtml(status)}</div></div>`;
-      const side = el('div', 'repair-side');
-      if (r.condition < 100) side.insertAdjacentHTML('beforeend', ingredientsHtml(r.cost));
-      const go = button('Repair', `btn primary ${r.check.ok ? '' : 'disabled'}`, () => {
-        const res = sim.startRepair(r.tool, id);
-        if (!res.ok) {
-          this.host.sfx('deny');
-          this.host.toast(REPAIR_FAILURE_TEXT[res.reason!], 'warn');
-          this.render();
-          return;
-        }
-        this.host.sfx('craft');
-        this.host.close();
+      const b = tileButton(repairTile(r), r.tool === this.selectedRepair);
+      b.dataset.tool = r.tool;
+      b.addEventListener('click', () => {
+        this.selectedRepair = r.tool;
+        this.host.sfx('click');
+        this.render();
       });
-      go.disabled = !r.check.ok;
-      side.append(go);
-      if (r.reason && r.check.reason !== 'full') side.append(el('div', 'craft-reason', escapeHtml(r.reason)));
-      row.append(side);
-      list.append(row);
+      b.addEventListener('dblclick', () => {
+        if (r.check.ok) this.repair(r.tool, id);
+      });
+      grid.append(b);
     }
-    const info = el('div', 'workbench-info');
-    const R = BALANCE.repair;
-    info.innerHTML = `<h3>${MISC_ICONS.upgrade} How repairs work</h3><p>A repair takes a small share of the materials the tool was made from, a little more for each upgrade it carries, and brings it back to full condition.</p><div class="repair-table">${R.costFraction.map((f, lv) => `<div><b>${lv ? `Level ${LEVEL_NUMERALS[lv]}` : 'Unupgraded'}</b><span>${Math.round(f * 100)}% of the cost</span><span>${R.seconds[lv]} s</span></div>`).join('')}</div><p class="muted">Stand still while you work: you can look around, but you can't walk off until the tool is done. Getting hurt drops the work and gives your materials back.</p>`;
-    body.append(list, info);
+    body.append(grid, this.repairDetail(m.rows.find((r) => r.tool === this.selectedRepair)!, id));
     this.card.append(head, body);
+  }
+
+  /** The selected tool at the workbench: its durability, the repair materials against the pack, the time and the Repair button. */
+  private repairDetail(r: RepairRow, benchId: number): HTMLElement {
+    const detail = el('div', 'recipe-detail repair-detail');
+    detail.dataset.tool = r.tool;
+    const uses = r.condition >= 100 ? 'In perfect condition' : r.uses ? `${r.uses.left} of ${r.uses.max} uses left` : '';
+    const time = r.condition >= 100 ? 'Nothing to mend' : `${r.seconds} s at the bench, standing still`;
+    detail.innerHTML = `<div class="detail-icon big">${toolIcon(r.tool, r.level)}</div><h3>${escapeHtml(r.name)}</h3>`
+      + `<div class="repair-stat"><b>Durability</b><div class="repair-cond ${lowCondition(r.condition) ? 'low' : ''}"><div class="repair-track"><i style="transform:scaleX(${(r.condition / 100).toFixed(3)})"></i></div><span>${r.condition}%</span></div><div class="effects muted">${escapeHtml(uses)}</div></div>`
+      + `<div class="repair-stat"><b>Repair materials</b>${ingredientsHtml(r.cost)}</div>`
+      + `<div class="repair-stat repair-time"><b>Repair time</b><span>${escapeHtml(time)}</span></div>`;
+    const actions = el('div', 'detail-actions');
+    const go = button('Repair', `btn primary ${r.check.ok ? '' : 'disabled'}`, () => this.repair(r.tool, benchId));
+    go.disabled = !r.check.ok;
+    actions.append(go);
+    detail.append(actions);
+    if (r.reason) detail.append(el('div', 'craft-reason', escapeHtml(r.reason)));
+    return detail;
+  }
+
+  private repair(tool: WearingTool, benchId: number): void {
+    const res = this.host.sim().startRepair(tool, benchId);
+    if (!res.ok) {
+      this.host.sfx('deny');
+      this.host.toast(REPAIR_FAILURE_TEXT[res.reason!], 'warn');
+      this.render();
+      return;
+    }
+    this.host.sfx('craft');
+    this.host.close();
   }
 
   // ------------------------------------------------------------------ grids

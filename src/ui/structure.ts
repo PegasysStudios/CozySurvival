@@ -13,6 +13,8 @@ import type { Simulation } from '../sim/simulation';
 import type { GameState } from '../sim/state';
 import { canSleepAt } from '../sim/time';
 import { UPGRADE_FAILURE_TEXT, type UpgradeCheck } from '../sim/upgrades';
+import type { Tile } from './catalog';
+import { toolIcon } from './icons';
 
 export interface Ingredient {
   item: ItemId;
@@ -150,7 +152,11 @@ export interface RepairRow {
   level: number;
   /** Condition in percent. */
   condition: number;
+  /** Uses left out of the most it holds; null for a tool not used yet (it gets its durability on first use). */
+  uses: { left: number; max: number } | null;
   cost: Ingredient[];
+  /** The pack lacks some of the repair materials. */
+  missing: boolean;
   seconds: number;
   check: RepairCheck;
   reason: string | null;
@@ -172,12 +178,15 @@ export function workbenchMenu(sim: Simulation, id: number): WorkbenchMenu | null
     const level = toolLevel(s, tool);
     const w = s.toolWear[tool];
     const check = sim.canRepair(tool, id);
+    const cost = ingredients(sim, repairCost(tool, level));
     return {
       tool,
       name: `${TOOLS[tool].name}${level ? ' ' + LEVEL_NUMERALS[level] : ''}`,
       level,
       condition: w ? Math.max(1, Math.round(wearFraction(w) * 100)) : 100,
-      cost: ingredients(sim, repairCost(tool, level)),
+      uses: w ? { left: Math.ceil(w.dur - 1e-9), max: w.max } : null,
+      cost,
+      missing: cost.some((c) => c.have < c.need),
       seconds: repairSeconds(level),
       check,
       reason: check.ok ? null : REPAIR_FAILURE_TEXT[check.reason!],
@@ -185,4 +194,20 @@ export function workbenchMenu(sim: Simulation, id: number): WorkbenchMenu | null
   });
   const r = s.repair;
   return { id, rows, busy: r ? { tool: r.tool, progress: Math.min(1, r.elapsed / r.duration) } : null };
+}
+
+/** A workbench grid tile: greyed without the repair materials, ready when it can be mended now, ticked at full condition. */
+export function repairTile(r: RepairRow): Tile {
+  return {
+    key: `w:${r.tool}`,
+    kind: 'repair',
+    id: r.tool,
+    name: `${r.name} · ${r.condition}%`,
+    icon: toolIcon(r.tool, r.level),
+    greyed: r.missing,
+    ready: r.check.ok,
+    badge: r.condition >= 100 ? 'full' : null,
+    level: null,
+    condition: r.condition,
+  };
 }

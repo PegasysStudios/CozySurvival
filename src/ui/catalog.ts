@@ -7,11 +7,11 @@ import type { Simulation } from '../sim/simulation';
 import { nextToolUpgrade, toolLevel } from '../sim/upgrades';
 import { gearIcon, itemIcon, prefabIcon, toolIcon } from './icons';
 
-export type TileKind = 'recipe' | 'tool' | 'shelter';
+export type TileKind = 'recipe' | 'tool' | 'shelter' | 'repair';
 
 /** One square tile in a grid menu, kept free of DOM so what each menu shows can be tested. */
 export interface Tile {
-  /** Unique within a menu: `r:<recipe>`, `t:<tool>` or `s:<prefab>`. */
+  /** Unique within a menu: `r:<recipe>`, `t:<tool>`, `s:<prefab>` or `w:<tool>` (at the workbench). */
   key: string;
   kind: TileKind;
   id: string;
@@ -22,9 +22,11 @@ export interface Tile {
   greyed: boolean;
   /** It can be crafted, cooked or upgraded right now. */
   ready: boolean;
-  badge: 'owned' | 'fire' | 'upgrade' | 'max' | null;
+  badge: 'owned' | 'fire' | 'upgrade' | 'max' | 'full' | null;
   /** Upgrade level, for tools that have one. */
   level: number | null;
+  /** Condition in percent, drawn as a durability bar (workbench tiles). */
+  condition?: number;
 }
 
 /** Shelter tiers above the lean-to: never crafted, only reached by upgrading the tier below in place. */
