@@ -135,6 +135,19 @@ describe('save / load', () => {
     expect(JSON.parse(serializeState(loaded.state)).version).toBe(STATE_VERSION);
   });
 
+  it('loads saves from before round 6 that still list learned recipes, and every recipe stays craftable', () => {
+    const sim = quietSim();
+    const raw = JSON.parse(serializeState(sim.state));
+    raw.known = ['cordage'];
+    const loaded = deserializeState(JSON.stringify(raw))!;
+    expect(loaded).not.toBeNull();
+    expect('known' in loaded).toBe(false);
+    const again = new Simulation(loaded);
+    giveRecipe(again, 'rod');
+    expect(again.canCraft('rod').ok).toBe(true);
+    expect(JSON.parse(serializeState(loaded)).known).toBeUndefined();
+  });
+
   it('rejects corrupt or incompatible saves', () => {
     const json = serializeState(quietSim().state);
     expect(deserializeState(null)).toBeNull();

@@ -345,9 +345,10 @@ export class Panels {
     const inputs = SHELTER_UPGRADES[p] ?? [];
     const tier = shelterTier(p) + 1;
     const prev = PREFABS[SHELTER_TIERS[tier - 2]].name;
+    const a = /^[AEIOU]/.test(prev) ? 'an' : 'a';
     const how = tier === 2
-      ? `Only built by upgrading a ${prev} in place: build one from the Build tab, click it and choose Upgrade.`
-      : `Only built by upgrading a ${prev} in place: click it and choose Upgrade.`;
+      ? `Only built by upgrading ${a} ${prev} in place: build one from the Build tab, click it and choose Upgrade.`
+      : `Only built by upgrading ${a} ${prev} in place: click it and choose Upgrade.`;
     const d = el('div', 'shelter-detail');
     d.innerHTML = `<div class="detail-icon big">${prefabIcon(p)}</div><h3>${escapeHtml(PREFABS[p].name)}</h3><p>${escapeHtml(SHELTER_UPGRADE_TEXT[p] ?? '')}</p><div class="effects">${escapeHtml(`Shelter tier ${tier} of ${SHELTER_TIERS.length} · ${restText(p)}`)}</div><div class="how-to">${MISC_ICONS.upgrade}<span>${escapeHtml(how)}</span></div>${ingredientsHtml(ingredients(sim, inputs))}`;
     const room = packRoomNote(sim.state, inputs);
