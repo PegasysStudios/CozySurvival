@@ -1,6 +1,7 @@
 import { BALANCE } from '../data/balance';
 import { PREFABS } from '../data/prefabs';
 import { RESOURCES, TREES } from '../data/resources';
+import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import { createNewState, type Simulation } from '../sim/simulation';
 import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, TreeDyn } from '../sim/state';
 import { freshTree } from '../sim/trunks';
@@ -336,6 +337,8 @@ function mergeTree(sim: Simulation, i: number, v: TreeDyn, p: TreeDyn, from: { x
 /** The world as a sparse diff from the seed's fresh world: terrain and placement regenerate from the seed. */
 export interface WorldSnapshot {
   seed: number;
+  /** The map; absent for the Pacific Northwest. */
+  b?: BiomeId;
   h: number;
   r: number;
   t: [number, TreeDyn][];
@@ -358,6 +361,7 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
   });
   return {
     seed: s.seed,
+    ...(sim.biome !== DEFAULT_BIOME ? { b: sim.biome } : {}),
     h: s.totalHours,
     r: sim.timeScale,
     t,
@@ -370,8 +374,9 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
 
 /** A guest's starting state: the host's world, with a fresh character at the spawn and no animals (they stream in). */
 export function stateFromSnapshot(snap: WorldSnapshot): GameState {
-  const state = createNewState(snap.seed);
-  const gen = getWorldGen(snap.seed);
+  const biome = isBiomeId(snap.b) ? snap.b : DEFAULT_BIOME;
+  const state = createNewState(snap.seed, biome);
+  const gen = getWorldGen(snap.seed, biome);
   for (const [i, dyn] of snap.t) if (i >= 0 && i < gen.trees.length) state.trees[i] = { ...dyn };
   for (const [i, dyn] of snap.rs) if (i >= 0 && i < gen.resources.length) state.resources[i] = { ...dyn };
   state.structures = snap.st.map(cloneStructure);

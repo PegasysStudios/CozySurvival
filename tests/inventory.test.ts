@@ -90,8 +90,9 @@ describe('plant fiber stack size (round 6)', () => {
   });
 
   it('every other item keeps its stack size', () => {
-    expect(Object.keys(ITEMS).sort()).toEqual(Object.keys(ROUND_5_STACKS).sort());
-    for (const def of Object.values(ITEMS)) {
+    const pnwItems = Object.values(ITEMS).filter((def) => def.id in ROUND_5_STACKS);
+    expect(pnwItems.map((d) => d.id).sort()).toEqual(Object.keys(ROUND_5_STACKS).sort());
+    for (const def of pnwItems) {
       if (def.id === 'fiber') continue;
       expect([def.id, def.stack]).toEqual([def.id, ROUND_5_STACKS[def.id]]);
     }

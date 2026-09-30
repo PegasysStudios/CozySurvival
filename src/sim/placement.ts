@@ -25,6 +25,7 @@ export const PLACEMENT_REASON_TEXT: Record<PlacementReason, string> = {
   trunk: 'A felled trunk is in the way. Chop it up first',
   structure: 'Overlaps another structure',
   resource: 'Plants or items are in the way',
+  cactus: 'A saguaro is in the way',
 };
 
 export interface PlacementEnv {

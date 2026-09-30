@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { RECIPES } from '../src/data/recipes';
+import { recipesFor } from '../src/data/recipes';
 import { SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../src/data/upgrades';
 import { hasAll } from '../src/sim/inventory';
 import type { Simulation } from '../src/sim/simulation';
@@ -8,6 +8,8 @@ import { campfireTiles, craftTiles, UPGRADE_ONLY_SHELTERS, upgradeTiles } from '
 import { attachTooltip, el } from '../src/ui/dom';
 import { Panels } from '../src/ui/panels';
 import { buildFresh, give, quietSim } from './helpers';
+
+const RECIPES = recipesFor('pnw');
 
 function openPanels(sim: Simulation): { panels: Panels; root: HTMLElement } {
   const root = document.createElement('div');

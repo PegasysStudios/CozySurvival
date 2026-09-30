@@ -1,57 +1,12 @@
 import * as THREE from 'three';
-import { clamp, lerp } from '../core/math';
+import { clamp } from '../core/math';
 import { hash2, Rng } from '../core/rng';
 import type { ResourceKind, TreeSpecies } from '../data/resources';
+import { desertResourceGeometry, desertTreeGeometry, isDesertTree } from './desertModels';
 import { between, col, GeoBuilder, mix, tf } from './geo';
+import { blades, coniferTiers, foliage, frond, roots } from './plantParts';
 
 const { CylinderGeometry, ConeGeometry, IcosahedronGeometry, DodecahedronGeometry, OctahedronGeometry } = THREE;
-
-type N = THREE.Vector3;
-
-const foliage = (dark: string, light: string, underside: string) => (_x: number, _y: number, _z: number, n: N) =>
-  n.y < -0.2 ? col(underside) : mix(dark, light, 0.25 + 0.6 * Math.max(0, n.y) + 0.15 * Math.abs(n.x));
-
-/** Droop the rim of a cone so branch tiers read as layered boughs with a shadowed underside. */
-const droop = (amount: number, h: number, r: number) => (v: N) => {
-  const radial = Math.hypot(v.x, v.z) / r;
-  if (v.y < -h / 2 + 0.01) v.y -= amount * radial;
-  else v.y -= amount * 0.35 * radial * radial;
-};
-
-function coniferTiers(
-  b: GeoBuilder,
-  o: { tiers: number; y0: number; y1: number; r0: number; r1: number; h0: number; h1: number; droop: number; dark: string; light: string; under: string; seed: number; lean?: number },
-  lod: number,
-): void {
-  const rng = new Rng(o.seed);
-  for (let i = 0; i < o.tiers; i++) {
-    const t = i / (o.tiers - 1);
-    const r = lerp(o.r0, o.r1, Math.pow(t, 0.9)) * rng.range(0.92, 1.08);
-    const h = lerp(o.h0, o.h1, t);
-    const y = lerp(o.y0, o.y1, t);
-    const lean = (o.lean ?? 0) * t;
-    b.add(new ConeGeometry(r, h, lod ? 7 : 9, lod ? 1 : 2), {
-      matrix: tf(lean * 0.6, y + h / 2, lean * 0.2, 0, rng.range(0, Math.PI * 2), 0),
-      color: foliage(o.dark, o.light, o.under),
-      jitter: 0.12 + r * 0.06,
-      vary: 0.09,
-      warp: droop(o.droop * r * 0.35, h, r),
-      sway: (yy) => clamp((yy - 2) / 12, 0, 1) * 0.14,
-    });
-  }
-}
-
-function roots(b: GeoBuilder, color: string, r: number, n: number, seed: number): void {
-  const rng = new Rng(seed);
-  for (let i = 0; i < n; i++) {
-    const a = (i / n) * Math.PI * 2 + rng.range(-0.3, 0.3);
-    b.add(new ConeGeometry(r * 0.45, r * 2.2, 5), {
-      matrix: tf(Math.cos(a) * r * 0.75, 0.15, Math.sin(a) * r * 0.75, Math.PI / 2 - 0.35, -a + Math.PI / 2, 0),
-      color,
-      vary: 0.1,
-    });
-  }
-}
 
 /** Where a peeled birch's bare wood gives way to the bark still out of reach. */
 const STRIP_TOP = 3.6;
@@ -61,6 +16,7 @@ const STRIP_TOP = 3.6;
  * `stripped` shows a birch with the lower half of its trunk peeled to bare wood.
  */
 export function treeGeometry(species: TreeSpecies, lod = 0, stripped = false): THREE.BufferGeometry {
+  if (isDesertTree(species)) return desertTreeGeometry(species, lod, stripped);
   const b = new GeoBuilder(species.length * 31);
   const near = lod === 0;
   if (species === 'fir') {
@@ -127,8 +83,14 @@ export function treeGeometry(species: TreeSpecies, lod = 0, stripped = false): T
   return b.build(true);
 }
 
-const BARK: Record<TreeSpecies, string> = { fir: '#5a3a2a', cedar: '#7a4430', birch: '#e6e0d4', maple: '#584536' };
-const TRUNK_R: Record<TreeSpecies, number> = { fir: 0.4, cedar: 0.5, birch: 0.2, maple: 0.33 };
+const BARK: Record<TreeSpecies, string> = {
+  fir: '#5a3a2a', cedar: '#7a4430', birch: '#e6e0d4', maple: '#584536',
+  joshua: '#6f604c', mesquite: '#4a3a2e', cottonwood: '#8a8378', juniper: '#7a5e4a', pinyon: '#5e4636', ponderosa: '#a8603a',
+};
+const TRUNK_R: Record<TreeSpecies, number> = {
+  fir: 0.4, cedar: 0.5, birch: 0.2, maple: 0.33,
+  joshua: 0.24, mesquite: 0.18, cottonwood: 0.4, juniper: 0.28, pinyon: 0.28, ponderosa: 0.45,
+};
 
 export function stumpGeometry(species: TreeSpecies): THREE.BufferGeometry {
   const r = TRUNK_R[species];
@@ -151,6 +113,7 @@ export function trunkGeometry(species: TreeSpecies): THREE.BufferGeometry {
     color: (x, _y, _z, n) => {
       if (Math.abs(n.x) > 0.9) return col('#d9bb8e');
       if (species === 'birch' && Math.sin(x * 47) > 0.8) return col('#3b3631');
+      if (species === 'ponderosa' && Math.sin(x * 31) > 0.7) return col('#5a3322');
       return col(BARK[species]);
     },
     vary: 0.06,
@@ -158,7 +121,14 @@ export function trunkGeometry(species: TreeSpecies): THREE.BufferGeometry {
   return b.build();
 }
 
-export function rockGeometry(variant: number): THREE.BufferGeometry {
+/** Sandstone (red, banded, with a pale varnish-free top) or basalt boulders for the desert. */
+const DESERT_ROCK = {
+  sandstone: (y: number, n: THREE.Vector3) =>
+    n.y > 0.62 ? mix('#d9a27a', '#e8bf98', n.y) : n.y < -0.3 ? col('#8a4a34') : mix(Math.sin(y * 9) > 0.35 ? '#b8663f' : '#c47a4f', '#d08c5e', 0.5 + n.x * 0.3),
+  basalt: (_y: number, n: THREE.Vector3) => (n.y > 0.62 ? mix('#5a5450', '#6e6660', n.y) : n.y < -0.3 ? col('#2a2626') : mix('#3e3a38', '#524c48', 0.5 + n.x * 0.3)),
+};
+
+export function rockGeometry(variant: number, palette: 'pnw' | 'sandstone' | 'basalt' = 'pnw'): THREE.BufferGeometry {
   const b = new GeoBuilder(100 + variant);
   const src = variant === 2 ? new DodecahedronGeometry(1, 1) : new IcosahedronGeometry(1, 1);
   const sx = [1.0, 1.25, 0.9][variant];
@@ -171,62 +141,27 @@ export function rockGeometry(variant: number): THREE.BufferGeometry {
       v.z *= sz;
       if (v.y < -0.35) v.y = -0.35;
     },
-    color: (_x, _y, _z, n) => (n.y > 0.62 ? mix('#5f7d45', '#7a9651', n.y) : n.y < -0.3 ? col('#5b5f63') : mix('#7d8287', '#9a9fa3', 0.5 + n.x * 0.3)),
+    color: palette === 'pnw'
+      ? (_x, _y, _z, n) => (n.y > 0.62 ? mix('#5f7d45', '#7a9651', n.y) : n.y < -0.3 ? col('#5b5f63') : mix('#7d8287', '#9a9fa3', 0.5 + n.x * 0.3))
+      : (_x, y, _z, n) => DESERT_ROCK[palette](y, n),
     vary: 0.07,
   });
   return b.build();
 }
 
-export function fallenLogGeometry(): THREE.BufferGeometry {
+/** `weathered` is a sun-bleached juniper snag instead of a mossy PNW log. */
+export function fallenLogGeometry(weathered = false): THREE.BufferGeometry {
   const b = new GeoBuilder(211);
+  const bark = weathered ? '#9a8a78' : '#5a4332';
   b.add(new CylinderGeometry(1, 1, 1, 9, 3), {
     matrix: tf(0, 0, 0, 0, 0, Math.PI / 2),
     jitter: 0.05,
-    color: (x, _y, _z, n) => (Math.abs(n.x) > 0.9 ? col('#c19b6c') : n.y > 0.55 && Math.sin(x * 9) > -0.3 ? col('#5d7c3f') : col('#5a4332')),
+    color: weathered
+      ? (x, _y, _z, n) => (Math.abs(n.x) > 0.9 ? col('#d9c7a8') : Math.sin(x * 13) > 0.5 ? col('#b3a590') : col(bark))
+      : (x, _y, _z, n) => (Math.abs(n.x) > 0.9 ? col('#c19b6c') : n.y > 0.55 && Math.sin(x * 9) > -0.3 ? col('#5d7c3f') : col(bark)),
   });
-  b.add(new CylinderGeometry(0.1, 0.18, 0.7, 5), { matrix: tf(0.18, 0.9, 0.3, 0.5, 0, 0.4), color: '#5a4332' });
+  b.add(new CylinderGeometry(0.1, 0.18, 0.7, 5), { matrix: tf(0.18, 0.9, 0.3, 0.5, 0, 0.4), color: bark });
   return b.build();
-}
-
-function frond(b: GeoBuilder, angle: number, len: number, lift: number, w: number, dark: string, light: string, sway: number): void {
-  const segs = 5;
-  const pos: number[] = [];
-  const pt = (t: number, side: number): [number, number, number] => {
-    const along = len * t;
-    const y = lift * Math.sin(t * Math.PI * 0.75) - t * t * lift * 0.45;
-    const half = w * (1 - t * 0.85) * side;
-    const cx = Math.cos(angle) * along - Math.sin(angle) * half;
-    const cz = Math.sin(angle) * along + Math.cos(angle) * half;
-    return [cx, y + Math.abs(side) * w * 0.25 * (1 - t), cz];
-  };
-  for (let i = 0; i < segs; i++) {
-    const t0 = i / segs;
-    const t1 = (i + 1) / segs;
-    const a = pt(t0, 0), l0 = pt(t0, -1), r0 = pt(t0, 1), a1 = pt(t1, 0), l1 = pt(t1, -1), r1 = pt(t1, 1);
-    pos.push(...a, ...l0, ...a1, ...l0, ...l1, ...a1, ...a, ...a1, ...r0, ...r0, ...a1, ...r1);
-  }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  b.add(g, { color: (x, _y, z) => mix(dark, light, Math.hypot(x, z) / len), vary: 0.1, sway: (y) => sway * (0.3 + y) });
-  g.dispose();
-}
-
-function blades(b: GeoBuilder, rng: Rng, n: number, h: [number, number], w: number, dark: string, light: string, spread = 0.12): void {
-  for (let i = 0; i < n; i++) {
-    const a = rng.range(0, Math.PI * 2);
-    const hh = rng.range(h[0], h[1]);
-    const lean = rng.range(0.1, 0.45);
-    const bx = Math.cos(a) * rng.range(0, spread);
-    const bz = Math.sin(a) * rng.range(0, spread);
-    const tx = bx + Math.cos(a) * lean * hh;
-    const tz = bz + Math.sin(a) * lean * hh;
-    const px = -Math.sin(a) * w;
-    const pz = Math.cos(a) * w;
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute([bx - px, 0, bz - pz, bx + px, 0, bz + pz, tx, hh, tz], 3));
-    b.add(g, { color: (_x, y) => mix(dark, light, y * 2.2), vary: 0.12, sway: (y) => y * 0.35 });
-    g.dispose();
-  }
 }
 
 export interface ResourceModel {
@@ -305,6 +240,8 @@ export function resourceGeometry(kind: ResourceKind): ResourceModel {
       }
       return { main: b.build(true), doubleSided: true };
     }
+    default:
+      return desertResourceGeometry(kind);
   }
 }
 

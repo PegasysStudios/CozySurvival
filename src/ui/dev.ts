@@ -1,4 +1,5 @@
 import { BALANCE } from '../data/balance';
+import { biomeDef, type BiomeId } from '../data/biomes';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { SpeciesId } from '../data/species';
 import { setCapacity } from '../sim/inventory';
@@ -21,6 +22,7 @@ export class DevPanel {
   readonly root = el('div', 'dev-panel');
   private readonly host: DevHost;
   private readonly scaleRow = el('div', 'dev-row');
+  private onOpen: () => void = () => {};
 
   constructor(parent: HTMLElement, host: DevHost) {
     this.host = host;
@@ -61,12 +63,22 @@ export class DevPanel {
         setCapacity(st.inventory, slotsFor(st));
       }),
     );
-    section('Spawn nearby',
-      ...(['wolf', 'bear', 'deer', 'rabbit'] as SpeciesId[]).map((sp) => button(sp, 'dev-btn', () => {
+    const spawnRow = section('Spawn nearby');
+    const spawnFor = (biome: BiomeId): SpeciesId[] => {
+      if (biome === 'pnw') return ['wolf', 'bear', 'deer', 'rabbit'];
+      const def = biomeDef(biome);
+      return [...def.predators.map((p) => p.species), ...def.prey.map((p) => p.species).filter((sp) => sp !== 'fish')];
+    };
+    const renderSpawns = () => {
+      const biome = host.sim().biome;
+      if (spawnRow.dataset.biome === biome) return;
+      spawnRow.dataset.biome = biome;
+      spawnRow.replaceChildren(...spawnFor(biome).map((sp) => button(sp, 'dev-btn', () => {
         const a = host.sim().devSpawn(sp, sp === 'bear' ? 20 : 24);
         host.toast(a ? `Dev: spawned a ${sp}` : 'Dev: no spot found');
-      })),
-    );
+      })));
+    };
+    this.onOpen = renderSpawns;
     section('Player',
       button('Refill needs', 'dev-btn', () => {
         const n = host.sim().state.needs;
@@ -93,6 +105,7 @@ export class DevPanel {
   toggle(): boolean {
     this.root.classList.toggle('show');
     this.renderScales();
+    this.onOpen();
     return this.root.classList.contains('show');
   }
 

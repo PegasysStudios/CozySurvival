@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
-import { RECIPES } from '../src/data/recipes';
+import { recipesFor } from '../src/data/recipes';
 import { countItem } from '../src/sim/inventory';
 import { campfireMenu } from '../src/ui/campfire';
 import { drain, give, placeStructure, quietSim } from './helpers';
+
+const RECIPES = recipesFor('pnw');
 
 const F = BALANCE.fire;
 

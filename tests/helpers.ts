@@ -213,8 +213,14 @@ export function teleport(sim: Simulation, x: number, z: number): void {
  * `height(x, z)` defines the ground; negative means water.
  */
 export function fakeTerrain(height: (x: number, z: number) => number): Terrain {
+  const lakes = [{ x: 60, z: 0, r: 10, depth: 3, phase: 0 }];
   const t = {
-    lakes: [{ x: 60, z: 0, r: 10, depth: 3, phase: 0 }],
+    biome: 'pnw',
+    lakes,
+    fishLakes: lakes,
+    landforms: [],
+    upland: () => 0,
+    landformAt: () => ({ rock: 0, volcanic: false }),
     heightAt: height,
     waterDepth: (x: number, z: number) => Math.max(0, -height(x, z)),
     slopeAt: (x: number, z: number) => {

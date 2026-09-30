@@ -64,9 +64,17 @@ const fragment = /* glsl */ `
   }
 `;
 
+/** Day colours (deep, shallow) per water kind; alkali pools are milky and pale, fresh water clear blue-green. */
+const PALETTE = {
+  fresh: { deep: [0.035, 0.11, 0.13], shallow: [0.12, 0.3, 0.26] },
+  alkali: { deep: [0.36, 0.46, 0.44], shallow: [0.62, 0.68, 0.62] },
+} as const;
+
 export class WaterView {
   readonly group = new THREE.Group();
   readonly material: THREE.ShaderMaterial;
+  /** Milky alkali water (desert only). */
+  private readonly alkali: THREE.ShaderMaterial | null = null;
   private readonly depthTex: THREE.DataTexture;
 
   constructor(t: Terrain) {
@@ -93,11 +101,16 @@ export class WaterView {
       ]),
     });
     this.material.uniforms.uDepth.value = this.depthTex;
+    if (t.lakes.some((l) => l.kind === 'alkali')) {
+      this.alkali = this.material.clone();
+      this.alkali.uniforms.uDepth.value = this.depthTex;
+    }
     for (const lake of t.lakes) {
       const size = lake.r * 3.6;
-      const geo = new THREE.PlaneGeometry(size, size, 36, 36);
+      const segs = lake.r < 10 ? 18 : 36;
+      const geo = new THREE.PlaneGeometry(size, size, segs, segs);
       geo.rotateX(-Math.PI / 2);
-      const mesh = new THREE.Mesh(geo, this.material);
+      const mesh = new THREE.Mesh(geo, lake.kind === 'alkali' && this.alkali ? this.alkali : this.material);
       mesh.position.set(lake.x, WATER_LEVEL, lake.z);
       mesh.renderOrder = 2;
       this.group.add(mesh);
@@ -105,14 +118,26 @@ export class WaterView {
   }
 
   update(time: number, sky: THREE.Color, sunDir: THREE.Vector3, sunColor: THREE.Color, sunStrength: number, night: number): void {
-    const u = this.material.uniforms;
+    this.updateMaterial(this.material, time, sky, sunDir, sunColor, sunStrength, night, 'fresh');
+    if (this.alkali) this.updateMaterial(this.alkali, time, sky, sunDir, sunColor, sunStrength, night, 'alkali');
+  }
+
+  private updateMaterial(m: THREE.ShaderMaterial, time: number, sky: THREE.Color, sunDir: THREE.Vector3, sunColor: THREE.Color, sunStrength: number, night: number, kind: keyof typeof PALETTE): void {
+    const u = m.uniforms;
     u.uTime.value = time;
     (u.uSky.value as THREE.Color).copy(sky);
     (u.uSunDir.value as THREE.Vector3).copy(sunDir);
     (u.uSunColor.value as THREE.Color).copy(sunColor);
     u.uSunStrength.value = sunStrength;
-    (u.uDeep.value as THREE.Color).setRGB(0.035 - night * 0.025, 0.11 - night * 0.09, 0.13 - night * 0.09);
-    (u.uShallow.value as THREE.Color).setRGB(0.12 - night * 0.1, 0.3 - night * 0.25, 0.26 - night * 0.19);
+    if (kind === 'fresh') {
+      (u.uDeep.value as THREE.Color).setRGB(0.035 - night * 0.025, 0.11 - night * 0.09, 0.13 - night * 0.09);
+      (u.uShallow.value as THREE.Color).setRGB(0.12 - night * 0.1, 0.3 - night * 0.25, 0.26 - night * 0.19);
+      return;
+    }
+    const p = PALETTE[kind];
+    const k = 1 - night * 0.8;
+    (u.uDeep.value as THREE.Color).setRGB(p.deep[0] * k, p.deep[1] * k, p.deep[2] * k);
+    (u.uShallow.value as THREE.Color).setRGB(p.shallow[0] * k, p.shallow[1] * k, p.shallow[2] * k);
   }
 
   dispose(): void {
@@ -120,6 +145,7 @@ export class WaterView {
       if (o instanceof THREE.Mesh) o.geometry.dispose();
     });
     this.material.dispose();
+    this.alkali?.dispose();
     this.depthTex.dispose();
   }
 }

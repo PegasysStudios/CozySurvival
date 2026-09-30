@@ -1,5 +1,6 @@
 import { smoothstep } from '../core/math';
 import { BALANCE, GAME_HOURS_PER_REAL_SECOND } from '../data/balance';
+import { BIOMES, type BiomeWarmth } from '../data/biomes';
 
 const T = BALANCE.time;
 
@@ -46,11 +47,10 @@ export function daylight(hour: number): number {
   return Math.min(rise, set);
 }
 
-/** Ambient warmth the player drifts toward with no fire or shelter. */
-export function ambientWarmth(hour: number): number {
-  const w = BALANCE.needs.warmth;
-  const warmUp = smoothstep(5, 9, hour);
-  const coolDown = 1 - smoothstep(17, 21.5, hour);
+/** Ambient warmth the player drifts toward with no fire or shelter (the map sets the day/night curve). */
+export function ambientWarmth(hour: number, w: BiomeWarmth = BIOMES.pnw.warmth): number {
+  const warmUp = smoothstep(w.warmUp[0], w.warmUp[1], hour);
+  const coolDown = 1 - smoothstep(w.coolDown[0], w.coolDown[1], hour);
   const k = Math.min(warmUp, coolDown);
   return w.night + (w.day - w.night) * k;
 }

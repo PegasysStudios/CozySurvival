@@ -2,19 +2,25 @@ import * as THREE from 'three';
 import { smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
 import { PREFABS } from '../data/prefabs';
-import { RESOURCE_KINDS, type ResourceKind, type TreeSpecies } from '../data/resources';
+import { RESOURCE_KINDS, TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
 import type { GameState } from '../sim/state';
 import { PLAY_HALF, type Terrain } from '../sim/terrain';
 import { barkStripped, TRUNK_AXIS_LIFT, trunkSpan } from '../sim/trunks';
 import type { WorldGen } from '../sim/worldgen';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
+import { creosoteGeometry, desertFlowerGeometry, desertGrassGeometry, SAGUARO_HEIGHT, saguaroGeometry, shrubGeometry } from './desertModels';
 import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, stumpGeometry, treeGeometry, trunkGeometry } from './models';
 
-const SPECIES: TreeSpecies[] = ['fir', 'cedar', 'birch', 'maple'];
+const ALL_SPECIES = Object.keys(TREES) as TreeSpecies[];
+/** Plants that shrink to a stub when picked instead of vanishing. */
+const SHRINK_WHEN_PICKED = new Set<ResourceKind>(['fern', 'yucca']);
+const SWAYING = new Set<ResourceKind>(['berryBush', 'fern', 'onion', 'yucca', 'chia', 'wolfberry']);
 const GRASS_VIEW = 85;
 const FLOWER_VIEW = 70;
 const RESOURCE_VIEW = 140;
+const SCRUB_VIEW = 120;
+const SCRUB_LOD_DIST = 60;
 /** Chunk-centre distance beyond which trees switch to their low-detail model. */
 const TREE_LOD_DIST = 90;
 
@@ -55,19 +61,28 @@ export class NatureView {
   private readonly terrain: Terrain;
   private readonly gen: WorldGen;
   private readonly mats: NatureMaterials;
+  /** Tree species on this map, in a fixed order. */
+  private readonly species: TreeSpecies[];
   private readonly treeGeos = {} as Record<TreeSpecies, THREE.BufferGeometry>;
   private readonly trees = {} as Record<TreeSpecies, ChunkedInstances>;
   private readonly stumps = {} as Record<TreeSpecies, ChunkedInstances>;
-  /** Peeled birches, drawn from a twin instance set with a bare lower trunk. */
-  private strippedBirch!: ChunkedInstances;
-  private strippedBirchGeo!: THREE.BufferGeometry;
+  /**
+   * Hand-harvested trees (peeled birch, juniper and cottonwood; mesquite without pods; pinyon without cones), drawn
+   * from twin instance sets.
+   */
+  private readonly strippedTrees: Partial<Record<TreeSpecies, ChunkedInstances>> = {};
+  private readonly strippedGeos: Partial<Record<TreeSpecies, THREE.BufferGeometry>> = {};
   private readonly treeLocal: Int32Array;
   private readonly resources = {} as Record<ResourceKind, ChunkedInstances>;
-  private berries: ChunkedInstances | null = null;
+  /** Fruit, berries and buds that disappear when a plant is picked. */
+  private readonly extras: Partial<Record<ResourceKind, ChunkedInstances>> = {};
   private readonly resLocal: Int32Array;
   private readonly grass: ChunkedInstances[] = [];
   private readonly flowers: ChunkedInstances[] = [];
-  private readonly grassPos: { set: number; local: number; x: number; z: number }[] = [];
+  /** Desert scrub (creosote, bursage, sagebrush). */
+  private readonly scrub: ChunkedInstances[] = [];
+  /** Ground cover a structure hides when built over it. */
+  private readonly grassPos: { inst: ChunkedInstances; local: number; x: number; z: number }[] = [];
   private readonly others: ChunkedInstances[] = [];
   private readonly ownedGeos: THREE.BufferGeometry[] = [];
   private readonly falling: Falling[] = [];
@@ -85,6 +100,8 @@ export class NatureView {
     this.terrain = terrain;
     this.gen = gen;
     this.mats = mats;
+    const present = new Set(gen.trees.map((tr) => tr.species));
+    this.species = gen.biome === 'pnw' ? ['fir', 'cedar', 'birch', 'maple'] : ALL_SPECIES.filter((s) => present.has(s));
     this.felled = new Uint8Array(gen.trees.length);
     this.stripped = new Uint8Array(gen.trees.length);
     this.resourceUp = new Int8Array(gen.resources.length).fill(-1);
@@ -93,7 +110,12 @@ export class NatureView {
     this.buildTrees();
     this.buildRocksAndLogs();
     this.buildResources();
-    this.buildGround();
+    if (gen.biome === 'desert') {
+      this.buildCacti();
+      this.buildDesertGround();
+    } else {
+      this.buildGround();
+    }
   }
 
   private own<T extends THREE.BufferGeometry>(g: T): T {
@@ -104,7 +126,7 @@ export class NatureView {
   private buildTrees(): void {
     const t = this.terrain;
     const specs = {} as Record<TreeSpecies, InstanceSpec[]>;
-    for (const s of SPECIES) specs[s] = [];
+    for (const s of this.species) specs[s] = [];
     this.gen.trees.forEach((tr, i) => {
       const y = t.heightAt(tr.x, tr.z) - 0.15;
       const list = specs[tr.species];
@@ -116,7 +138,7 @@ export class NatureView {
       else if (tr.species === 'fir' || tr.species === 'cedar') color.setRGB(k * (0.95 + tr.tint * 0.08), k, k * (1.04 - tr.tint * 0.1));
       list.push({ matrix: tf(tr.x, y, tr.z, 0, tr.rot, 0, tr.scale), color });
     });
-    for (const s of SPECIES) {
+    for (const s of this.species) {
       this.treeGeos[s] = this.own(treeGeometry(s));
       const lod = this.own(treeGeometry(s, 1));
       this.trees[s] = new ChunkedInstances(this.treeGeos[s], this.mats.foliage, specs[s], { chunkSize: 48, castShadow: true, name: 'trees-' + s, lod });
@@ -127,14 +149,17 @@ export class NatureView {
       for (let i = 0; i < stumpSpecs.length; i++) this.stumps[s].setHidden(i, true);
       this.group.add(this.stumps[s].group);
       this.trunkGeos[s] = this.own(trunkGeometry(s));
+      if (TREES[s].bark <= 0 || !specs[s].length) continue;
+      const geo = this.own(treeGeometry(s, 0, true));
+      const strippedSpecs = specs[s].map((sp) => ({ matrix: sp.matrix.clone(), color: sp.color?.clone() }));
+      const inst = new ChunkedInstances(geo, this.mats.foliage, strippedSpecs, {
+        chunkSize: 48, castShadow: true, name: `trees-${s}-stripped`, lod: this.own(treeGeometry(s, 1, true)),
+      });
+      for (let i = 0; i < strippedSpecs.length; i++) inst.setHidden(i, true);
+      this.strippedGeos[s] = geo;
+      this.strippedTrees[s] = inst;
+      this.group.add(inst.group);
     }
-    this.strippedBirchGeo = this.own(treeGeometry('birch', 0, true));
-    const strippedSpecs = specs.birch.map((sp) => ({ matrix: sp.matrix.clone(), color: sp.color?.clone() }));
-    this.strippedBirch = new ChunkedInstances(this.strippedBirchGeo, this.mats.foliage, strippedSpecs, {
-      chunkSize: 48, castShadow: true, name: 'trees-birch-stripped', lod: this.own(treeGeometry('birch', 1, true)),
-    });
-    for (let i = 0; i < strippedSpecs.length; i++) this.strippedBirch.setHidden(i, true);
-    this.group.add(this.strippedBirch.group);
   }
 
   /** Create, shorten or remove the mesh for tree `i`'s fallen trunk. */
@@ -170,15 +195,18 @@ export class NatureView {
 
   private buildRocksAndLogs(): void {
     const t = this.terrain;
-    const bins: InstanceSpec[][] = [[], [], []];
+    const desert = this.gen.biome === 'desert';
+    const palettes = desert ? (['sandstone', 'basalt'] as const) : (['pnw'] as const);
+    const bins: InstanceSpec[][] = palettes.flatMap(() => [[], [], []]);
     for (const r of this.gen.rocks) {
       const y = t.heightAt(r.x, r.z) - r.r * 0.12;
       const k = 0.88 + r.tint * 0.22;
-      bins[r.variant].push({ matrix: tf(r.x, y, r.z, 0, r.rot, 0, r.r, r.r * r.scaleY, r.r), color: new THREE.Color(k, k, k * 1.02) });
+      const p = desert && t.landformAt(r.x, r.z).volcanic ? 1 : 0;
+      bins[p * 3 + r.variant].push({ matrix: tf(r.x, y, r.z, 0, r.rot, 0, r.r, r.r * r.scaleY, r.r), color: new THREE.Color(k, k, k * 1.02) });
     }
-    bins.forEach((specs, v) => {
+    bins.forEach((specs, i) => {
       if (!specs.length) return;
-      const inst = new ChunkedInstances(this.own(rockGeometry(v)), this.mats.solid, specs, { chunkSize: 64, castShadow: true, name: 'rocks' });
+      const inst = new ChunkedInstances(this.own(rockGeometry(i % 3, palettes[Math.floor(i / 3)])), this.mats.solid, specs, { chunkSize: 64, castShadow: true, name: 'rocks' });
       this.others.push(inst);
       this.group.add(inst.group);
     });
@@ -187,7 +215,7 @@ export class NatureView {
       return { matrix: tf(l.x, y, l.z, 0, l.rot, 0, l.length, l.r, l.r) };
     });
     if (logSpecs.length) {
-      const inst = new ChunkedInstances(this.own(fallenLogGeometry()), this.mats.solid, logSpecs, { chunkSize: 64, castShadow: true, name: 'logs' });
+      const inst = new ChunkedInstances(this.own(fallenLogGeometry(desert)), this.mats.solid, logSpecs, { chunkSize: 64, castShadow: true, name: 'logs' });
       this.others.push(inst);
       this.group.add(inst.group);
     }
@@ -211,15 +239,112 @@ export class NatureView {
       if (!specs[k].length) continue;
       const model = resourceGeometry(k);
       this.own(model.main);
-      const swaying = k === 'berryBush' || k === 'fern' || k === 'onion';
-      const mat = model.doubleSided ? this.mats.plant : swaying ? this.mats.foliage : this.mats.solid;
-      this.resources[k] = new ChunkedInstances(model.main, mat, specs[k], { chunkSize: 48, castShadow: k === 'berryBush', name: 'res-' + k });
+      const mat = model.doubleSided ? this.mats.plant : SWAYING.has(k) ? this.mats.foliage : this.mats.solid;
+      const shadow = k === 'berryBush' || k === 'pricklyPear' || k === 'cholla' || k === 'wolfberry' || k === 'agave';
+      this.resources[k] = new ChunkedInstances(model.main, mat, specs[k], { chunkSize: 48, castShadow: shadow, name: 'res-' + k });
       this.group.add(this.resources[k].group);
       if (model.extra) {
         this.own(model.extra);
-        this.berries = new ChunkedInstances(model.extra, this.mats.foliage, specs[k], { chunkSize: 48, name: 'berries' });
-        this.group.add(this.berries.group);
+        const extra = new ChunkedInstances(model.extra, SWAYING.has(k) ? this.mats.foliage : this.mats.solid, specs[k], { chunkSize: 48, name: k === 'berryBush' ? 'berries' : 'fruit-' + k });
+        this.extras[k] = extra;
+        this.group.add(extra.group);
       }
+    }
+  }
+
+  /** Saguaros: instanced per arm count, scaled to their height. */
+  private buildCacti(): void {
+    const bins: InstanceSpec[][] = [[], [], [], [], []];
+    for (const c of this.gen.cacti) {
+      const y = this.terrain.heightAt(c.x, c.z) - 0.1;
+      const k = c.r / 0.3;
+      bins[Math.min(4, c.arms)].push({ matrix: tf(c.x, y, c.z, 0, c.rot, 0, k, c.height / SAGUARO_HEIGHT, k) });
+    }
+    bins.forEach((specs, arms) => {
+      if (!specs.length) return;
+      const inst = new ChunkedInstances(this.own(saguaroGeometry(arms)), this.mats.solid, specs, {
+        chunkSize: 64, castShadow: true, name: 'saguaro', lod: this.own(saguaroGeometry(arms, 1)),
+      });
+      this.others.push(inst);
+      this.group.add(inst.group);
+    });
+  }
+
+  /**
+   * Desert ground cover. Creosote fills 80% of a jittered 5.2 m grid on the low flats (about 300 bushes per hectare,
+   * a little under measured Sonoran stands of 440/ha) with white bursage between; big sagebrush and bunchgrass take over in the high
+   * country; wildflowers are scattered thinly; bare slickrock, cliffs and pools stay open.
+   */
+  private buildDesertGround(): void {
+    const t = this.terrain;
+    const rng = new Rng(this.gen.seed ^ 0x6a56);
+    const open = (x: number, z: number, maxSlope: number) => {
+      const h = t.heightAt(x, z);
+      if (h < 0.9 || t.slopeAt(x, z) > maxSlope) return false;
+      if (Math.hypot(x - t.spawn.x, z - t.spawn.z) < 3.5) return false;
+      return t.landformAt(x, z).rock < 0.3 && t.slickrock(x, z) < 0.45;
+    };
+    const creo: InstanceSpec[][] = [[], []];
+    const burs: InstanceSpec[][] = [[], []];
+    const sage: InstanceSpec[][] = [[], []];
+    const grass: InstanceSpec[][] = [[], [], []];
+    const flowers: InstanceSpec[][] = [[], [], [], []];
+    const pos: { list: InstanceSpec[][]; set: number; local: number; x: number; z: number }[] = [];
+    const put = (list: InstanceSpec[][], set: number, x: number, z: number, s: number, sy = s, track = true) => {
+      if (track) pos.push({ list, set, local: list[set].length, x, z });
+      list[set].push({ matrix: tf(x, t.heightAt(x, z) - 0.03, z, 0, rng.range(0, 6.28), 0, s, sy, s) });
+    };
+    const cell = 5.2;
+    for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += cell) {
+      for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += cell) {
+        const x = gx + rng.range(0.4, cell - 0.4);
+        const z = gz + rng.range(0.4, cell - 0.4);
+        const u = t.upland(x, z);
+        const roll = rng.next();
+        if (!open(x, z, 0.6)) continue;
+        if (u < 0.3) {
+          if (roll < 0.8 * (1 - u * 2)) put(creo, rng.chance(0.3) ? 1 : 0, x, z, rng.range(0.8, 1.25));
+        } else if (roll < 0.62 * (1 - smoothstep(0.8, 1, u) * 0.6)) {
+          put(sage, rng.int(0, 1), x, z, rng.range(0.8, 1.3));
+        }
+      }
+    }
+    for (let i = 0; i < 9000; i++) {
+      const x = rng.range(-PLAY_HALF, PLAY_HALF);
+      const z = rng.range(-PLAY_HALF, PLAY_HALF);
+      if (!open(x, z, 0.62)) continue;
+      const u = t.upland(x, z);
+      const plains = t.field(x, z, 3);
+      if (u < 0.3 && rng.chance(0.3)) put(burs, rng.int(0, 1), x, z, rng.range(0.8, 1.3));
+      const g = u > 0.25 ? 0.35 + 0.5 * smoothstep(0.25, 0.7, u) : 0.1 + 0.55 * smoothstep(0.55, 0.8, plains);
+      if (rng.chance(g)) put(grass, rng.int(0, 2), x, z, rng.range(0.75, 1.3), undefined);
+    }
+    for (let i = 0; i < 4000 && flowers.reduce((a, b) => a + b.length, 0) < 650; i++) {
+      const x = rng.range(-PLAY_HALF, PLAY_HALF);
+      const z = rng.range(-PLAY_HALF, PLAY_HALF);
+      if (!open(x, z, 0.5)) continue;
+      const v = t.upland(x, z) > 0.35 ? rng.pick([2, 3]) : rng.pick([0, 0, 1, 2]);
+      put(flowers, v, x, z, rng.range(0.8, 1.2), undefined, false);
+    }
+    const add = (list: InstanceSpec[][], geo: (v: number) => THREE.BufferGeometry, into: ChunkedInstances[], name: string, mat = this.mats.foliage, lod?: (v: number) => THREE.BufferGeometry) => {
+      return list.map((specs, v) => {
+        if (!specs.length) return null;
+        const inst = new ChunkedInstances(this.own(geo(v)), mat, specs, { chunkSize: 40, name, lod: lod ? this.own(lod(v)) : undefined });
+        into.push(inst);
+        this.group.add(inst.group);
+        return inst;
+      });
+    };
+    const made = new Map<InstanceSpec[][], (ChunkedInstances | null)[]>([
+      [creo, add(creo, (v) => creosoteGeometry(v), this.scrub, 'creosote', this.mats.foliage, (v) => creosoteGeometry(v, 1))],
+      [burs, add(burs, (v) => shrubGeometry('bursage', v), this.scrub, 'bursage')],
+      [sage, add(sage, (v) => shrubGeometry('sage', v), this.scrub, 'sagebrush')],
+      [grass, add(grass, (v) => desertGrassGeometry(v), this.grass, 'grass', this.mats.plant)],
+    ]);
+    add(flowers, (v) => desertFlowerGeometry(v), this.flowers, 'flowers', this.mats.plant);
+    for (const p of pos) {
+      const inst = made.get(p.list)?.[p.set];
+      if (inst) this.grassPos.push({ inst, local: p.local, x: p.x, z: p.z });
     }
   }
 
@@ -264,7 +389,7 @@ export class NatureView {
       this.flowers.push(inst);
       this.group.add(inst.group);
     });
-    this.grassPos.push(...grassIdx);
+    for (const g of grassIdx) this.grassPos.push({ inst: this.grass[g.set], local: g.local, x: g.x, z: g.z });
   }
 
   /** Bring instance visibility in line with the simulation state. */
@@ -272,16 +397,17 @@ export class NatureView {
     for (let i = 0; i < this.gen.trees.length; i++) {
       const sp = this.gen.trees[i].species;
       const strip = barkStripped(sp, state.trees[i]) ? 1 : 0;
+      const twin = this.strippedTrees[sp];
       if (strip !== this.stripped[i] && !state.trees[i].felled) {
         this.stripped[i] = strip;
         this.trees[sp].setHidden(this.treeLocal[i], !!strip);
-        this.strippedBirch.setHidden(this.treeLocal[i], !strip);
+        twin?.setHidden(this.treeLocal[i], !strip);
       }
       const felled = state.trees[i].felled ? 1 : 0;
       if (felled !== this.felled[i]) {
         this.felled[i] = felled;
         this.trees[sp].setHidden(this.treeLocal[i], !!felled || !!this.stripped[i]);
-        if (this.stripped[i]) this.strippedBirch.setHidden(this.treeLocal[i], !!felled);
+        if (this.stripped[i]) twin?.setHidden(this.treeLocal[i], !!felled);
         this.stumps[sp].setHidden(this.treeLocal[i], !felled);
         if (felled && animate) {
           this.startFall(i, state);
@@ -300,8 +426,9 @@ export class NatureView {
       const kind = this.gen.resources[i].kind;
       const inst = this.resources[kind];
       const local = this.resLocal[i];
-      if (kind === 'fern') inst.setMatrix(local, this.resourceMatrix(i, !up));
-      else if (kind === 'berryBush') this.berries?.setHidden(local, !up);
+      const extra = this.extras[kind];
+      if (SHRINK_WHEN_PICKED.has(kind)) inst.setMatrix(local, this.resourceMatrix(i, !up));
+      else if (extra) extra.setHidden(local, !up);
       else inst.setHidden(local, !up);
     }
     for (const st of state.structures) {
@@ -311,7 +438,7 @@ export class NatureView {
       for (const g of this.grassPos) {
         const dx = g.x - st.x;
         const dz = g.z - st.z;
-        if (dx * dx + dz * dz < (r + 0.2) * (r + 0.2)) this.grass[g.set].setHidden(g.local, true);
+        if (dx * dx + dz * dz < (r + 0.2) * (r + 0.2)) g.inst.setHidden(g.local, true);
       }
     }
   }
@@ -319,7 +446,7 @@ export class NatureView {
   private startFall(i: number, state: GameState): void {
     const tr = this.gen.trees[i];
     const y = this.terrain.heightAt(tr.x, tr.z) - 0.15;
-    const mesh = new THREE.Mesh(this.stripped[i] ? this.strippedBirchGeo : this.treeGeos[tr.species], this.mats.foliage);
+    const mesh = new THREE.Mesh((this.stripped[i] && this.strippedGeos[tr.species]) || this.treeGeos[tr.species], this.mats.foliage);
     mesh.castShadow = true;
     mesh.position.set(tr.x, y, tr.z);
     mesh.scale.setScalar(tr.scale);
@@ -331,7 +458,7 @@ export class NatureView {
     this.falling.push({
       index: i, mesh, t: 0, baseRot, impacted: false, x: tr.x, y, z: tr.z, dirX: dx, dirZ: dz,
       axis: new THREE.Vector3(dz, 0, -dx).normalize(),
-      height: (tr.species === 'fir' || tr.species === 'cedar' ? 11 : 7.5) * tr.scale,
+      height: TREES[tr.species].height * tr.scale,
       species: tr.species,
     });
   }
@@ -340,13 +467,16 @@ export class NatureView {
   update(dt: number, px: number, pz: number, viewDist: number): void {
     for (const g of this.grass) g.cullByDistance(px, pz, GRASS_VIEW);
     for (const f of this.flowers) f.cullByDistance(px, pz, FLOWER_VIEW);
-    for (const s of SPECIES) {
+    for (const s of this.scrub) s.cullByDistance(px, pz, Math.min(SCRUB_VIEW, viewDist), SCRUB_LOD_DIST);
+    for (const s of this.species) {
       this.trees[s].cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
       this.stumps[s].cullByDistance(px, pz, viewDist);
+      this.strippedTrees[s]?.cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
     }
-    this.strippedBirch.cullByDistance(px, pz, viewDist, TREE_LOD_DIST);
-    for (const k of RESOURCE_KINDS) this.resources[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
-    this.berries?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
+    for (const k of RESOURCE_KINDS) {
+      this.resources[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
+      this.extras[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
+    }
     for (const o of this.others) o.cullByDistance(px, pz, viewDist);
     for (let i = this.falling.length - 1; i >= 0; i--) {
       const f = this.falling[i];
@@ -380,14 +510,16 @@ export class NatureView {
   }
 
   dispose(): void {
-    for (const s of SPECIES) {
+    for (const s of this.species) {
       this.trees[s].dispose();
       this.stumps[s].dispose();
+      this.strippedTrees[s]?.dispose();
     }
-    this.strippedBirch.dispose();
-    for (const k of RESOURCE_KINDS) this.resources[k]?.dispose();
-    this.berries?.dispose();
-    for (const g of [...this.grass, ...this.flowers, ...this.others]) g.dispose();
+    for (const k of RESOURCE_KINDS) {
+      this.resources[k]?.dispose();
+      this.extras[k]?.dispose();
+    }
+    for (const g of [...this.grass, ...this.flowers, ...this.scrub, ...this.others]) g.dispose();
     for (const g of this.ownedGeos) g.dispose();
   }
 }

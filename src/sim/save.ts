@@ -1,4 +1,5 @@
-import { FORAGE_GUIDE, type ForageId } from '../data/forage';
+import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
+import { forageGuideFor, type ForageId } from '../data/forage';
 import type { ToolId } from '../data/items';
 import { advanceObjectives, LEGACY_OBJECTIVE_COUNT, OBJECTIVES } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
@@ -18,7 +19,7 @@ export const SAVE_FORMAT = 'cozysurvival-save';
  * the same number older saves used as the resource index, so thinning forage never shifts saved state.
  */
 export function serializeState(s: GameState): string {
-  const gen = getWorldGen(s.seed);
+  const gen = getWorldGen(s.seed, s.biome);
   const trees: number[][] = [];
   s.trees.forEach((t, i) => {
     const def = TREES[gen.trees[i].species];
@@ -76,8 +77,11 @@ export function deserializeState(json: string | null): GameState | null {
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
   const inv = raw.inventory as Record<string, unknown>;
   if (!Array.isArray(inv.slots)) return null;
+  // Saves without a map are from the Pacific Northwest (everything before the desert).
+  if (raw.biome !== undefined && !isBiomeId(raw.biome)) return null;
+  const biome: BiomeId = isBiomeId(raw.biome) ? raw.biome : DEFAULT_BIOME;
 
-  const gen = getWorldGen(raw.seed);
+  const gen = getWorldGen(raw.seed, biome);
   const trees: TreeDyn[] = gen.trees.map((t) => freshTree(t.species));
   for (const e of raw.trees as unknown[]) {
     if (!Array.isArray(e) || e.length < 5) return null;
@@ -119,10 +123,11 @@ export function deserializeState(json: string | null): GameState | null {
     }
   }
   const stats = raw.stats as unknown as GameState['stats'];
-  const forageIds = new Set<string>(FORAGE_GUIDE.map((f) => f.id));
+  const guide = forageGuideFor(biome);
+  const forageIds = new Set<string>(guide.map((f) => f.id));
   const forage: ForageId[] = Array.isArray(raw.forage)
     ? (raw.forage as unknown[]).filter((f): f is ForageId => typeof f === 'string' && forageIds.has(f))
-    : FORAGE_GUIDE.filter((f) => (isObj(stats.gathered) ? num(stats.gathered[f.item], 0) : 0) > 0).map((f) => f.id);
+    : guide.filter((f) => (isObj(stats.gathered) ? num(stats.gathered[f.item], 0) : 0) > 0).map((f) => f.id);
   const structures = (raw.structures as StructureState[]).filter((st) => isObj(st) && st.prefab in PREFABS).map((st) => {
     if (!prefabWears(st.prefab)) return st;
     const wear = version === 1 ? newStructureWear(st.prefab, 0) : parseWear(st.wear);

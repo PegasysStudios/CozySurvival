@@ -2,7 +2,7 @@ import { BALANCE } from '../data/balance';
 import type { ForageId } from '../data/forage';
 import { GEAR, ITEMS, TOOLS, TOOL_ORDER, itemName, type GearId, type ToolId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
-import { CATEGORY_LABELS, RECIPES, RECIPE_BY_ID, type Recipe, type RecipeCategory } from '../data/recipes';
+import { CATEGORY_LABELS, RECIPE_BY_ID, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { isUpgradable, LEVEL_NUMERALS, MAX_TOOL_LEVEL, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier, TOOL_UPGRADES, UPGRADABLE_TOOLS, type Cost, type UpgradableTool } from '../data/upgrades';
 import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
 import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction } from '../sim/durability';
@@ -411,7 +411,7 @@ export class Panels {
     for (const t of TABS) {
       const ready = t === 'upgrades'
         ? UPGRADABLE_TOOLS.filter((tool) => sim.canUpgradeTool(tool).ok).length
-        : RECIPES.filter((r) => (t === 'all' || r.category === t) && sim.canCraft(r.id).ok).length;
+        : recipesFor(sim.biome).filter((r) => (t === 'all' || r.category === t) && sim.canCraft(r.id).ok).length;
       const label = t === 'all' ? 'All' : t === 'upgrades' ? `${MISC_ICONS.upgrade} Upgrades` : CATEGORY_LABELS[t];
       tabs.append(button(`${label}${ready ? ` <span class="tab-badge">${ready}</span>` : ''}`, `tab ${t === 'upgrades' ? 'tab-upgrades' : ''} ${this.tab === t ? 'active' : ''}`, () => {
         this.tab = t;

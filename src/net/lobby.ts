@@ -1,3 +1,4 @@
+import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import { LOBBY_CHANNEL, PROTOCOL_VERSION, randomId, type SupabaseConfig } from './config';
 import type { NetChannel, Transport } from './transport';
 
@@ -10,6 +11,8 @@ export interface ServerInfo {
   max: number;
   day: number;
   v: number;
+  /** The server's map; joiners play on it. */
+  map: BiomeId;
 }
 
 export type BackendStatus =
@@ -53,6 +56,7 @@ function toServer(meta: Record<string, unknown>): ServerInfo | null {
     max: Number(meta.max) || 1,
     day: Number(meta.day) || 1,
     v: Number(meta.v) || 0,
+    map: isBiomeId(meta.map) ? meta.map : DEFAULT_BIOME,
   };
 }
 

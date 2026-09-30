@@ -2,6 +2,7 @@ import { pushCircleOut } from '../core/geom2d';
 import { damp, headingTo, turnToward } from '../core/math';
 import type { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
+import { biomeDef } from '../data/biomes';
 import { SPECIES, type PredatorSpecies, type PreySpecies, type SpeciesId } from '../data/species';
 import type { Collider } from './colliders';
 import type { SimEvent } from './events';
@@ -151,9 +152,34 @@ function startFlee(a: AnimalState, env: AnimalEnv, spooked: boolean): void {
   if (spooked) env.events.push({ type: 'animalFlee', id: a.id, species: a.species });
 }
 
+/**
+ * A rattlesnake coils and rattles instead of bolting, and bites whoever steps too close. It relaxes once you back
+ * off and only flees (slowly) when hurt.
+ */
+function updateCoiled(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
+  const strike = def.strike!;
+  a.speed = damp(a.speed, 0, 8, dt);
+  a.heading = turnToward(a.heading, headingTo(a.x, a.z, env.playerX, env.playerZ), def.turnRate * dt);
+  if (env.playerDead) {
+    setMode(a, 'idle', env.rng.range(1, 3));
+    return;
+  }
+  if (d < strike.radius && a.cooldown <= 0) {
+    a.cooldown = strike.cooldown;
+    env.hurtPlayer(strike.damage, a.species as DamageSource, a.x, a.z);
+    env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+  } else if (d > def.alertRadius * 1.3) {
+    setMode(a, 'idle', env.rng.range(2, 4));
+  }
+}
+
 function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
   const { alert, fear } = env.playerDead ? { alert: 0, fear: 0 } : preyRadii(a, env);
   const away = headingTo(env.playerX, env.playerZ, a.x, a.z);
+  if (def.strike && a.mode === 'alert') {
+    updateCoiled(a, def, env, dt, d);
+    return;
+  }
   switch (a.mode) {
     case 'idle':
     case 'wander': {
@@ -164,6 +190,7 @@ function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number
       if (d < alert) {
         setMode(a, 'alert', env.rng.range(def.alertTime[0], def.alertTime[1]));
         a.alertDist = d;
+        if (def.strike) env.events.push({ type: 'rattle', id: a.id, x: a.x, z: a.z });
         break;
       }
       if (a.mode === 'idle') {
@@ -374,11 +401,13 @@ export interface AvoidPoint {
 
 export function findSpawnPoint(t: Terrain, rng: Rng, species: SpeciesId, avoid: readonly AvoidPoint[], tries = 60): { x: number; z: number } | null {
   const water = SPECIES[species].habitat === 'water';
+  if (water && t.fishLakes.length === 0) return null;
+  const upland = biomeDef(t.biome).uplandOnly.includes(species);
   for (let i = 0; i < tries; i++) {
     let x: number;
     let z: number;
     if (water) {
-      const lake = rng.pick(t.lakes);
+      const lake = rng.pick(t.fishLakes);
       const ang = rng.range(0, Math.PI * 2);
       const r = rng.range(0, lake.r * 0.75);
       x = lake.x + Math.cos(ang) * r;
@@ -387,6 +416,8 @@ export function findSpawnPoint(t: Terrain, rng: Rng, species: SpeciesId, avoid: 
       x = rng.range(-PLAY_HALF + 10, PLAY_HALF - 10);
       z = rng.range(-PLAY_HALF + 10, PLAY_HALF - 10);
       if (t.slopeAt(x, z) > 0.5) continue;
+      if (t.landforms.length > 0 && t.landformAt(x, z).rock > 0.3) continue;
+      if (upland && t.upland(x, z) < 0.45) continue;
     }
     if (!isHabitable(t, species, x, z)) continue;
     let ok = true;

@@ -1599,6 +1599,120 @@ b {
   }
 }
 
+/* ------------------------------------------------------------------ map select */
+
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: min(560px, 100%);
+}
+
+.title-row .title-card {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.map-arrow {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin-top: 7px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  line-height: 1;
+  text-align: center;
+  background: rgba(20, 15, 11, 0.45);
+  backdrop-filter: blur(4px);
+  animation: rise 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) both;
+}
+
+.map-arrow:hover {
+  border-color: rgba(242, 167, 75, 0.6);
+  color: var(--amber-hi);
+}
+
+.map-arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.map-pick {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--amber);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.5);
+}
+
+.map-dots {
+  display: inline-flex;
+  gap: 5px;
+}
+
+.map-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 240, 215, 0.28);
+  transition: background 0.3s;
+}
+
+.map-dots i.on {
+  background: var(--amber);
+}
+
+.title-card.map-changed,
+.title-row:has(.map-changed) .map-arrow {
+  animation: none;
+}
+
+.title-card.map-changed .map-pick,
+.title-card.map-changed .tagline {
+  animation: map-swap 0.55s ease both;
+}
+
+@keyframes map-swap {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+}
+
+.map-fade {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.9s ease;
+}
+
+.map-fade.out {
+  opacity: 0;
+}
+
+@media (max-width: 760px) {
+  .title-row {
+    gap: 8px;
+  }
+  .map-arrow {
+    width: 36px;
+    height: 36px;
+    margin-top: 4px;
+    font-size: 24px;
+  }
+}
+
 .pause-screen {
   background: rgba(16, 12, 9, 0.6);
   backdrop-filter: blur(5px);

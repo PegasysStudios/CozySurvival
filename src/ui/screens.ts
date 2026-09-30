@@ -1,12 +1,25 @@
 import { volumePercent } from '../audio/mix';
+import type { BiomeId } from '../data/biomes';
 import type { BestRecord, DeathSummary, Settings } from '../sim/run';
 import { formatDuration } from '../sim/time';
 import { button, el, escapeHtml } from './dom';
+
+/** The map shown on the title screen; the arrows cycle through `count` maps. */
+export interface TitleMap {
+  id: BiomeId;
+  name: string;
+  tagline: string;
+  index: number;
+  count: number;
+  /** "forest" or "desert", as in "Day 1 in this same forest". */
+  place: string;
+}
 
 export interface TitleInfo {
   continueLabel: string | null;
   best: BestRecord | null;
   deaths: number;
+  map: TitleMap;
 }
 
 export interface ScreenHost {
@@ -18,6 +31,8 @@ export interface ScreenHost {
   onRetryDay(): void;
   onRestartDay1(): void;
   onStartFromScratch(): void;
+  /** Step to the previous (-1) or next (1) map on the title screen. */
+  onSelectMap(step: -1 | 1): void;
   onSettings(s: Settings): void;
   onLeaveServer(): void;
   onRespawn(): void;
@@ -36,6 +51,8 @@ const CAUSES: Record<string, string> = {
   cold: 'The cold crept in and never left.',
   wolf: 'A grey wolf caught you in the open.',
   bear: 'A black bear defended its territory.',
+  cougar: 'A mountain lion took you from behind.',
+  snake: 'A rattlesnake bite finished you off.',
   dev: 'Struck down by the developer.',
   unknown: 'The forest was too much this time.',
 };
@@ -76,6 +93,7 @@ export class Screens {
   private confirmNewRun = false;
   private lastTitle: TitleInfo | null = null;
   private lastDeath: DeathSummary | null = null;
+  private deathPlace = 'forest';
   private titleExtra: HTMLElement | null = null;
   private confirmClose = false;
 
@@ -93,19 +111,39 @@ export class Screens {
   }
 
   showTitle(info: TitleInfo): void {
+    const mapChanged = !!this.lastTitle && this.lastTitle.map.id !== info.map.id;
     this.lastTitle = info;
     this.confirmNewWorld = false;
     this.confirmNewRun = false;
-    this.renderTitle();
+    this.renderTitle(mapChanged);
     this.title.classList.add('show');
   }
 
-  private renderTitle(): void {
+  get titleShown(): boolean {
+    return this.title.classList.contains('show');
+  }
+
+  private renderTitle(mapChanged = false): void {
     const info = this.lastTitle!;
     const t = this.title;
     t.innerHTML = '';
-    const card = el('div', 'title-card');
-    card.innerHTML = `<div class="logo">CozySurvival</div><div class="tagline">Stranded in the Pacific Northwest woods. Keep warm, keep fed, and see how many days you can last.</div>`;
+    const row = el('div', 'title-row');
+    const card = el('div', `title-card${mapChanged ? ' map-changed' : ''}`);
+    const m = info.map;
+    const dots = Array.from({ length: m.count }, (_, i) => `<i class="${i === m.index ? 'on' : ''}"></i>`).join('');
+    card.innerHTML = `<div class="logo">CozySurvival</div>
+      <div class="map-pick" aria-live="polite"><span class="map-name">${escapeHtml(m.name)}</span><span class="map-dots" aria-label="Map ${m.index + 1} of ${m.count}">${dots}</span></div>
+      <div class="tagline">${escapeHtml(m.tagline)}</div>`;
+    const arrow = (step: -1 | 1) => {
+      const b = button(step < 0 ? '&#8249;' : '&#8250;', `map-arrow ${step < 0 ? 'prev' : 'next'}`, () => {
+        this.host.sfx();
+        this.host.onSelectMap(step);
+      });
+      b.setAttribute('aria-label', step < 0 ? 'Previous map' : 'Next map');
+      b.dataset.map = step < 0 ? 'prev' : 'next';
+      b.disabled = m.count < 2;
+      return b;
+    };
     const actions = el('div', 'title-actions');
     if (info.continueLabel) {
       actions.append(button(`Continue <span class="btn-sub">${escapeHtml(info.continueLabel)}</span>`, 'btn primary big', () => {
@@ -114,7 +152,7 @@ export class Screens {
       }));
     }
     const newLabel = info.continueLabel ? (this.confirmNewRun ? 'Abandon current run and start over?' : 'New run') : 'Start surviving';
-    actions.append(button(`${newLabel} <span class="btn-sub">Day 1 in this same forest</span>`, `btn ${info.continueLabel ? '' : 'primary'} big ${this.confirmNewRun ? 'danger' : ''}`, () => {
+    actions.append(button(`${newLabel} <span class="btn-sub">Day 1 in this same ${escapeHtml(m.place)}</span>`, `btn ${info.continueLabel ? '' : 'primary'} big ${this.confirmNewRun ? 'danger' : ''}`, () => {
       this.host.sfx();
       if (info.continueLabel && !this.confirmNewRun) {
         this.confirmNewRun = true;
@@ -123,7 +161,7 @@ export class Screens {
       }
       this.host.onNewRun();
     }));
-    actions.append(button(this.confirmNewWorld ? 'Really wipe everything? Click again' : 'New world <span class="btn-sub">Fresh map · clears saves and records</span>', `btn subtle ${this.confirmNewWorld ? 'danger' : ''}`, () => {
+    actions.append(button(this.confirmNewWorld ? `Really wipe this map's save and records? Click again` : `New world <span class="btn-sub">Fresh ${escapeHtml(m.name)} map · clears its save and records</span>`, `btn subtle ${this.confirmNewWorld ? 'danger' : ''}`, () => {
       this.host.sfx();
       if (!this.confirmNewWorld) {
         this.confirmNewWorld = true;
@@ -138,7 +176,8 @@ export class Screens {
     card.append(actions, meta);
     if (this.titleExtra) card.append(this.titleExtra);
     card.append(help);
-    t.append(card);
+    row.append(arrow(-1), card, arrow(1));
+    t.append(row);
   }
 
   /** Extra block on the title card (the multiplayer section); kept across re-renders. */
@@ -226,8 +265,9 @@ export class Screens {
     });
   }
 
-  showDeath(d: DeathSummary, day: number): void {
+  showDeath(d: DeathSummary, day: number, place = 'forest'): void {
     this.lastDeath = d;
+    this.deathPlace = place;
     this.confirmScratch = false;
     this.renderDeath(day);
     this.death.classList.add('show');
@@ -252,11 +292,11 @@ export class Screens {
       this.host.sfx();
       this.host.onRetryDay();
     }));
-    actions.append(button('Restart from day 1 <span class="btn-sub">Same forest · best record kept</span>', 'btn big', () => {
+    actions.append(button(`Restart from day 1 <span class="btn-sub">Same ${escapeHtml(this.deathPlace)} · best record kept</span>`, 'btn big', () => {
       this.host.sfx();
       this.host.onRestartDay1();
     }));
-    actions.append(button(this.confirmScratch ? 'Wipe all saves and records? Click again' : 'Start from scratch <span class="btn-sub">New world · clears every save and record</span>', `btn subtle ${this.confirmScratch ? 'danger' : ''}`, () => {
+    actions.append(button(this.confirmScratch ? `Wipe this map's save and records? Click again` : `Start from scratch <span class="btn-sub">New world · clears this map's save and records</span>`, `btn subtle ${this.confirmScratch ? 'danger' : ''}`, () => {
       this.host.sfx();
       if (!this.confirmScratch) {
         this.confirmScratch = true;

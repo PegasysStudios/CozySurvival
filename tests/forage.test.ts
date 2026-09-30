@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FORAGE_GUIDE, forageForResource } from '../src/data/forage';
+import { FORAGE_GUIDE, forageForResource, forageGuideFor } from '../src/data/forage';
 import { ITEMS } from '../src/data/items';
 import { RECIPES } from '../src/data/recipes';
 import { RESOURCES, type ResourceKind } from '../src/data/resources';
@@ -18,8 +18,10 @@ function harvest(sim: Simulation, kind: ResourceKind) {
 describe('Foraging guide', () => {
   it('has a page for every harvestable plant, and none for sticks or stones', () => {
     const plants = (Object.keys(RESOURCES) as ResourceKind[]).filter((k) => forageForResource(k));
-    expect(plants.sort()).toEqual(['berryBush', 'fern', 'mushroom', 'onion']);
-    expect(FORAGE_GUIDE.map((e) => e.id).sort()).toEqual(['berryBush', 'birch', 'fern', 'mushroom', 'onion']);
+    expect(plants.sort()).toEqual(['agave', 'berryBush', 'chia', 'cholla', 'fern', 'mushroom', 'onion', 'pricklyPear', 'wolfberry', 'yucca']);
+    expect(forageGuideFor('pnw').map((e) => e.id).sort()).toEqual(['berryBush', 'birch', 'fern', 'mushroom', 'onion']);
+    expect(forageGuideFor('desert').map((e) => e.id).sort()).toEqual(['agave', 'chia', 'cholla', 'juniper', 'mesquite', 'pinyon', 'pricklyPear', 'wolfberry', 'yucca']);
+    for (const k of plants) expect(FORAGE_GUIDE.some((e) => e.id === forageForResource(k))).toBe(true);
     for (const e of FORAGE_GUIDE) {
       expect(e.name.length).toBeGreaterThan(3);
       expect(e.latin).toMatch(/^[A-Z][a-z]+ [a-z]+/);
