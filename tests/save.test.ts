@@ -10,7 +10,6 @@ import { give, giveRecipe, placeStructure, quietSim, run } from './helpers';
 function playedSim(): Simulation {
   const sim = Simulation.newGame(42);
   run(sim, 2, { moveZ: 1 });
-  sim.state.known.push('axe', 'campfire');
   giveRecipe(sim, 'axe');
   give(sim, { berries: 4 });
   sim.craft('axe');

@@ -1,8 +1,8 @@
 import { BALANCE } from '../data/balance';
-import { RECIPE_BY_ID, RECIPES, type Recipe, type UnlockCond, type UnlockRule } from '../data/recipes';
+import { RECIPE_BY_ID, type Recipe } from '../data/recipes';
 import { ITEMS } from '../data/items';
 import { addItem, cloneInventory, countItem, hasAll, removeAll, roomFor, setCapacity, waterUnits } from './inventory';
-import type { GameState, StatsState } from './state';
+import type { GameState } from './state';
 
 export interface CraftContext {
   nearFire: boolean;
@@ -16,38 +16,13 @@ export interface CraftCheck {
 }
 
 export const CRAFT_FAILURE_TEXT: Record<CraftFailure, string> = {
-  unknown: "You haven't figured that out yet.",
+  unknown: 'There is no such recipe.',
   missing: 'Missing ingredients.',
   station: 'Needs a lit campfire nearby.',
   noRoom: 'No room in your pack.',
   owned: 'You already have one.',
   noCanteen: 'You need a canteen to carry water.',
 };
-
-export function condMet(stats: StatsState, c: UnlockCond): boolean {
-  if ('gathered' in c) return (stats.gathered[c.gathered] ?? 0) >= c.atLeast;
-  if ('crafted' in c) return (stats.crafted[c.crafted] ?? 0) >= c.atLeast;
-  return (stats.events[c.event] ?? 0) >= c.atLeast;
-}
-
-export function ruleMet(stats: StatsState, rule: UnlockRule): boolean {
-  if (rule.all && !rule.all.every((c) => condMet(stats, c))) return false;
-  if (rule.any && rule.any.length > 0 && !rule.any.some((c) => condMet(stats, c))) return false;
-  return true;
-}
-
-/** Learn every recipe whose unlock rule is now satisfied. Returns newly learned ids in data order. */
-export function checkUnlocks(state: GameState): string[] {
-  const learned: string[] = [];
-  for (const r of RECIPES) {
-    if (state.known.includes(r.id)) continue;
-    if (ruleMet(state.stats, r.unlock)) {
-      state.known.push(r.id);
-      learned.push(r.id);
-    }
-  }
-  return learned;
-}
 
 export function slotsFor(state: GameState): number {
   const c = BALANCE.carry;
@@ -59,7 +34,6 @@ export function slotsFor(state: GameState): number {
 
 export function canCraft(state: GameState, recipe: Recipe, ctx: CraftContext): CraftCheck {
   const fail = (reason: CraftFailure): CraftCheck => ({ ok: false, reason });
-  if (!state.known.includes(recipe.id)) return fail('unknown');
   const out = recipe.output;
   if (out.kind === 'tool' && state.tools.includes(out.tool)) return fail('owned');
   if (out.kind === 'gear' && state.gear.includes(out.gear)) return fail('owned');

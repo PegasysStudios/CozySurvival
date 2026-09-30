@@ -3,7 +3,6 @@ import { lerp } from '../src/core/math';
 import { BALANCE } from '../src/data/balance';
 import { TOOL_ORDER, TOOLS } from '../src/data/items';
 import { RECIPE_BY_ID } from '../src/data/recipes';
-import { checkUnlocks } from '../src/sim/crafting';
 import type { SimEvent } from '../src/sim/events';
 import { countItem } from '../src/sim/inventory';
 import type { Simulation } from '../src/sim/simulation';
@@ -61,12 +60,9 @@ describe('fishing pole', () => {
     expect(TOOL_ORDER.slice(0, 5)).toEqual(['hands', 'axe', 'spear', 'bow', 'torch']);
   });
 
-  it('is learned once you have cordage and have found the water, and crafts from sticks, stone and cordage', () => {
+  it('is available from the start and crafts from sticks, stone and cordage', () => {
     const sim = quietSim();
-    sim.state.stats.crafted.cordage = 1;
-    expect(checkUnlocks(sim.state)).not.toContain('rod');
-    sim.state.stats.events.drankByHand = 1;
-    expect(checkUnlocks(sim.state)).toContain('rod');
+    expect(sim.canCraft('rod').reason).toBe('missing');
     give(sim, { stick: 10, stone: 5, cordage: 5 });
     expect(sim.craft('rod').ok).toBe(true);
     expect(sim.state.tools).toContain('rod');
@@ -267,7 +263,6 @@ describe('fish recipes', () => {
     const sim = quietSim();
     buildFresh(sim, 'campfire');
     sim.state.gear.push('basket', 'backpack', 'canteen');
-    sim.state.known.push('troutChowder', 'troutSkewer', 'smokedTrout');
     sim.state.skills.cooking = MAX_XP;
     give(sim, { rawFish: 4, boiledWater: 1, onion: 1, mushroom: 1, berries: 2, stick: 2 });
     for (const id of ['troutChowder', 'troutSkewer', 'smokedTrout']) {
@@ -280,13 +275,4 @@ describe('fish recipes', () => {
     expect(countItem(sim.state.inventory, 'rawFish')).toBe(0);
   });
 
-  it('a caught fish teaches the fish meals', () => {
-    const sim = quietSim();
-    sim.state.stats.crafted.boilWater = 1;
-    sim.state.stats.gathered.rawFish = 1;
-    sim.state.stats.gathered.berries = 1;
-    const learned = checkUnlocks(sim.state);
-    expect(learned).toContain('troutChowder');
-    expect(learned).toContain('troutSkewer');
-  });
 });

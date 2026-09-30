@@ -26,7 +26,7 @@ import { GameView, type CameraPose } from '../render/view';
 import type { ViewModelInput } from '../render/viewmodel';
 import { DevPanel, TIME_SCALES } from '../ui/dev';
 import { effectSummary, Hud } from '../ui/hud';
-import { itemIcon, MISC_ICONS, toolIcon } from '../ui/icons';
+import { itemIcon, prefabIcon, toolIcon } from '../ui/icons';
 import { MpHud, MpMenu } from '../ui/multiplayer';
 import { Panels } from '../ui/panels';
 import { Screens } from '../ui/screens';
@@ -316,7 +316,6 @@ export class Game {
     this.dropCharge();
     if (this.dev?.open) this.dev.toggle();
     this.panels.open(kind, { targetId });
-    if (kind === 'crafting') this.hud.clearNewRecipes();
     this.mode = 'panel';
     this.expectUnlock = true;
     this.input.exitLock();
@@ -711,16 +710,6 @@ export class Game {
         this.throttledToast('needTool', e.message, 'warn', 2.5);
         this.sfx('deny');
         break;
-      case 'learned': {
-        const r = RECIPE_BY_ID[e.recipe];
-        const o = r.output;
-        const icon = o.kind === 'item' ? itemIcon(o.item) : o.kind === 'tool' ? toolIcon(o.tool) : '';
-        this.hud.toast(`New recipe: ${r.name}. ${r.learnHint}`, 'learn', icon);
-        this.hud.noteNewRecipe();
-        this.sfx('learned');
-        this.panels.refresh();
-        break;
-      }
       case 'crafted': {
         const r = RECIPE_BY_ID[e.recipe];
         this.sfx('craft');
@@ -783,7 +772,7 @@ export class Game {
           const st = sim.state.structures.find((s) => s.id === e.structure);
           this.sfx('place');
           if (st) fx.dust(st.x, st.y + 0.1, st.z, 28, 2.8);
-          this.hud.toast(`Upgraded the ${PREFABS[e.from].name} into a ${PREFABS[e.prefab].name}`, 'good', MISC_ICONS[e.prefab]);
+          this.hud.toast(`Upgraded the ${PREFABS[e.from].name} into a ${PREFABS[e.prefab].name}`, 'good', prefabIcon(e.prefab));
         }
         this.panels.refresh();
         break;

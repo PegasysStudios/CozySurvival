@@ -69,7 +69,7 @@ describe('Foraging guide', () => {
     expect(page.effects).toContain(`+${food.thirst} thirst`);
     expect(page.recipes).toContain("Forager's Skewer");
     const using = RECIPES.filter((r) => r.inputs.some((i) => i.item === 'berries'));
-    expect(page.recipes.length + page.undiscovered).toBe(using.length);
+    expect(page.recipes).toEqual(using.map((r) => r.name));
     expect(page.regrowHours).toBe(RESOURCES.berryBush.respawnHours);
     const fern = foragePage(sim.state, FORAGE_GUIDE.find((e) => e.id === 'fern')!);
     expect(fern.effects).toEqual([]);

@@ -1,6 +1,6 @@
 import { BALANCE } from '../data/balance';
 import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
-import { FREEPLAY_OBJECTIVE, OBJECTIVES } from '../data/objectives';
+import { FREEPLAY_OBJECTIVE, OBJECTIVES, type ObjectiveNeed } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
 import { toolWears, wearFraction } from '../sim/durability';
 import { toolLevel } from '../sim/upgrades';
@@ -11,7 +11,7 @@ import { countItem, usedSlots } from '../sim/inventory';
 import type { GameState } from '../sim/state';
 import { formatClock } from '../sim/time';
 import { el, escapeHtml, setHtml, setText, toggle } from './dom';
-import { itemIcon, MISC_ICONS, NEED_ICONS, toolIcon } from './icons';
+import { anyIcon, itemIcon, MISC_ICONS, NEED_ICONS, toolIcon } from './icons';
 
 type NeedKey = 'health' | 'hunger' | 'thirst' | 'warmth' | 'energy';
 const NEEDS: { key: NeedKey; label: string }[] = [
@@ -40,8 +40,13 @@ export function toolBeltHtml(s: GameState): string {
     const lv = owned ? toolLevel(s, id) : 0;
     const name = `${TOOLS[id].name}${lv ? ' ' + LEVEL_NUMERALS[lv] : ''}`;
     const title = `${name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}${ammo === null ? '' : ` · ${ammo} ${itemName('arrow', ammo).toLowerCase()}`}`;
-    return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? name : '???'}</span>${dur}</div>`;
+    return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${owned ? toolIcon(id, lv) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? name : '???'}</span>${dur}</div>`;
   }).join('');
+}
+
+/** The quest tracker: one row per ingredient or goal, stacked in a column, each with have/need counts. */
+export function objectiveNeedsHtml(needs: ObjectiveNeed[]): string {
+  return needs.map((n) => `<div class="obj-need ${n.have >= n.need ? 'done' : ''}"><span class="obj-need-icon">${anyIcon(n.icon)}</span><span class="obj-need-label">${escapeHtml(n.label)}</span><b class="obj-need-count">${n.have}/${n.need}</b></div>`).join('');
 }
 
 interface Toast {
@@ -60,7 +65,8 @@ export class Hud {
   private readonly devBadge = el('div', 'dev-badge');
   private readonly objTitle = el('div', 'obj-title');
   private readonly objHint = el('div', 'obj-hint');
-  private readonly objProgress = el('div', 'obj-progress');
+  private readonly objNeeds = el('div', 'obj-needs');
+  private readonly objNeedsKey: { last?: string } = {};
   private readonly objStep = el('div', 'obj-step');
   private readonly objective = el('div', 'hud-objective');
   private readonly bars = new Map<NeedKey, { row: HTMLElement; fill: HTMLElement; value: HTMLElement; last: number }>();
@@ -87,8 +93,6 @@ export class Hud {
   private readonly hint = el('div', 'controls-hint');
   private hintT = 0;
   private readonly fps = el('div', 'fps');
-  private readonly craftBadge = el('div', 'craft-badge');
-  private newRecipes = 0;
   private uiTimer = 0;
 
   constructor(parent: HTMLElement) {
@@ -101,7 +105,7 @@ export class Hud {
 
     const objLabel = el('div', 'obj-label', 'Next goal');
     objLabel.append(this.objStep);
-    this.objective.append(objLabel, this.objTitle, this.objHint, this.objProgress);
+    this.objective.append(objLabel, this.objTitle, this.objNeeds, this.objHint);
 
     const needs = el('div', 'hud-needs');
     needs.append(this.chips);
@@ -120,7 +124,7 @@ export class Hud {
 
     const bottom = el('div', 'hud-bottom');
     const packWrap = el('div', 'pack-wrap');
-    packWrap.append(this.pack, this.craftBadge);
+    packWrap.append(this.pack);
     bottom.append(this.belt, packWrap);
 
     const center = el('div', 'hud-center');
@@ -143,17 +147,6 @@ export class Hud {
   setFps(fps: number | null): void {
     toggle(this.fps, 'show', fps !== null);
     if (fps !== null) setText(this.fps, `${Math.round(fps)} fps`);
-  }
-
-  noteNewRecipe(): void {
-    this.newRecipes++;
-    this.craftBadge.textContent = `${this.newRecipes} new recipe${this.newRecipes === 1 ? '' : 's'} · C`;
-    this.craftBadge.classList.add('show');
-  }
-
-  clearNewRecipes(): void {
-    this.newRecipes = 0;
-    this.craftBadge.classList.remove('show');
   }
 
   toast(text: string, tone: 'info' | 'good' | 'warn' | 'learn' = 'info', icon = '', key: string | null = null, count = 0): void {
@@ -273,7 +266,7 @@ export class Hud {
     const o = sim.currentObjective();
     setText(this.objTitle, o ? o.title : FREEPLAY_OBJECTIVE.title);
     setText(this.objHint, o ? o.hint : FREEPLAY_OBJECTIVE.hint);
-    setText(this.objProgress, o?.progress ?? '');
+    setHtml(this.objNeeds, o ? objectiveNeedsHtml(o.needs) : '', this.objNeedsKey);
     setText(this.objStep, o ? `${s.objective + 1}/${OBJECTIVES.length}` : '');
 
     setHtml(this.belt, toolBeltHtml(s), this.beltKey);

@@ -153,7 +153,6 @@ describe('hunting skill', () => {
 
 describe('cooking skill and burnt meals', () => {
   function cookMany(sim: Simulation, recipe: string, input: Parameters<typeof give>[1], n: number, xp: number, firstEveryTime = false) {
-    if (!sim.state.known.includes(recipe)) sim.state.known.push(recipe);
     let burnt = 0;
     for (let k = 0; k < n; k++) {
       sim.state.skills.cooking = xp;
@@ -176,7 +175,6 @@ describe('cooking skill and burnt meals', () => {
   it('a novice cook sometimes chars a meal; the charred meal is still edible', () => {
     const sim = quietSim();
     placeStructure(sim, 'campfire');
-    sim.state.known.push('cookedMeat');
     sim.state.stats.crafted.cookedMeat = 1;
     let charred = 0;
     for (let k = 0; k < 60 && !charred; k++) {
@@ -216,7 +214,6 @@ describe('cooking skill and burnt meals', () => {
     const sim = quietSim();
     placeStructure(sim, 'campfire');
     expect(sim.state.skills.crafting).toBe(K.xp.build);
-    sim.state.known.push('cookedMeat', 'axe');
     give(sim, { rawMeat: 1 });
     giveRecipe(sim, 'axe');
     sim.craft('cookedMeat');

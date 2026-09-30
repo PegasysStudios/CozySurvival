@@ -120,14 +120,12 @@ async function main() {
     await page.mouse.click(640, 360);
     await sleep(300);
 
-    const learned = await page.evaluate(() => {
+    await page.evaluate(() => {
       const sim = window.__cozy.game.sim;
       sim.devGive('stick', 6);
       sim.devGive('stone', 6);
       sim.devGive('fiber', 6);
-      return sim.state.known.length;
     });
-    check('gathering teaches recipes', learned > 0, `${learned} known`);
     await sleep(200);
 
     await page.keyboard.press('KeyC');
@@ -135,10 +133,12 @@ async function main() {
     const panel = await page.evaluate(() => ({
       mode: window.__cozy.game.mode,
       shown: document.querySelector('.panel-overlay')?.classList.contains('show'),
-      recipes: document.querySelectorAll('.recipe').length,
+      recipes: document.querySelectorAll('.tile-grid .recipe').length,
       ready: document.querySelectorAll('.recipe.ready').length,
+      greyed: document.querySelectorAll('.recipe.greyed').length,
+      jonIcons: document.querySelectorAll('.tile .icon-img').length,
     }));
-    check('crafting panel opens with recipes', panel.mode === 'panel' && panel.shown && panel.recipes > 0 && panel.ready > 0, JSON.stringify(panel));
+    check('crafting panel opens as a grid with every recipe, greyed where materials are short', panel.mode === 'panel' && panel.shown && panel.recipes >= 24 && panel.ready > 0 && panel.greyed > 0 && panel.jonIcons > 0, JSON.stringify(panel));
 
     const snapshot = () =>
       page.evaluate(() => {
@@ -229,7 +229,6 @@ async function main() {
     // Placement through real input: crafting menu -> ghost -> red/green -> rotate -> click to place.
     await page.evaluate(() => {
       const sim = window.__cozy.game.sim;
-      if (!sim.state.known.includes('campfire')) sim.state.known.push('campfire');
       // a campfire's 25 stone, 20 sticks and 5 fiber fill a starting pack on their own
       sim.state.inventory.slots.fill(null);
       sim.devGive('stone', 25);

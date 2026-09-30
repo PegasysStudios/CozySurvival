@@ -88,7 +88,7 @@ describe('gathering by hand', () => {
     expect(countItem(sim.state.inventory, 'stone')).toBe(def.yield);
   });
 
-  it('a full pack blocks gathering without wasting the resource and teaches the basket', () => {
+  it('a full pack blocks gathering without wasting the resource', () => {
     const sim = quietSim();
     const fill = ['stone', 'berries', 'onion', 'mushroom', 'bark', 'cordage'] as const;
     for (const it of fill) sim.state.inventory.slots[fill.indexOf(it)] = { item: it, count: 1 };
@@ -96,7 +96,6 @@ describe('gathering by hand', () => {
     const events = (sim.perform({ kind: 'resource', index: i, dist: 1 }), drain(sim));
     expect(events.some((e) => e.type === 'packFull')).toBe(true);
     expect(sim.state.resources[i].charges).toBe(RESOURCES.fern.charges);
-    expect(sim.state.known).toContain('basket');
   });
 
   it('partial fits drop the overflow on the ground to pick up later', () => {
@@ -125,7 +124,6 @@ describe('trees', () => {
     const birch = nearestTree(sim, 'birch');
     sim.perform({ kind: 'tree', index: birch, dist: 1 });
     expect(countItem(sim.state.inventory, 'bark')).toBe(1);
-    expect(sim.state.known).toContain('canteen');
   });
 
   it('with an axe, several swings fell the tree, then chopping up the trunk gives logs and leaves a stump', () => {
@@ -147,7 +145,6 @@ describe('trees', () => {
     expect(countItem(sim.state.inventory, 'log')).toBe(TREES.fir.logs);
     expect(countItem(sim.state.inventory, 'stick')).toBe(TREES.fir.sticks);
     expect(sim.state.trees[i].logs).toBe(0);
-    expect(sim.state.known).toContain('leanTo');
     const t = sim.gen.trees[i];
     teleport(sim, t.x + 3, t.z);
     const env = sim.placementEnv();
@@ -281,7 +278,6 @@ describe('water', () => {
   it('drinking from the canteen and boiling water at a fire', () => {
     const sim = quietSim();
     sim.state.gear.push('canteen');
-    sim.state.known.push('boilWater');
     give(sim, { lakeWater: 2 });
     expect(sim.craft('boilWater').reason).toBe('station');
     placeCampfire(sim);
@@ -322,7 +318,6 @@ describe('fire and cooking', () => {
     const sim = quietSim();
     placeCampfire(sim);
     give(sim, { mushroom: 2, onion: 1, stick: 1 });
-    expect(sim.state.known).toContain('skewer');
     expect(sim.craft('skewer').ok).toBe(true);
     const ev = drain(sim);
     expect(ev.some((e) => e.type === 'crafted' && e.recipe === 'skewer')).toBe(true);
@@ -362,7 +357,6 @@ describe('hunting', () => {
     expect(countItem(sim.state.inventory, 'rawMeat')).toBe(1);
     expect(countItem(sim.state.inventory, 'hide')).toBe(1);
     expect(sim.state.carcasses).toHaveLength(0);
-    expect(sim.state.known).toEqual(expect.arrayContaining(['cookedMeat', 'backpack']));
   });
 
   it('melee has limited reach', () => {

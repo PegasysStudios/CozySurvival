@@ -109,7 +109,6 @@ export function giveRecipe(sim: Simulation, recipe: string): void {
  * aside and put back, since the bigger structures fill a starting pack on their own.
  */
 export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench'): StructureState {
-  if (!sim.state.known.includes(recipe)) sim.state.known.push(recipe);
   const inv = sim.state.inventory;
   const held = inv.slots.slice();
   inv.slots.fill(null);
@@ -134,7 +133,6 @@ export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 
  * place with freshly given materials, setting the pack aside as `buildFresh` does. Drains the events.
  */
 export function placeShelter(sim: Simulation, tier: PrefabId): StructureState {
-  if (!sim.state.known.includes('leanTo')) sim.state.known.push('leanTo');
   const inv = sim.state.inventory;
   const held = inv.slots.slice();
   const gear = sim.state.gear.slice();

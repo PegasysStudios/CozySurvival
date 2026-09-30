@@ -1,6 +1,5 @@
 import { BALANCE } from '../data/balance';
 import type { GearId, ItemId, ToolId } from '../data/items';
-import { RECIPES } from '../data/recipes';
 import type { SpeciesId } from '../data/species';
 import { setCapacity } from '../sim/inventory';
 import { slotsFor } from '../sim/crafting';
@@ -52,11 +51,6 @@ export class DevPanel {
       button('Arrows', 'dev-btn', give({ arrow: 12 }, 'arrows')),
     );
     section('Unlock',
-      button('All recipes', 'dev-btn', () => {
-        const st = host.sim().state;
-        for (const r of RECIPES) if (!st.known.includes(r.id)) st.known.push(r.id);
-        host.toast('Dev: all recipes known');
-      }),
       button('All tools', 'dev-btn', () => {
         const st = host.sim().state;
         for (const t of ['axe', 'spear', 'bow', 'torch', 'rod'] as ToolId[]) if (!st.tools.includes(t)) st.tools.push(t);

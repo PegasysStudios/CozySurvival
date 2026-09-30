@@ -4,7 +4,7 @@ import { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
 import { forageForResource, FORAGE_BY_ID, type ForageId } from '../data/forage';
-import { OBJECTIVES, advanceObjectives, killKey } from '../data/objectives';
+import { OBJECTIVES, advanceObjectives, killKey, type ObjectiveNeed } from '../data/objectives';
 import { PLACE_MAX_DIST, PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPE_BY_ID } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
@@ -12,7 +12,7 @@ import { LEVEL_NUMERALS, nextShelter, SHELTER_UPGRADES, TOOL_UPGRADES, isUpgrada
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, predatorTargets, type SpeciesId } from '../data/species';
 import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
-import { canCraft, canteenRoom, checkUnlocks, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
+import { canCraft, canteenRoom, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearResult } from './durability';
 import type { SimEvent } from './events';
 import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
@@ -199,7 +199,6 @@ export function createNewState(seed: number): GameState {
     toolWear: {},
     toolLevels: {},
     gear: [],
-    known: [],
     skills: createSkills(),
     forage: [],
     stats: { gathered: {}, crafted: {}, events: {}, kills: {} },
@@ -506,7 +505,6 @@ export class Simulation {
   }
 
   private progress(): void {
-    for (const id of checkUnlocks(this.state)) this.emit({ type: 'learned', recipe: id });
     for (const i of advanceObjectives(this.state)) this.emit({ type: 'objective', index: i });
   }
 
@@ -2118,7 +2116,6 @@ export class Simulation {
     s.toolWear = {};
     s.toolLevels = {};
     s.gear = [];
-    s.known = [];
     s.skills = createSkills();
     s.forage = [];
     s.stats = { gathered: {}, crafted: {}, events: {}, kills: {} };
@@ -2227,10 +2224,10 @@ export class Simulation {
     this.worldVersion++;
   }
 
-  currentObjective(): { title: string; hint: string; progress: string | null } | null {
+  currentObjective(): { title: string; hint: string; needs: ObjectiveNeed[] } | null {
     const o = OBJECTIVES[this.state.objective];
     if (!o) return null;
-    return { title: o.title, hint: o.hint, progress: o.progress ? o.progress(this.state) : null };
+    return { title: o.title, hint: o.hint, needs: o.needs(this.state) };
   }
 
   capacity(): number {

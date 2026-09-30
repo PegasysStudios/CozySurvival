@@ -168,7 +168,6 @@ export interface GameState {
   /** Upgrade level 0..3 per tool (missing means 0). Kept when a tool breaks, so its replacement has the same fittings. */
   toolLevels: Partial<Record<ToolId, number>>;
   gear: GearId[];
-  known: string[];
   /** Experience per skill; levels derive from it. */
   skills: Record<SkillId, number>;
   /** Foraging guide entries unlocked by harvesting each plant at least once. */

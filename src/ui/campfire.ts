@@ -23,9 +23,8 @@ export interface CampfireMenu {
   full: boolean;
   status: string;
   fuelOptions: FuelOption[];
-  /** Known campfire recipes, ready-to-cook first. */
+  /** Every campfire recipe, in recipe-book order. */
   recipes: Recipe[];
-  undiscovered: number;
   canSleep: boolean;
   sleepLabel: string;
   sleepNote: string;
@@ -43,9 +42,7 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
     const have = countItem(s.inventory, item);
     return { item, hours: item === 'log' ? f.logFuelHours : f.stickFuelHours, have, enabled: have > 0 && !full };
   });
-  const cooking = RECIPES.filter(isCampfireRecipe);
-  const known = cooking.filter((r) => s.known.includes(r.id));
-  const recipes = [...known].sort((a, b) => Number(sim.canCraft(b.id).ok) - Number(sim.canCraft(a.id).ok));
+  const recipes = RECIPES.filter(isCampfireRecipe);
   const canSleep = canSleepAt(sim.hour);
   return {
     fuel: fire.fuel,
@@ -56,7 +53,6 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
     status: fire.fuel > 0 ? `Burning · about ${fire.fuel.toFixed(1)} h of fuel left` : 'The fire is out',
     fuelOptions,
     recipes,
-    undiscovered: cooking.length - known.length,
     canSleep,
     sleepLabel: canSleep ? 'Sleep by the fire' : 'Sleep (after 7 PM)',
     sleepNote: fire.fuel > 0
