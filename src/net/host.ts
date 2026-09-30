@@ -1,3 +1,4 @@
+import { TOOL_ORDER } from '../data/items';
 import { canSleepAt } from '../sim/time';
 import type { Simulation, RemotePlayer } from '../sim/simulation';
 import { MAX_PLAYERS, PROTOCOL_VERSION, randomId, roomChannel, uplinkChannel } from './config';
@@ -134,7 +135,8 @@ export class HostSession extends Session {
     if (Number.isInteger(m.q)) link.q = Math.max(link.q, m.q!);
     for (const r of Array.isArray(m.r) ? m.r : []) {
       if (r.k === 'hit' && Number.isFinite(r.dmg) && Number.isFinite(r.id)) {
-        this.sim.applyRemoteHit(link.pid, r.id, Math.min(MAX_HIT, Math.max(0, r.dmg)), peer?.x ?? 0, peer?.z ?? 0);
+        const tool = Number.isInteger(r.t) ? (TOOL_ORDER[r.t!] ?? null) : null;
+        this.sim.applyRemoteHit(link.pid, r.id, Math.min(MAX_HIT, Math.max(0, r.dmg)), peer?.x ?? 0, peer?.z ?? 0, tool);
       } else if (r.k === 'sleep') {
         this.sleeping.add(link.pid);
         this.checkSleep();
@@ -215,7 +217,7 @@ export class HostSession extends Session {
       a,
       d,
       ack,
-      k: kills.map((k) => [k.pid, k.species]),
+      k: kills.map((k) => [k.pid, k.species, k.tool ? TOOL_ORDER.indexOf(k.tool) : -1]),
       hit: hits.map((h) => [h.pid, h.amount, h.source, Math.round(h.fromX * 100) / 100, Math.round(h.fromZ * 100) / 100]),
       zz: [...this.sleeping],
     };

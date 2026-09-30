@@ -104,6 +104,9 @@ export class EntityView {
         this.group.add(group);
         v = { id: st.id, prefab: st.prefab, group, flames, x: st.x, y: st.y, z: st.z };
         this.structures.set(st.id, v);
+      } else if (v.prefab !== st.prefab) {
+        (v.group.children[0] as THREE.Mesh).geometry = this.structureGeo(st.prefab);
+        v.prefab = st.prefab;
       }
       if (v.flames) v.flames.visible = st.fuel > 0;
     }

@@ -91,6 +91,91 @@ export function leanToGeometry(): THREE.BufferGeometry {
   return b.build();
 }
 
+/** A ridge pole on two crossed pairs of poles, fir-bough thatch down both sides; open at the front (local +Z). */
+export function aFrameGeometry(): THREE.BufferGeometry {
+  const rng = new Rng(81);
+  const b = new GeoBuilder(81);
+  const ridgeY = 2.05;
+  for (const z of [1.15, -1.15]) {
+    for (const s of [-1, 1]) logPiece(b, s * 1.45, 0, z, -s * 0.18, ridgeY + 0.2, z, 0.065);
+  }
+  logPiece(b, 0, ridgeY, 1.35, 0, ridgeY, -1.35, 0.075, WOOD_LIGHT);
+  for (const s of [-1, 1]) {
+    for (let i = 0; i < 6; i++) {
+      const z = 1.0 - (i / 5) * 2.0 + rng.range(-0.05, 0.05);
+      logPiece(b, s * 0.05, ridgeY, z, s * 1.5, 0.02, z + rng.range(-0.08, 0.08), 0.045, i % 2 ? WOOD : '#5e3f29');
+    }
+    for (let row = 0; row < 4; row++) {
+      for (let i = 0; i < 5; i++) {
+        const t = (row + 0.5) / 4;
+        const z = -1.05 + (i / 4) * 2.1 + rng.range(-0.08, 0.08);
+        b.add(new ConeGeometry(0.4, 0.85, 6), {
+          matrix: tf(s * (0.12 + t * 1.3), ridgeY - t * 1.95 + 0.14, z, 0, 0, s * (0.95 - Math.PI / 2) + rng.range(-0.2, 0.2), 1, 1, 0.35),
+          color: (_x, _y, _z, n) => mix('#28472d', '#4c7a42', 0.4 + n.y * 0.5),
+          jitter: 0.08,
+        });
+      }
+    }
+  }
+  // branches woven across the back end
+  for (let i = 0; i < 5; i++) {
+    const y = 0.2 + i * 0.36;
+    const w = 1.35 * (1 - y / (ridgeY + 0.1));
+    logPiece(b, -w, y, -1.2, w, y + rng.range(-0.05, 0.05), -1.2, 0.035, '#5e3f29');
+  }
+  for (let i = 0; i < 7; i++) {
+    b.add(new ConeGeometry(0.33, 0.85, 5), {
+      matrix: tf(rng.range(-0.8, 0.8), 0.05, rng.range(-0.8, 0.7), Math.PI / 2, rng.range(0, 6), 0, 1, 1, 0.2),
+      color: '#5d8a44',
+      vary: 0.12,
+    });
+  }
+  return b.build();
+}
+
+/** Low stacked-log walls under a pitched roof shingled with birch bark; doorway at the front (local +Z). */
+export function barkHutGeometry(): THREE.BufferGeometry {
+  const rng = new Rng(84);
+  const b = new GeoBuilder(84);
+  const hw = 1.45;
+  const hd = 1.15;
+  const courses = 4;
+  for (let c = 0; c < courses; c++) {
+    const y = 0.12 + c * 0.22;
+    const tint = c % 2 ? WOOD : '#7a5236';
+    logPiece(b, -hw - 0.1, y, -hd, hw + 0.1, y, -hd, 0.11, tint);
+    for (const s of [-1, 1]) logPiece(b, s * hw, y + 0.11, -hd - 0.1, s * hw, y + 0.11, hd + 0.1, 0.11, tint);
+    for (const s of [-1, 1]) logPiece(b, s * (hw + 0.1), y, hd, s * 0.45, y, hd, 0.11, tint);
+  }
+  const wallTop = 0.12 + courses * 0.22;
+  for (const s of [-1, 1]) logPiece(b, s * 0.42, 0, hd + 0.05, s * 0.42, wallTop + 0.5, hd + 0.05, 0.06, WOOD_LIGHT);
+  // gables and ridge
+  const ridgeY = wallTop + 1.05;
+  for (const z of [hd + 0.12, -hd - 0.12]) {
+    for (const s of [-1, 1]) logPiece(b, s * (hw + 0.25), wallTop - 0.05, z, 0, ridgeY + 0.08, z, 0.06);
+  }
+  logPiece(b, 0, ridgeY, hd + 0.35, 0, ridgeY, -hd - 0.35, 0.07, WOOD_LIGHT);
+  // bark shingles, overlapping rows on both roof slopes
+  const slope = Math.atan2(ridgeY - wallTop, hw + 0.3);
+  for (const s of [-1, 1]) {
+    for (let row = 0; row < 4; row++) {
+      const t = (row + 0.5) / 4;
+      for (let i = 0; i < 6; i++) {
+        const z = -hd - 0.2 + (i / 5) * (2 * hd + 0.4) + rng.range(-0.04, 0.04);
+        const bark = mix('#e8dfd0', '#d8cdb8', rng.next() * 0.6);
+        b.add(new BoxGeometry(0.62, 0.05, 0.46), {
+          matrix: tf(s * (hw + 0.3) * (1 - t), wallTop + (ridgeY - wallTop) * t + 0.06, z, 0, 0, -s * slope, 1, 1, 1),
+          color: (x, _y, zz) => (Math.abs(Math.sin(x * 9 + zz * 7)) > 0.93 ? col('#3b342e') : bark),
+          vary: 0.05,
+        });
+      }
+    }
+  }
+  b.add(new BoxGeometry(0.8, 1.05, 0.04), { matrix: tf(0, wallTop / 2 + 0.05, hd - 0.12), color: '#3a2a1f' });
+  for (let i = 0; i < 6; i++) stone(b, rng, rng.range(-1.3, 1.3), 0.05, hd + 0.35 + rng.range(0, 0.2), 0.1);
+  return b.build();
+}
+
 export function hideTentGeometry(): THREE.BufferGeometry {
   const rng = new Rng(88);
   const b = new GeoBuilder(88);
@@ -140,6 +225,10 @@ export function structureGeometry(prefab: PrefabId): THREE.BufferGeometry {
       return campfireGeometry();
     case 'leanTo':
       return leanToGeometry();
+    case 'aFrame':
+      return aFrameGeometry();
+    case 'barkHut':
+      return barkHutGeometry();
     case 'hideTent':
       return hideTentGeometry();
     case 'bench':

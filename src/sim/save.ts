@@ -1,5 +1,9 @@
+import { FORAGE_GUIDE, type ForageId } from '../data/forage';
 import type { ToolId } from '../data/items';
+import { advanceObjectives, LEGACY_OBJECTIVE_COUNT, OBJECTIVES } from '../data/objectives';
+import { PREFABS } from '../data/prefabs';
 import { RESOURCES, TREES } from '../data/resources';
+import { isUpgradable, MAX_TOOL_LEVEL } from '../data/upgrades';
 import { newStructureWear, prefabWears } from './durability';
 import { createSkills, SKILL_IDS } from './skills';
 import { STATE_VERSION, type GameState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
@@ -52,6 +56,9 @@ function parseWear(v: unknown): Wear | null {
  * Version 1 saves (before skills, durability, two-step trees and swimming) are migrated: skills start at 0,
  * owned tools get fresh durability on first use, existing shelters and benches start at full condition,
  * and trees felled back then (whose wood was already collected) leave no trunk behind.
+ * Version 2 saves (before round 5) are migrated too: tools start at upgrade level 0, lean-tos and hide tents are
+ * simply the first and last shelter tiers, the Foraging guide unlocks every plant already harvested, and the
+ * onboarding position is replayed against the new track (a finished old track stays finished).
  */
 export function deserializeState(json: string | null): GameState | null {
   if (!json) return null;
@@ -63,7 +70,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) return null;
   const version = raw.version;
-  if (version !== 1 && version !== STATE_VERSION) return null;
+  if (version !== 1 && version !== 2 && version !== STATE_VERSION) return null;
   if (typeof raw.seed !== 'number' || typeof raw.totalHours !== 'number') return null;
   for (const k of REQUIRED_OBJECTS) if (!isObj(raw[k])) return null;
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
@@ -80,7 +87,7 @@ export function deserializeState(json: string | null): GameState | null {
     trees[i] = {
       hp, felled: isFelled, bark, barkAt,
       logs: isFelled ? Math.max(0, Math.min(TREES[gen.trees[i].species].logs, Math.floor(num(logs, 0)))) : 0,
-      cuts: isFelled ? Math.max(0, Math.floor(num(cuts, 0))) : 0,
+      cuts: isFelled ? Math.max(0, num(cuts, 0)) : 0,
       fall: num(fall, 0),
     };
   }
@@ -104,14 +111,31 @@ export function deserializeState(json: string | null): GameState | null {
       if (parsed) toolWear[tool as ToolId] = parsed;
     }
   }
-  const structures = (raw.structures as StructureState[]).map((st) => {
+  const toolLevels: GameState['toolLevels'] = {};
+  if (isObj(raw.toolLevels)) {
+    for (const [tool, lv] of Object.entries(raw.toolLevels)) {
+      const n = Math.floor(num(lv, 0));
+      if (isUpgradable(tool as ToolId) && n > 0) toolLevels[tool as ToolId] = Math.min(MAX_TOOL_LEVEL, n);
+    }
+  }
+  const stats = raw.stats as unknown as GameState['stats'];
+  const forageIds = new Set<string>(FORAGE_GUIDE.map((f) => f.id));
+  const forage: ForageId[] = Array.isArray(raw.forage)
+    ? (raw.forage as unknown[]).filter((f): f is ForageId => typeof f === 'string' && forageIds.has(f))
+    : FORAGE_GUIDE.filter((f) => (isObj(stats.gathered) ? num(stats.gathered[f.item], 0) : 0) > 0).map((f) => f.id);
+  const structures = (raw.structures as StructureState[]).filter((st) => isObj(st) && st.prefab in PREFABS).map((st) => {
     if (!prefabWears(st.prefab)) return st;
     const wear = version === 1 ? newStructureWear(st.prefab, 0) : parseWear(st.wear);
     return wear ? { ...st, wear } : st;
   });
   const player = { ...(raw.player as Record<string, unknown>), swimming: (raw.player as Record<string, unknown>).swimming === true };
 
-  const state = { ...raw, version: STATE_VERSION, player, skills, toolWear, structures, trees, resources } as unknown as GameState & { format?: string };
+  const state = { ...raw, version: STATE_VERSION, player, skills, toolWear, toolLevels, forage, structures, trees, resources } as unknown as GameState & { format?: string };
   delete state.format;
+  if (version < STATE_VERSION) {
+    const wasDone = num(raw.objective, 0) >= LEGACY_OBJECTIVE_COUNT;
+    state.objective = wasDone ? OBJECTIVES.length : 0;
+    if (!wasDone) advanceObjectives(state);
+  }
   return state;
 }

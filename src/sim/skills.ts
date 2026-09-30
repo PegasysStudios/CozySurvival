@@ -8,7 +8,7 @@ export const SKILL_IDS: SkillId[] = ['gathering', 'hunting', 'cooking', 'craftin
 export const MAX_SKILL_LEVEL = K.thresholds.length + 1;
 
 export const SKILL_INFO: Record<SkillId, { name: string; how: string }> = {
-  gathering: { name: 'Gathering', how: 'Forage plants, sticks and stones, peel bark and cut up logs.' },
+  gathering: { name: 'Gathering', how: 'Forage plants, sticks and stones, peel bark, fell trees and cut up logs.' },
   hunting: { name: 'Hunting', how: 'Hit and bring down animals, then butcher them.' },
   cooking: { name: 'Cooking', how: 'Cook at a campfire.' },
   crafting: { name: 'Crafting', how: 'Craft tools, gear and materials, and build structures.' },
@@ -42,26 +42,33 @@ export function skillFactor(xp: number): number {
 const curve = (range: readonly number[], xp: number) => lerp(range[0], range[1], skillFactor(xp));
 
 export const gatherBonusChance = (xp: number) => curve(K.gatherBonusChance, xp);
-export const huntDamageMultiplier = (xp: number) => 1 + curve(K.huntDamageBonus, xp);
+/** Added to the axe's chop power (base 1), alongside the axe upgrade bonus. */
+export const chopPowerBonus = (xp: number) => curve(K.chopPowerBonus, xp);
+/** Added to weapon damage (base ×1), alongside the spear or bow upgrade bonus. */
+export const huntDamageBonus = (xp: number) => curve(K.huntDamageBonus, xp);
+export const huntDamageMultiplier = (xp: number) => 1 + huntDamageBonus(xp);
 export const butcherBonusChance = (xp: number) => curve(K.butcherBonusChance, xp);
 export const burnChance = (xp: number) => curve(K.burnChance, xp);
 export const durabilityMultiplier = (xp: number) => curve(K.durabilityMultiplier, xp);
-export const catchChance = (xp: number) => curve(K.catchChance, xp);
+/** Added to the base catch chance, alongside the fishing pole upgrade bonus. */
+export const catchBonus = (xp: number) => curve(K.catchBonus, xp);
+/** Chance to land a hooked fish with an unupgraded pole. */
+export const catchChance = (xp: number) => Math.min(K.maxCatchChance, K.baseCatchChance + catchBonus(xp));
 
 /** One-line description of what the current level does, for the UI. */
 export function skillEffect(id: SkillId, xp: number): string {
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   switch (id) {
     case 'gathering':
-      return `${pct(gatherBonusChance(xp))} chance of a bonus find`;
+      return `${pct(gatherBonusChance(xp))} chance of a bonus find · +${pct(chopPowerBonus(xp))} chop power`;
     case 'hunting':
-      return `+${pct(huntDamageMultiplier(xp) - 1)} damage to animals · ${pct(butcherBonusChance(xp))} chance of extra meat`;
+      return `+${pct(huntDamageBonus(xp))} weapon damage · ${pct(butcherBonusChance(xp))} chance of extra meat`;
     case 'cooking':
       return `${pct(burnChance(xp))} chance to char a meal`;
     case 'crafting':
       return `Crafted tools and shelters last ×${durabilityMultiplier(xp).toFixed(1)}`;
     case 'fishing':
-      return `${pct(catchChance(xp))} chance to land a hooked fish`;
+      return `+${pct(catchBonus(xp))} catch chance (${pct(catchChance(xp))} with a plain pole)`;
   }
 }
 

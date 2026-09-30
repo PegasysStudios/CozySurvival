@@ -98,3 +98,23 @@ export function checkPlacement(env: PlacementEnv, prefab: PrefabId, x: number, z
   if (found) return fail(found);
   return { valid: true, reason: null, y: sum / (samples.length / 2) };
 }
+
+/**
+ * Room for shelter `selfId` to be rebuilt in place as `prefab`: its bigger footprint must stay off water and clear of
+ * the player and everything but itself. Returns what's in the way, or null. (It already stands there, so the reach
+ * and slope checks of fresh placement don't apply.)
+ */
+export function checkUpgradeRoom(env: PlacementEnv, prefab: PrefabId, x: number, z: number, rot: number, selfId: number): PlacementReason | null {
+  const shape = footprintShape(prefab, x, z, rot);
+  footprintSamples(shape, samples);
+  for (let i = 0; i < samples.length; i += 2) {
+    if (env.terrain.heightAt(samples[i], samples[i + 1]) < WATER_LEVEL + 0.15) return 'water';
+  }
+  if (overlaps(shape, circle(env.playerX, env.playerZ, BALANCE.player.radius + 0.05))) return 'player';
+  env.query(x, z, boundingRadius(shape) + 3, nearby);
+  for (const c of nearby) {
+    if (!c.footprint || env.ignore?.(c) || (c.kind === 'structure' && c.ref === selfId)) continue;
+    if (overlaps(shape, c.footprint)) return c.kind;
+  }
+  return null;
+}

@@ -1,4 +1,5 @@
 import { damp } from '../core/math';
+import { TOOL_ORDER } from '../data/items';
 import { SPECIES } from '../data/species';
 import { Simulation } from '../sim/simulation';
 import type { AnimalState } from '../sim/state';
@@ -103,7 +104,7 @@ export class GuestSession extends Session {
     const old = this.sim?.state;
     if (old) {
       // Keep this player's own character across a resync; only the world is replaced.
-      for (const k of ['player', 'needs', 'inventory', 'tools', 'activeTool', 'toolWear', 'gear', 'known', 'skills', 'stats', 'objective', 'dead', 'deathCause', 'lastDamage', 'nextId', 'runId'] as const) {
+      for (const k of ['player', 'needs', 'inventory', 'tools', 'activeTool', 'toolWear', 'toolLevels', 'gear', 'known', 'skills', 'forage', 'stats', 'objective', 'dead', 'deathCause', 'lastDamage', 'nextId', 'runId'] as const) {
         (state as unknown as Record<string, unknown>)[k] = old[k];
       }
       state.animals = old.animals;
@@ -216,7 +217,7 @@ export class GuestSession extends Session {
     for (const pid of t.zz ?? []) this.sleeping.add(pid);
     for (const peer of this.peers.values()) if (peerAsleep(peer)) this.sleeping.add(peer.pid);
     this.syncAnimals(t.a ?? []);
-    for (const [pid, species] of t.k ?? []) if (pid === this.pid && SPECIES[species]) sim.creditKill(species);
+    for (const [pid, species, tool] of t.k ?? []) if (pid === this.pid && SPECIES[species]) sim.creditKill(species, TOOL_ORDER[tool ?? -1] ?? null);
     for (const [pid, amount, source, fx, fz] of t.hit ?? []) if (pid === this.pid) sim.hurtPlayer(amount, source, fx, fz);
   }
 

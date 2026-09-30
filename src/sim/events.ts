@@ -1,3 +1,4 @@
+import type { ForageId } from '../data/forage';
 import type { ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
@@ -26,6 +27,12 @@ export type SimEvent =
   | { type: 'filled'; count: number }
   | { type: 'fuelAdded'; structure: number; item: ItemId }
   | { type: 'openCooking'; structure: number }
+  /** A shelter was clicked: open its structure menu (sleep, upgrade). */
+  | { type: 'openStructure'; structure: number }
+  /** A tool reached upgrade `level`, or a shelter was rebuilt as its next tier. */
+  | { type: 'upgraded'; tool: ToolId; level: number }
+  | { type: 'upgraded'; structure: number; from: PrefabId; prefab: PrefabId }
+  | { type: 'forageUnlocked'; id: ForageId }
   | { type: 'sat' }
   | { type: 'hurt'; amount: number; source: DamageSource; fromX: number; fromZ: number }
   | { type: 'death'; cause: DamageSource }

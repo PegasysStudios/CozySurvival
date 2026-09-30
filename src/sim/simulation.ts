@@ -3,21 +3,24 @@ import { clamp, damp, lerp } from '../core/math';
 import { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
-import { OBJECTIVES, advanceObjectives } from '../data/objectives';
+import { forageForResource, FORAGE_BY_ID, type ForageId } from '../data/forage';
+import { OBJECTIVES, advanceObjectives, killKey } from '../data/objectives';
 import { PLACE_MAX_DIST, PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPE_BY_ID } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
+import { LEVEL_NUMERALS, nextShelter, SHELTER_UPGRADES, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, predatorTargets, type SpeciesId } from '../data/species';
 import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, canteenRoom, checkUnlocks, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearResult } from './durability';
 import type { SimEvent } from './events';
-import { addItem, countItem, createInventory, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
+import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, type MoveEnv } from './movement';
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
-import { checkPlacement, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
-import { addSkillXp, burnChance, butcherBonusChance, catchChance, createSkills, gatherBonusChance, huntDamageMultiplier, SKILL_INFO } from './skills';
+import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
+import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
+import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, WATER_LEVEL, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
@@ -76,6 +79,7 @@ export interface Projectile {
   vz: number;
   damage: number;
   life: number;
+  tool: ToolId;
 }
 
 export type FishingPhase = 'charging' | 'flying' | 'waiting' | 'bite';
@@ -112,7 +116,7 @@ export interface RemotePlayer {
 
 /** Requests a guest's simulation leaves for its network session. */
 export type NetRequest =
-  | { k: 'hit'; id: number; dmg: number }
+  | { k: 'hit'; id: number; dmg: number; t?: number }
   | { k: 'sleep'; structure: number }
   | { k: 'wake' };
 
@@ -129,12 +133,51 @@ function makeRunId(): string {
   return Date.now().toString(36) + Math.floor(Math.random() * 0xffffff).toString(36) + runCounter.toString(36);
 }
 
-/** A new player at the world spawn, facing the lake. */
+/** New players start at most this far from the nearest shore. */
+export const SPAWN_SHORE_DIST = 14;
+const SPAWN_MAX_NUDGE = 12;
+
+/** The nearest lake or pond shore seen from (x, z): distance and direction, found by marching rays outward. */
+export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 120): { dist: number; dx: number; dz: number } | null {
+  let best: { dist: number; dx: number; dz: number } | null = null;
+  for (let a = 0; a < 180; a++) {
+    const ang = (a / 180) * Math.PI * 2;
+    const dx = Math.cos(ang);
+    const dz = Math.sin(ang);
+    const limit = best ? best.dist : maxDist;
+    for (let r = 0.5; r < limit; r += 0.5) {
+      if (terrain.heightAt(x + dx * r, z + dz * r) < WATER_LEVEL) {
+        best = { dist: r, dx, dz };
+        break;
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * A new player near the world spawn, facing the water. If the nearest shore is more than a short walk away, the
+ * start point slides toward it (never more than `SPAWN_MAX_NUDGE`, so the starter patch stays close).
+ */
 function spawnPlayer(terrain: Terrain): PlayerState {
-  const lake = terrain.lakes[0];
-  const sx = terrain.spawn.x;
-  const sz = terrain.spawn.z;
-  return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-(lake.x - sx), -(lake.z - sz)));
+  let sx = terrain.spawn.x;
+  let sz = terrain.spawn.z;
+  const shore = nearestShore(terrain, sx, sz);
+  if (!shore) {
+    const lake = terrain.lakes[0];
+    return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-(lake.x - sx), -(lake.z - sz)));
+  }
+  const nudge = clamp(shore.dist - SPAWN_SHORE_DIST, 0, SPAWN_MAX_NUDGE);
+  for (let d = nudge; d > 0; d -= 1) {
+    const x = sx + shore.dx * d;
+    const z = sz + shore.dz * d;
+    if (terrain.heightAt(x, z) > WATER_LEVEL + 0.8 && terrain.slopeAt(x, z) < 0.5) {
+      sx = x;
+      sz = z;
+      break;
+    }
+  }
+  return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-shore.dx, -shore.dz));
 }
 
 export function createNewState(seed: number): GameState {
@@ -154,9 +197,11 @@ export function createNewState(seed: number): GameState {
     tools: ['hands'],
     activeTool: 'hands',
     toolWear: {},
+    toolLevels: {},
     gear: [],
     known: [],
     skills: createSkills(),
+    forage: [],
     stats: { gathered: {}, crafted: {}, events: {}, kills: {} },
     objective: 0,
     trees: gen.trees.map((t) => freshTree(t.species)),
@@ -218,7 +263,7 @@ export class Simulation {
   /** Host only: predator hits on remote players, for the session to forward. */
   readonly remoteHits: { pid: string; amount: number; source: DamageSource; fromX: number; fromZ: number }[] = [];
   /** Host only: animals a remote player's hit killed, so the session can credit them. */
-  readonly remoteKills: { pid: string; species: SpeciesId }[] = [];
+  readonly remoteKills: { pid: string; species: SpeciesId; tool: ToolId | null }[] = [];
   /** Guest only: requests for the host. */
   readonly netOut: NetRequest[] = [];
   /** Multiplayer: the shelter this player sleeps in while waiting for everyone else. */
@@ -548,7 +593,7 @@ export class Simulation {
     }
     const shelter = this.nearestStructure((id) => !!PREFABS[id].shelter, N.shelterWarmRadius);
     if (shelter) target += PREFABS[shelter.prefab].shelter!.warmthBonus;
-    if (this.state.activeTool === 'torch') target += w.torchBonus;
+    if (this.state.activeTool === 'torch') target += torchWarmth(this.state);
     if (p.wading) {
       target -= w.wadingPenalty;
       rate *= 2;
@@ -702,10 +747,7 @@ export class Simulation {
         const def = PREFABS[st.prefab];
         if (def.fire) return st.fuel > 0 ? { name: 'Campfire', action: 'Cook & add fuel', enabled: true } : { name: 'Campfire (out)', action: 'Add fuel to relight', enabled: true };
         const name = st.wear ? `${def.name} · ${conditionText(st.wear)}` : def.name;
-        if (def.shelter) {
-          const ok = canSleepAt(this.hour);
-          return { name, action: ok ? 'Sleep until dawn' : 'Sleep (after 7 PM)', enabled: ok };
-        }
+        if (def.shelter) return { name, action: canSleepAt(this.hour) ? 'Sleep or upgrade' : 'Upgrade (sleep after 7 PM)', enabled: true };
         if (def.seat) return { name, action: 'Sit and rest', enabled: true };
         return { name: def.name, action: '', enabled: false };
       }
@@ -883,7 +925,7 @@ export class Simulation {
     const xp = BALANCE.skills.xp;
     spendEnergy(s.needs, BALANCE.needs.energy.hookCost);
     this.emit({ type: 'swing', tool: 'rod', hit: true });
-    if (this.rng.chance(catchChance(s.skills.fishing))) {
+    if (this.rng.chance(landChance(s))) {
       s.stats.events.fishCaught = (s.stats.events.fishCaught ?? 0) + 1;
       const added = this.give('rawFish', 1, f.x, WATER_LEVEL + 0.2, f.z, 'fishing');
       if (added === 0) this.dropAt('rawFish', 1, s.player.x, s.player.z);
@@ -980,7 +1022,7 @@ export class Simulation {
     if (s.activeTool === 'axe') {
       this.actionCooldown = BALANCE.combat.axe.cooldown;
       spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
-      dyn.hp -= 1;
+      dyn.hp = Math.max(0, round3(dyn.hp - chopPower(s)));
       this.emit({ type: 'swing', tool: 'axe', hit: true });
       this.emit({ type: 'chop', tree: index, x: g.x, y: gy + 1.2, z: g.z });
       if (dyn.hp <= 0) this.fellTree(index);
@@ -992,6 +1034,7 @@ export class Simulation {
       if (dyn.bark <= 0) return;
       const added = this.give('bark', 1, g.x, gy + 1.1, g.z, 'bark');
       if (added > 0) {
+        this.discoverForage('birch');
         dyn.bark -= 1;
         if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
         spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
@@ -1028,7 +1071,10 @@ export class Simulation {
     this.worldVersion++;
   }
 
-  /** One axe hit on a fallen trunk. Every `cutsPerLog` hits frees a log; the last log also yields the branches as sticks. */
+  /**
+   * One axe swing on a fallen trunk adds the axe's chop power in cuts. Every `cutsPerLog` cuts frees a log (a strong
+   * swing can free more than one); the last log also yields the branches as sticks.
+   */
   private chopTrunk(index: number): void {
     const s = this.state;
     const g = this.gen.trees[index];
@@ -1050,15 +1096,17 @@ export class Simulation {
     const hy = this.terrain.heightAt(hx, hz) + span.r * 1.4;
     this.emit({ type: 'swing', tool: 'axe', hit: true });
     this.emit({ type: 'chop', tree: index, x: hx, y: hy, z: hz, trunk: true });
-    dyn.cuts += 1;
-    if (dyn.cuts >= BALANCE.trees.cutsPerLog) {
-      dyn.cuts = 0;
+    dyn.cuts = round3(dyn.cuts + chopPower(s));
+    const cpl = BALANCE.trees.cutsPerLog;
+    while (dyn.cuts >= cpl && dyn.logs > 0) {
+      dyn.cuts = round3(dyn.cuts - cpl);
       dyn.logs -= 1;
       const cx = span.x0 + span.dx * Math.min(0.6, span.len / 2);
       const cz = span.z0 + span.dz * Math.min(0.6, span.len / 2);
       const cy = this.terrain.heightAt(cx, cz) + span.r;
       this.dropAt('log', 1 - this.give('log', 1, cx, cy, cz, 'tree'), cx, cz);
       if (dyn.logs <= 0) {
+        dyn.cuts = 0;
         this.dropAt('stick', def.sticks - this.give('stick', def.sticks, span.x1, cy, span.z1, 'tree'), span.x1, span.z1);
         this.message(`The ${def.name.toLowerCase()} is all cut up.`, 'good');
       }
@@ -1084,6 +1132,8 @@ export class Simulation {
     }
     dyn.charges -= 1;
     if (dyn.charges <= 0) dyn.respawnAt = s.totalHours + def.respawnHours;
+    const plant = forageForResource(g.kind);
+    if (plant) this.discoverForage(plant);
     if (added < def.yield) this.dropAt(def.item, def.yield - added, g.x + 0.4, g.z + 0.4);
     else if (this.roll(gatherBonusChance(s.skills.gathering)) && roomFor(s.inventory, def.item) > 0) {
       this.give(def.item, 1, g.x, gy + def.hitHeight, g.z, g.kind);
@@ -1092,6 +1142,15 @@ export class Simulation {
     this.emit({ type: 'swing', tool: 'hands', hit: true });
     this.gainXp('gathering', BALANCE.skills.xp.gather);
     this.worldVersion++;
+  }
+
+  /** Unlock a plant's Foraging guide entry the first time it's harvested. */
+  private discoverForage(id: ForageId): void {
+    const s = this.state;
+    if (s.forage.includes(id)) return;
+    s.forage.push(id);
+    this.emit({ type: 'forageUnlocked', id });
+    this.message(`New Foraging guide entry: ${FORAGE_BY_ID[id].name}. Open it from your pack (Tab).`, 'good');
   }
 
   /** Chance roll that leaves the RNG untouched when the chance is zero, so level-1 play stays on the same random sequence. */
@@ -1169,7 +1228,7 @@ export class Simulation {
       for (const tool of [...s.tools]) {
         if (!toolWears(tool)) continue;
         let amount = D.tools[tool].perHour * hours;
-        if (tool === 'torch' && awake && s.activeTool === 'torch') amount += D.tools.torch.burnPerHour * hours;
+        if (tool === 'torch' && awake && s.activeTool === 'torch') amount += D.tools.torch.burnPerHour * torchBurnMultiplier(s) * hours;
         this.wearTool(tool, amount);
       }
     }
@@ -1239,7 +1298,7 @@ export class Simulation {
       if (st.fuel <= 0) this.addFuel(id);
       else this.emit({ type: 'openCooking', structure: id });
     } else if (def.shelter) {
-      this.trySleep(id);
+      this.emit({ type: 'openStructure', structure: id });
     } else if (def.seat) {
       this.state.player.sitting = true;
       this.state.player.vx = 0;
@@ -1290,38 +1349,47 @@ export class Simulation {
     }
     this.emit({ type: 'swing', tool: s.activeTool, hit: true });
     const tool = s.activeTool;
-    this.hitAnimal(a, stats.damage);
+    this.hitAnimal(a, stats.damage, tool);
     this.wearTool(tool, 1);
   }
 
-  /** The player's hit on an animal; the hunting skill adds damage. */
-  hitAnimal(a: AnimalState, damage: number): void {
+  /** The player's hit on an animal with `tool`: the hunting skill and the weapon's upgrades add damage. */
+  hitAnimal(a: AnimalState, damage: number, tool: ToolId = this.state.activeTool): void {
+    const dmg = damage * weaponDamageMultiplier(this.state, tool);
     if (this.authority === 'guest') {
       // The host owns the animals: it applies the hit and reports any kill back.
-      const dmg = damage * huntDamageMultiplier(this.state.skills.hunting);
       a.hurt = 0.35;
-      this.netOut.push({ k: 'hit', id: a.id, dmg });
+      this.netOut.push({ k: 'hit', id: a.id, dmg, t: TOOL_ORDER.indexOf(tool) });
       this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + SPECIES[a.species].hitHeight, z: a.z, killed: false });
       this.gainXp('hunting', BALANCE.skills.xp.hit);
       return;
     }
-    const killed = damageAnimal(a, damage * huntDamageMultiplier(this.state.skills.hunting), this.animalEnv);
+    const killed = damageAnimal(a, dmg, this.animalEnv);
     const def = SPECIES[a.species];
     this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + def.hitHeight, z: a.z, killed });
     this.gainXp('hunting', BALANCE.skills.xp.hit);
-    if (killed) this.killAnimal(a);
+    if (killed) this.killAnimal(a, null, tool);
+  }
+
+  /** Count a kill made with `tool` (the spear and bow onboarding steps look for these). */
+  private recordKill(species: SpeciesId, tool: ToolId | null): void {
+    const s = this.state;
+    s.stats.kills[species] = (s.stats.kills[species] ?? 0) + 1;
+    if (tool) {
+      for (const k of [killKey(tool), killKey(tool, species)]) s.stats.events[k] = (s.stats.events[k] ?? 0) + 1;
+    }
   }
 
   /** `by` is the remote player whose hit killed it (host only); they get the credit and any fish. */
-  private killAnimal(a: AnimalState, by: string | null = null): void {
+  private killAnimal(a: AnimalState, by: string | null = null, tool: ToolId | null = null): void {
     const s = this.state;
     const i = s.animals.indexOf(a);
     if (i >= 0) s.animals.splice(i, 1);
     if (by === null) {
-      s.stats.kills[a.species] = (s.stats.kills[a.species] ?? 0) + 1;
+      this.recordKill(a.species, tool);
       this.gainXp('hunting', BALANCE.skills.xp.kill);
     } else {
-      this.remoteKills.push({ pid: by, species: a.species });
+      this.remoteKills.push({ pid: by, species: a.species, tool });
     }
     const def = SPECIES[a.species];
     const remaining = def.drops.map((d) => ({ item: d.item, count: d.count }));
@@ -1347,12 +1415,12 @@ export class Simulation {
     const b = BALANCE.combat.bow;
     const p = s.player;
     const d = lookDir(p.yaw, p.pitch, this.look);
-    const speed = lerp(b.minSpeed, b.maxSpeed, power);
+    const speed = lerp(b.minSpeed, b.maxSpeed, power) * arrowSpeedMultiplier(s);
     const ey = p.y + BALANCE.player.eyeHeight - 0.08;
     this.projectiles.push({
       x: p.x + d.x * 0.4, y: ey + d.y * 0.4, z: p.z + d.z * 0.4,
       vx: d.x * speed, vy: d.y * speed, vz: d.z * speed,
-      damage: lerp(b.minDamage, b.maxDamage, power), life: 5,
+      damage: lerp(b.minDamage, b.maxDamage, power), life: 5, tool: 'bow',
     });
     this.actionCooldown = b.cooldown;
     spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
@@ -1380,7 +1448,7 @@ export class Simulation {
           const t = raySphere(pr.x, pr.y, pr.z, dx, dy, dz, a.x, a.y + def.hitHeight, a.z, def.hitRadius);
           if (t >= 0 && t <= len) {
             this.emit({ type: 'arrowHit', x: pr.x + dx * t, y: pr.y + dy * t, z: pr.z + dz * t, target: 'animal' });
-            this.hitAnimal(a, pr.damage);
+            this.hitAnimal(a, pr.damage, pr.tool);
             done = true;
             break;
           }
@@ -1819,16 +1887,22 @@ export class Simulation {
     const wasOut = st.fuel <= 0;
     st.fuel = Math.min(f.maxFuelHours, st.fuel + (item === 'log' ? f.logFuelHours : f.stickFuelHours));
     if (wasOut) this.refreshLitFires();
+    s.stats.events.fuelAdded = (s.stats.events.fuelAdded ?? 0) + 1;
     this.worldVersion++;
     this.emit({ type: 'fuelAdded', structure: st.id, item });
+    this.progress();
     return true;
   }
 
-  /** Sleep in a shelter: skips to the next dawn, fully restores energy. */
+  /**
+   * Sleep in a shelter or beside a campfire: skips to the next dawn, fully restores energy. A campfire gives no
+   * shelter bonus, and the usual cold rules decide your warmth (a burning fire in range means no loss).
+   */
   trySleep(structureId: number): boolean {
     const s = this.state;
     const st = s.structures.find((x) => x.id === structureId);
-    if (!st || !PREFABS[st.prefab].shelter) return false;
+    const rest = st ? restBonus(st.prefab) : null;
+    if (!st || !rest) return false;
     if (!canSleepAt(this.hour)) {
       this.emit({ type: 'sleepDenied', reason: 'You can only sleep after 7 PM.' });
       return false;
@@ -1860,7 +1934,7 @@ export class Simulation {
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
-    applySleep(s.needs, PREFABS[st.prefab].shelter!, byFire);
+    applySleep(s.needs, rest, byFire);
     this.updateWear(elapsed, false);
     if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     p.sitting = false;
@@ -1885,6 +1959,76 @@ export class Simulation {
     this.emit({ type: 'dayStart', day: this.day });
     this.progress();
     return true;
+  }
+
+  // ------------------------------------------------------------------ upgrades
+
+  canUpgradeTool(tool: ToolId): UpgradeCheck {
+    return canUpgradeTool(this.state, tool);
+  }
+
+  /** Upgrade a tool on your belt with materials from your pack. Upgrades are personal, like the pack. */
+  upgradeTool(tool: ToolId): UpgradeCheck {
+    const s = this.state;
+    const res = applyToolUpgrade(s, tool);
+    if (!res.ok || !isUpgradable(tool)) return res;
+    const level = s.toolLevels[tool]!;
+    spendEnergy(s.needs, BALANCE.needs.energy.craftCost);
+    s.stats.events.toolUpgrades = (s.stats.events.toolUpgrades ?? 0) + 1;
+    this.emit({ type: 'upgraded', tool, level });
+    this.message(`${TOOLS[tool].name} upgraded to ${LEVEL_NUMERALS[level]}: ${TOOL_UPGRADES[tool][level - 1].name}.`, 'good');
+    this.gainXp('crafting', BALANCE.skills.xp.craft);
+    this.progress();
+    return res;
+  }
+
+  /** Whether shelter `id` can be upgraded in place into its next tier right now. */
+  canUpgradeShelter(id: number): UpgradeCheck {
+    const fail = (reason: UpgradeCheck['reason']): UpgradeCheck => ({ ok: false, reason });
+    const st = this.state.structures.find((x) => x.id === id);
+    if (!st) return fail('gone');
+    if (!PREFABS[st.prefab].shelter) return fail('fixed');
+    const next = nextShelter(st.prefab);
+    if (!next) return fail('maxed');
+    if (!hasAll(this.state.inventory, SHELTER_UPGRADES[next]!)) return fail('missing');
+    if (checkUpgradeRoom(this.placementEnv(), next, st.x, st.z, st.rot, st.id)) return fail('blocked');
+    return { ok: true, reason: null };
+  }
+
+  /** Why an upgrade into the next tier has no room (null when it fits), for the structure menu. */
+  upgradeBlocker(id: number): PlacementReason | null {
+    const st = this.state.structures.find((x) => x.id === id);
+    const next = st ? nextShelter(st.prefab) : null;
+    return st && next ? checkUpgradeRoom(this.placementEnv(), next, st.x, st.z, st.rot, st.id) : null;
+  }
+
+  /** Rebuild shelter `id` in place as its next tier: new shape, fresh condition, better sleep. */
+  upgradeShelter(id: number): UpgradeCheck {
+    const check = this.canUpgradeShelter(id);
+    if (!check.ok) return check;
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === id)!;
+    const from = st.prefab;
+    const next = nextShelter(from)!;
+    removeAll(s.inventory, SHELTER_UPGRADES[next]!);
+    st.prefab = next;
+    if (prefabWears(next)) st.wear = newStructureWear(next, s.skills.crafting);
+    this.reshapeStructure(st);
+    s.stats.crafted[next] = (s.stats.crafted[next] ?? 0) + 1;
+    s.stats.events.shelterUpgrades = (s.stats.events.shelterUpgrades ?? 0) + 1;
+    spendEnergy(s.needs, BALANCE.needs.energy.buildCost);
+    this.emit({ type: 'upgraded', structure: st.id, from, prefab: next });
+    this.gainXp('crafting', BALANCE.skills.xp.build);
+    this.progress();
+    return check;
+  }
+
+  /** A structure changed prefab (an upgrade, here or from the network): swap its collider. */
+  private reshapeStructure(st: StructureState): void {
+    const c = this.structureColliders.get(st.id);
+    if (c) this.colliders.remove(c);
+    this.addStructureCollider(st);
+    this.worldVersion++;
   }
 
   // ------------------------------------------------------------------ multiplayer
@@ -1928,8 +2072,8 @@ export class Simulation {
     this.sleepingIn = null;
     const s = this.state;
     const st = s.structures.find((x) => x.id === id);
-    const shelter = st ? PREFABS[st.prefab].shelter : undefined;
-    if (shelter) applySleep(s.needs, shelter, this.sleepByFire);
+    const rest = st ? restBonus(st.prefab) : null;
+    if (rest) applySleep(s.needs, rest, this.sleepByFire);
     this.updateWear(elapsed, false, false);
     if (st && prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.wasNight = this.night;
@@ -1972,9 +2116,11 @@ export class Simulation {
     s.tools = ['hands'];
     s.activeTool = 'hands';
     s.toolWear = {};
+    s.toolLevels = {};
     s.gear = [];
     s.known = [];
     s.skills = createSkills();
+    s.forage = [];
     s.stats = { gathered: {}, crafted: {}, events: {}, kills: {} };
     s.objective = 0;
     s.dead = false;
@@ -1987,22 +2133,22 @@ export class Simulation {
     this.projectiles.length = 0;
   }
 
-  /** Guest: the host reports that this player's hit killed an animal. */
-  creditKill(species: SpeciesId): void {
+  /** Guest: the host reports that this player's hit (with `tool`, when known) killed an animal. */
+  creditKill(species: SpeciesId, tool: ToolId | null = null): void {
     const s = this.state;
-    s.stats.kills[species] = (s.stats.kills[species] ?? 0) + 1;
+    this.recordKill(species, tool);
     this.gainXp('hunting', BALANCE.skills.xp.kill);
     if (species === 'fish' && this.give('rawFish', 1, s.player.x, s.player.y + 1, s.player.z, 'carcass') > 0) this.message('Caught a trout!', 'good');
     this.progress();
   }
 
   /** Host: a remote player's hit on an animal (damage already includes their hunting skill). */
-  applyRemoteHit(pid: string, id: number, damage: number, fromX: number, fromZ: number): void {
+  applyRemoteHit(pid: string, id: number, damage: number, fromX: number, fromZ: number, tool: ToolId | null = null): void {
     const a = this.state.animals.find((x) => x.id === id);
     if (!a) return;
     this.animalEnv.playerX = fromX;
     this.animalEnv.playerZ = fromZ;
-    if (damageAnimal(a, damage, this.animalEnv)) this.killAnimal(a, pid);
+    if (damageAnimal(a, damage, this.animalEnv)) this.killAnimal(a, pid, tool);
   }
 
   /** Remote world state: replace tree `i`, keeping colliders in step. */
@@ -2029,8 +2175,11 @@ export class Simulation {
   putStructure(v: StructureState): void {
     const s = this.state;
     const st = s.structures.find((x) => x.id === v.id);
-    if (st) Object.assign(st, v);
-    else {
+    if (st) {
+      const reshaped = st.prefab !== v.prefab;
+      Object.assign(st, v);
+      if (reshaped) this.reshapeStructure(st);
+    } else {
       const copy = { ...v };
       s.structures.push(copy);
       this.addStructureCollider(copy);
@@ -2129,6 +2278,16 @@ export class Simulation {
     this.hurtPlayer(amount, 'dev', s.player.x + 1, s.player.z);
   }
 }
+
+const NO_SHELTER = { warmthBonus: 0, healthBonus: 0 };
+
+/** What sleeping at a structure gives: a shelter's bonuses, nothing extra by a campfire, null where you can't sleep. */
+function restBonus(prefab: PrefabId): { warmthBonus: number; healthBonus: number } | null {
+  const def = PREFABS[prefab];
+  return def.shelter ?? (def.fire ? NO_SHELTER : null);
+}
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
 function conditionText(w: Wear): string {
   return `${Math.max(1, Math.round(wearFraction(w) * 100))}% condition`;

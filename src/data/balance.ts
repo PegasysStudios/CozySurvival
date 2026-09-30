@@ -89,14 +89,31 @@ export const BALANCE = {
     /** Total XP needed to reach level 2, 3, ... 10. */
     thresholds: [10, 25, 45, 70, 100, 140, 190, 250, 320],
     xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5, catch: 4, slip: 1 },
-    /** Values at level 1 -> level 10 (linear in between). */
+    /**
+     * Values at level 1 -> level 10 (linear in between). Tool bonuses (`chopPowerBonus`, `huntDamageBonus`,
+     * `catchBonus`) add to the matching tool upgrade's bonus on the same base, so a maxed skill and a fully upgraded
+     * tool each carry about half of the combined effect (see `upgrades` below).
+     */
     gatherBonusChance: [0, 0.4],
-    huntDamageBonus: [0, 0.25],
+    /** Extra chop power (tree hits and trunk cuts per axe swing), from Gathering. */
+    chopPowerBonus: [0, 0.5],
+    huntDamageBonus: [0, 0.4],
     butcherBonusChance: [0, 0.5],
     burnChance: [0.2, 0],
     durabilityMultiplier: [1, 4],
-    /** Chance that a hooked fish is landed rather than slipping off. */
-    catchChance: [0.35, 0.9],
+    /** Chance that a hooked fish is landed rather than slipping off: `baseCatchChance` plus the skill and rod bonuses. */
+    baseCatchChance: 0.35,
+    catchBonus: [0, 0.35],
+    maxCatchChance: 0.95,
+  },
+  /** Bonus per tool upgrade level I, II, III (index 0..2). */
+  upgrades: {
+    axe: { chopPower: [0.2, 0.4, 0.6] },
+    spear: { damage: [0.15, 0.3, 0.45] },
+    bow: { damage: [0.15, 0.3, 0.45], arrowSpeed: [0.08, 0.16, 0.25] },
+    rod: { catch: [0.07, 0.14, 0.2] },
+    /** `burnCut`: share of the torch's burn-down rate saved; `warmth`: extra warmth target while held. */
+    torch: { burnCut: [0.2, 0.4, 0.6], warmth: [3, 6, 9] },
   },
   fishing: {
     /** Seconds of holding left-click for a full-strength cast; shorter taps than `minCharge` don't cast. */
@@ -126,6 +143,8 @@ export const BALANCE = {
     /** Shelters and benches weather `perHour` and wear `useCost` per sleep/sit. */
     structures: {
       leanTo: { max: 96, perHour: 0.5, useCost: 8 },
+      aFrame: { max: 112, perHour: 0.5, useCost: 8 },
+      barkHut: { max: 128, perHour: 0.5, useCost: 8 },
       hideTent: { max: 144, perHour: 0.5, useCost: 8 },
       bench: { max: 120, perHour: 0.5, useCost: 1 },
     },

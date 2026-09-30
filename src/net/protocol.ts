@@ -157,8 +157,8 @@ export interface TickMsg {
   d: Delta[];
   /** Last world-change sequence applied, per guest. */
   ack: Record<string, number>;
-  /** Kills credited to guests: [pid, species]. */
-  k: [string, SpeciesId][];
+  /** Kills credited to guests: [pid, species, index in TOOL_ORDER of the tool that made the kill, or -1]. */
+  k: [string, SpeciesId, number?][];
   /** Predator hits on guests: [pid, amount, source, fromX, fromZ]. */
   hit: [string, number, DamageSource, number, number][];
   /** Players currently asleep. */

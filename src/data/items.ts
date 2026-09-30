@@ -16,6 +16,7 @@ export type ItemId =
   | 'cookedMeat'
   | 'grilledTrout'
   | 'skewer'
+  | 'forageSkewer'
   | 'berryTea'
   | 'stew'
   | 'cedarTrout'
@@ -67,6 +68,7 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   cookedMeat: { id: 'cookedMeat', name: 'Roast Meat', plural: 'Roast Meat', stack: 6, color: '#9c5a36', meal: true, description: 'Charred over the fire.', food: { hunger: 24, warmth: 4, health: 4, energy: 6 } },
   grilledTrout: { id: 'grilledTrout', name: 'Grilled Trout', plural: 'Grilled Trout', stack: 6, color: '#d9a56b', meal: true, description: 'Flaky and smoky.', food: { hunger: 20, thirst: 2, warmth: 4, health: 4, energy: 6 } },
   skewer: { id: 'skewer', name: 'Mushroom Skewer', plural: 'Mushroom Skewers', stack: 6, color: '#d99a3c', meal: true, description: 'Chanterelles and wild onion, fire-roasted on a stick.', food: { hunger: 20, warmth: 5, health: 3, energy: 8 } },
+  forageSkewer: { id: 'forageSkewer', name: "Forager's Skewer", plural: "Forager's Skewers", stack: 6, color: '#e07a4a', meal: true, description: 'Salmonberries and wild onion roasted on a stick. Nothing but what the forest gives.', food: { hunger: 16, thirst: 4, warmth: 4, health: 2, energy: 6 } },
   berryTea: { id: 'berryTea', name: 'Salmonberry Tea', plural: 'Salmonberry Tea', stack: 4, color: '#e0664d', water: true, meal: true, description: 'A warm mug that tastes like summer.', food: { hunger: 4, thirst: 30, warmth: 16, health: 2, energy: 12 } },
   stew: { id: 'stew', name: 'Forest Stew', plural: 'Forest Stew', stack: 4, color: '#a86d3b', meal: true, description: 'Meat, chanterelles, and onion simmered in boiled water. Deeply cozy.', food: { hunger: 42, thirst: 16, warmth: 20, health: 12, energy: 18 } },
   cedarTrout: { id: 'cedarTrout', name: 'Bark-Baked Trout', plural: 'Bark-Baked Trout', stack: 4, color: '#c98b52', meal: true, description: 'Trout and onion baked in a birch-bark parcel.', food: { hunger: 34, thirst: 4, warmth: 8, health: 8, energy: 12 } },
