@@ -136,7 +136,7 @@ export class Terrain {
     }
     for (let i = 0; i < 40; i++) {
       const p = polar(rng.range(0, Math.PI * 2), rng.range(62, 112));
-      const r = rng.range(3, 3.8);
+      const r = rng.range(3.3, 4);
       if (!clearOf(p.x, p.z, r) && i < 39) continue;
       lakes.push({ ...p, r, depth: 1.3, phase: rng.range(0, 10), kind: 'tinaja', drinkable: true, fish: false });
       this.slickPatches.push({ x: p.x, z: p.z, r: rng.range(15, 21) });
@@ -235,7 +235,8 @@ export class Terrain {
       if (d < 1.9) {
         const floor = -lake.depth + this.detail.get(x * 0.07, z * 0.07) * 0.25;
         // Rock pools are steep-sided; the alkali pan is a wide, flat, shallow dish.
-        const edge = lake.kind === 'tinaja' ? smoothstep(0.35, 1.25, d) : lake.kind === 'alkali' ? smoothstep(0.55, 1.8, d) : smoothstep(0.3, 1.5, d);
+        // The pool's flat floor has to span a terrain cell or high slickrock blurs a tinaja into a puddle.
+        const edge = lake.kind === 'tinaja' ? smoothstep(0.55, 1.25, d) : lake.kind === 'alkali' ? smoothstep(0.55, 1.8, d) : smoothstep(0.3, 1.5, d);
         h = Math.min(h, lerp(floor, h, edge));
       }
     }
