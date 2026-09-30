@@ -18,11 +18,11 @@ import { campfireTiles, craftTiles, recipeFor, recipeIcon, recipeTile, toolTile,
 import { attachTooltip, button, el, escapeHtml } from './dom';
 import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
-import { gearIcon, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
+import { CRAFT_TAB_ICON_DIR, gearIcon, iconImg, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
 import { ingredients, packRoomNote, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type ShelterMenu } from './structure';
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
-export type CraftTab = 'all' | RecipeCategory | 'upgrades';
+export type CraftTab = RecipeCategory | 'upgrades';
 export type InventoryView = 'pack' | 'forage';
 
 export interface PanelHost {
@@ -32,7 +32,15 @@ export interface PanelHost {
   toast(text: string, tone?: 'info' | 'good' | 'warn'): void;
 }
 
-const TABS: CraftTab[] = ['all', 'tools', 'gear', 'materials', 'cooking', 'structures', 'upgrades'];
+/** The crafting menu's icon tabs, in order. There is no foraging-supplies category, so that icon goes unused. */
+export const CRAFT_TABS: { id: CraftTab; name: string; icon: string }[] = [
+  { id: 'tools', name: CATEGORY_LABELS.tools, icon: 'tools.png' },
+  { id: 'structures', name: CATEGORY_LABELS.structures, icon: 'building.png' },
+  { id: 'cooking', name: CATEGORY_LABELS.cooking, icon: 'cooking.png' },
+  { id: 'upgrades', name: 'Upgrades', icon: 'upgrades.png' },
+  { id: 'gear', name: CATEGORY_LABELS.gear, icon: 'gear.png' },
+  { id: 'materials', name: CATEGORY_LABELS.materials, icon: 'materials.png' },
+];
 
 function ingredientsHtml(list: Ingredient[]): string {
   return `<div class="ingredients">${list.map((i) => `<div class="ingredient ${i.have >= i.need ? 'ok' : 'missing'}">${itemIcon(i.item)}<span>${escapeHtml(i.name)}</span><b>${Math.min(i.have, 99)}/${i.need}</b></div>`).join('')}</div>`;
@@ -70,7 +78,7 @@ export class Panels {
   private readonly card = el('div', 'panel');
   private readonly tip = el('div', 'tile-tip');
   private readonly host: PanelHost;
-  private tab: CraftTab = 'all';
+  private tab: CraftTab = 'tools';
   private view: InventoryView = 'pack';
   /** The selected tile in the crafting, upgrades and campfire grids. */
   private selected: string | null = null;
@@ -439,25 +447,35 @@ export class Panels {
   private renderCrafting(): void {
     const sim = this.host.sim();
     const head = this.head('Crafting', this.tab === 'upgrades'
-      ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters come from upgrading the one you have.'
+      ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have.'
       : 'Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name.');
 
-    const tabs = el('div', 'tabs');
-    for (const t of TABS) {
-      const ready = t === 'upgrades'
+    const recipes = recipesFor(sim.biome);
+    const shown = CRAFT_TABS.filter((t) => t.id === 'upgrades' || recipes.some((r) => r.category === t.id));
+    if (!shown.some((t) => t.id === this.tab)) this.tab = shown[0].id;
+    const tabs = el('div', 'craft-tabs');
+    tabs.setAttribute('role', 'tablist');
+    for (const t of shown) {
+      const ready = t.id === 'upgrades'
         ? UPGRADABLE_TOOLS.filter((tool) => sim.canUpgradeTool(tool).ok).length
-        : recipesFor(sim.biome).filter((r) => (t === 'all' || r.category === t) && sim.canCraft(r.id).ok).length;
-      const label = t === 'all' ? 'All' : t === 'upgrades' ? `${MISC_ICONS.upgrade} Upgrades` : CATEGORY_LABELS[t];
-      tabs.append(button(`${label}${ready ? ` <span class="tab-badge">${ready}</span>` : ''}`, `tab ${t === 'upgrades' ? 'tab-upgrades' : ''} ${this.tab === t ? 'active' : ''}`, () => {
-        this.tab = t;
+        : recipes.filter((r) => r.category === t.id && sim.canCraft(r.id).ok).length;
+      const active = this.tab === t.id;
+      const b = button(`${iconImg(t.icon, CRAFT_TAB_ICON_DIR)}${ready ? `<span class="tab-badge">${ready}</span>` : ''}`, `craft-tab ${active ? 'active' : ''}`, () => {
+        this.tab = t.id;
         this.selected = null;
         this.host.sfx('click');
         this.render();
-      }));
+      });
+      b.dataset.tab = t.id;
+      b.dataset.tip = t.name;
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(active));
+      b.setAttribute('aria-label', t.name);
+      tabs.append(b);
     }
 
     const tiles = this.tab === 'upgrades' ? upgradeTiles(sim) : craftTiles(sim, this.tab);
-    this.card.append(head, tabs, this.gridBody(tiles));
+    this.card.append(head, this.gridBody(tiles, tabs));
   }
 
   /** The campfire's own menu: fuel meter, adding fuel, sleeping beside it, and only the recipes cooked over a fire. */
@@ -671,9 +689,9 @@ export class Panels {
 
   // ------------------------------------------------------------------ grids
 
-  /** A grid of tiles with the selected tile's materials and action beside it. */
-  private gridBody(tiles: Tile[]): HTMLElement {
-    const body = el('div', 'panel-body craft-body');
+  /** A grid of tiles with the selected tile's materials and action beside it; `tabs` go above the grid, in its column. */
+  private gridBody(tiles: Tile[], tabs?: HTMLElement): HTMLElement {
+    const body = el('div', `panel-body craft-body ${tabs ? 'craft-tabbed' : ''}`);
     const grid = el('div', 'tile-grid');
     if (!this.selected || !tiles.some((t) => t.key === this.selected)) this.selected = (tiles.find((t) => t.ready) ?? tiles[0])?.key ?? null;
     for (const t of tiles) {
@@ -692,7 +710,13 @@ export class Panels {
         : sel.kind === 'tool' ? this.toolDetail(sel.id as ToolId)
           : this.shelterDetail(sel.id as PrefabId);
     detail.classList.add('recipe-detail');
-    body.append(grid, detail);
+    if (tabs) {
+      const left = el('div', 'craft-left');
+      left.append(tabs, grid);
+      body.append(left, detail);
+    } else {
+      body.append(grid, detail);
+    }
     return body;
   }
 

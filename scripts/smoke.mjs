@@ -155,15 +155,56 @@ async function main() {
 
     await page.keyboard.press('KeyC');
     await sleep(300);
-    const panel = await page.evaluate(() => ({
-      mode: window.__cozy.game.mode,
-      shown: document.querySelector('.panel-overlay')?.classList.contains('show'),
-      recipes: document.querySelectorAll('.tile-grid .recipe').length,
-      ready: document.querySelectorAll('.recipe.ready').length,
-      greyed: document.querySelectorAll('.recipe.greyed').length,
-      jonIcons: document.querySelectorAll('.tile .icon-img').length,
-    }));
-    check('crafting panel opens as a grid with every recipe, greyed where materials are short', panel.mode === 'panel' && panel.shown && panel.recipes >= 24 && panel.ready > 0 && panel.greyed > 0 && panel.jonIcons > 0, JSON.stringify(panel));
+    const panel = await page.evaluate(() => {
+      const tabs = [...document.querySelectorAll('.craft-left > .craft-tabs > .craft-tab')];
+      const out = {
+        mode: window.__cozy.game.mode,
+        shown: document.querySelector('.panel-overlay')?.classList.contains('show'),
+        tabs: tabs.map((t) => t.dataset.tab),
+        active: [...document.querySelectorAll('.craft-tab.active')].map((t) => t.dataset.tab),
+        recipes: 0, ready: 0, greyed: 0, jonIcons: 0,
+      };
+      for (const id of out.tabs.filter((t) => t !== 'upgrades')) {
+        document.querySelector(`.craft-tab[data-tab="${id}"]`).click();
+        out.recipes += document.querySelectorAll('.tile-grid .recipe').length;
+        out.ready += document.querySelectorAll('.recipe.ready').length;
+        out.greyed += document.querySelectorAll('.recipe.greyed').length;
+        out.jonIcons += document.querySelectorAll('.tile .icon-img').length;
+      }
+      document.querySelector('.craft-tab[data-tab="tools"]').click();
+      return out;
+    });
+    check('crafting panel opens as a grid with every recipe across its tabs, greyed where materials are short', panel.mode === 'panel' && panel.shown && panel.recipes >= 26 && panel.ready > 0 && panel.greyed > 0 && panel.jonIcons > 0, JSON.stringify(panel));
+    check('crafting tabs are six icon tabs, opening on Tools', panel.tabs.join() === 'tools,structures,cooking,upgrades,gear,materials' && panel.active.join() === 'tools', JSON.stringify(panel.tabs));
+    await sleep(300);
+    const tabLayout = () =>
+      page.evaluate(() => {
+        const box = (e) => e.getBoundingClientRect();
+        const row = [...document.querySelectorAll('.craft-tab')].map(box);
+        const icons = [...document.querySelectorAll('.craft-tab img')];
+        return {
+          rowRight: Math.max(...row.map((b) => b.right)),
+          leftRight: box(document.querySelector('.craft-left')).right,
+          detailLeft: box(document.querySelector('.craft-body > .recipe-detail')).left,
+          rows: new Set(row.map((b) => Math.round(b.top))).size,
+          icon: icons.map((i) => `${i.offsetWidth}x${i.offsetHeight}`).filter((v, k, a) => a.indexOf(v) === k),
+          loaded: icons.every((i) => i.complete && i.naturalWidth > 0),
+        };
+      });
+    const wide = await tabLayout();
+    check('tab icons load, and the tab row sits in the left column clear of the detail panel', wide.loaded && wide.rows === 1 && wide.rowRight <= wide.leftRight + 0.5 && wide.rowRight < wide.detailLeft && wide.icon.join() === '40x40', JSON.stringify(wide));
+    await page.setViewport({ width: 800, height: 600 });
+    await sleep(200);
+    const narrow = await tabLayout();
+    check('in a narrow window the detail panel gives way, not the tab icons', narrow.rows === 1 && narrow.rowRight <= narrow.leftRight + 0.5 && narrow.rowRight < narrow.detailLeft && narrow.icon.join() === '40x40', JSON.stringify(narrow));
+    await page.setViewport({ width: 1280, height: 720 });
+    await sleep(200);
+    const hoverTip = await page.evaluate(() => {
+      document.querySelector('.craft-tab[data-tab="cooking"]').dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const tip = document.querySelector('.tile-tip');
+      return { text: tip.textContent, show: tip.classList.contains('show') };
+    });
+    check('hovering a tab names its category', hoverTip.text === 'Cooking' && hoverTip.show, JSON.stringify(hoverTip));
 
     const snapshot = () =>
       page.evaluate(() => {
@@ -263,7 +304,10 @@ async function main() {
     await lock();
     await page.keyboard.press('KeyC');
     await sleep(250);
-    await page.evaluate(() => [...document.querySelectorAll('.recipe')].find((r) => r.textContent.includes('Campfire'))?.click());
+    await page.evaluate(() => {
+      document.querySelector('.craft-tab[data-tab="structures"]').click();
+      [...document.querySelectorAll('.recipe')].find((r) => r.textContent.includes('Campfire'))?.click();
+    });
     await sleep(200);
     await page.click('.recipe-detail .btn.primary');
     await sleep(250);
@@ -329,6 +373,143 @@ async function main() {
       await waitFrames(3);
       const afterEsc = await page.evaluate(() => ({ mode: window.__cozy.game.mode, paused: document.querySelector('.pause-screen')?.classList.contains('show') ?? false }));
       check('Esc closes the campfire menu without pausing', afterEsc.mode === 'playing' && !afterEsc.paused, JSON.stringify(afterEsc));
+    }
+
+    // Round 8: the canteen's Drink button, the repair workbench and the storage bin, through their menus.
+    await page.evaluate(() => {
+      const sim = window.__cozy.game.sim;
+      if (!sim.state.gear.includes('canteen')) sim.state.gear.push('canteen');
+      sim.devGive('lakeWater', 3);
+      sim.state.needs.thirst = 40;
+    });
+    await lock();
+    await page.keyboard.press('Tab');
+    await sleep(250);
+    await page.evaluate(() => [...document.querySelectorAll('.inv-section .tile')].find((t) => t.querySelector('.dur.water'))?.click());
+    await sleep(150);
+    const sip = await page.evaluate(() => {
+      const s = window.__cozy.game.sim.state;
+      const before = { water: s.canteen.lakeWater, thirst: s.needs.thirst, meter: !!document.querySelector('.canteen-detail .canteen-meter') };
+      document.querySelector('.canteen-detail .btn.primary')?.click();
+      return { before, after: { water: s.canteen.lakeWater, thirst: s.needs.thirst } };
+    });
+    check('the canteen opens an info panel whose Drink button takes one serving and quenches thirst', sip.before.meter && sip.after.water === sip.before.water - 1 && sip.after.thirst > sip.before.thirst, JSON.stringify(sip));
+    await page.keyboard.press('Escape');
+    await sleep(200);
+
+    const build = (id, inputs) =>
+      page.evaluate(
+        ([prefab, give]) => {
+          const sim = window.__cozy.game.sim;
+          const s = sim.state;
+          s.inventory.slots.fill(null);
+          for (const [item, n] of Object.entries(give)) sim.devGive(item, n);
+          if (!sim.beginPlacement(prefab)) return null;
+          const p = s.player;
+          for (let r = 2.5; r < 8; r += 0.5) {
+            for (let a = 0; a < Math.PI * 2; a += Math.PI / 12) {
+              sim.setPlacementAt(p.x + Math.cos(a) * r, p.z + Math.sin(a) * r);
+              if (sim.placement?.valid && sim.confirmPlacement()) return s.structures[s.structures.length - 1].id;
+            }
+          }
+          sim.cancelPlacement();
+          return null;
+        },
+        [id, inputs],
+      );
+    const openStructure = (id) => page.evaluate((sid) => window.__cozy.game.sim.perform({ kind: 'structure', id: sid, dist: 1 }), id);
+
+    const benchId = await build('workbench', { log: 8, stick: 12, stone: 10, cordage: 4 });
+    check('the repair workbench can be built', benchId !== null);
+    if (benchId !== null) {
+      await page.evaluate(() => {
+        const sim = window.__cozy.game.sim;
+        const s = sim.state;
+        if (!s.tools.includes('axe')) s.tools.push('axe');
+        s.toolWear.axe = { dur: 2, max: Math.max(10, s.toolWear.axe?.max ?? 10) };
+        s.inventory.slots.fill(null);
+        for (const item of ['stick', 'stone', 'fiber']) sim.devGive(item, 1);
+        Object.assign(s.needs, { health: 100, hunger: 100, thirst: 100 });
+      });
+      await openStructure(benchId);
+      await waitFrames(3);
+      const menu = await page.evaluate(() => ({
+        mode: window.__cozy.game.mode,
+        rows: [...document.querySelectorAll('.panel .repair-row')].map((r) => r.dataset.tool),
+        ready: !document.querySelector('.repair-row[data-tool="axe"] .btn.primary')?.disabled,
+        table: document.querySelectorAll('.repair-table > div').length,
+      }));
+      check('the workbench menu lists carried tools with durability and a Repair button', menu.mode === 'panel' && menu.rows.includes('axe') && menu.ready && menu.table === 4, JSON.stringify(menu));
+      await page.click('.repair-row[data-tool="axe"] .btn.primary');
+      await waitFrames(3);
+      const started = await page.evaluate(() => ({
+        mode: window.__cozy.game.mode,
+        repair: !!window.__cozy.game.sim.state.repair,
+        ring: document.querySelector('.repair-ring')?.classList.contains('show') ?? false,
+        x: window.__cozy.game.sim.state.player.x,
+        z: window.__cozy.game.sim.state.player.z,
+      }));
+      check('pressing Repair closes the menu and shows the circular progress ring', started.mode === 'playing' && started.repair && started.ring, JSON.stringify(started));
+      await lock();
+      await page.keyboard.down('KeyW');
+      await sleep(600);
+      await page.keyboard.up('KeyW');
+      const held = await page.evaluate(() => ({ x: window.__cozy.game.sim.state.player.x, z: window.__cozy.game.sim.state.player.z, repair: !!window.__cozy.game.sim.state.repair }));
+      check('walking is locked while the repair runs', held.repair && Math.hypot(held.x - started.x, held.z - started.z) < 0.05, JSON.stringify({ started, held }));
+      const mended = await page.evaluate(
+        () =>
+          new Promise((resolve) => {
+            const t0 = performance.now();
+            const poll = () => {
+              const s = window.__cozy.game.sim.state;
+              if (!s.repair || performance.now() - t0 > 45000) {
+                resolve({ repair: !!s.repair, dur: s.toolWear.axe?.dur, max: s.toolWear.axe?.max, ring: document.querySelector('.repair-ring')?.classList.contains('show') ?? false });
+              } else requestAnimationFrame(poll);
+            };
+            poll();
+          }),
+      );
+      check('the repair finishes and restores full condition', !mended.repair && mended.dur > mended.max - 0.5 && !mended.ring, JSON.stringify(mended));
+    }
+
+    const binId = await build('storageBin', { stick: 24, fiber: 20, cordage: 3 });
+    check('the storage bin can be built', binId !== null);
+    if (binId !== null) {
+      await page.evaluate(() => {
+        const sim = window.__cozy.game.sim;
+        sim.state.inventory.slots.fill(null);
+        sim.devGive('stick', 5);
+      });
+      await openStructure(binId);
+      await waitFrames(3);
+      const binMenu = await page.evaluate(() => ({ mode: window.__cozy.game.mode, store: document.querySelectorAll('.store-grid .slot').length, pack: !!document.querySelector('.pack-grid .slot[data-item="stick"]') }));
+      check('the storage bin opens with ten slots beside the pack', binMenu.mode === 'panel' && binMenu.store === 10 && binMenu.pack, JSON.stringify(binMenu));
+      await page.click('.pack-grid .slot[data-item="stick"]');
+      await sleep(150);
+      const stored = await page.evaluate((id) => {
+        const s = window.__cozy.game.sim.state;
+        const st = s.structures.find((x) => x.id === id);
+        const count = (slots) => slots.reduce((n, x) => n + (x && x.item === 'stick' ? x.count : 0), 0);
+        return { bin: count(st.store), pack: count(s.inventory.slots), shown: document.querySelectorAll('.store-grid .slot[data-item="stick"]').length };
+      }, binId);
+      check('clicking a pack stack moves it into the bin', stored.bin === 5 && stored.pack === 0 && stored.shown === 1, JSON.stringify(stored));
+      await page.keyboard.press('Escape');
+      await sleep(150);
+      await page.evaluate(() => {
+        const sim = window.__cozy.game.sim;
+        for (const [item, n] of Object.entries({ log: 8, stick: 16, cordage: 6 })) sim.devGive(item, n);
+      });
+      await openStructure(binId);
+      await waitFrames(3);
+      await page.click('.storage-foot .btn.primary');
+      await sleep(150);
+      const grown = await page.evaluate((id) => {
+        const st = window.__cozy.game.sim.state.structures.find((x) => x.id === id);
+        return { prefab: st.prefab, slots: st.store.length, sticks: st.store.reduce((n, x) => n + (x && x.item === 'stick' ? x.count : 0), 0), shown: document.querySelectorAll('.store-grid .slot').length };
+      }, binId);
+      check('upgrading the bin in place grows it to fifteen slots and keeps what is inside', grown.prefab === 'storageCrate' && grown.slots === 15 && grown.sticks === 5 && grown.shown === 15, JSON.stringify(grown));
+      await page.keyboard.press('Escape');
+      await sleep(150);
     }
 
     // Save survives a reload and Continue resumes the same run.
@@ -474,7 +655,14 @@ async function main() {
     await lock();
     await page.keyboard.press('KeyC');
     await sleep(300);
-    const desertKeys = await page.evaluate(() => [...document.querySelectorAll('.tile.recipe')].map((t) => t.dataset.key));
+    const desertKeys = await page.evaluate(() => {
+      const keys = [];
+      for (const tab of document.querySelectorAll('.craft-tab')) {
+        tab.click();
+        keys.push(...[...document.querySelectorAll('.tile.recipe')].map((t) => t.dataset.key));
+      }
+      return keys;
+    });
     check(
       'desert crafting offers the desert dishes and none of the forest-only ones',
       desertKeys.includes('r:desertSkewer') && desertKeys.includes('r:chiaFresca') && desertKeys.includes('r:campfire') && !desertKeys.includes('r:skewer') && !desertKeys.includes('r:stew'),

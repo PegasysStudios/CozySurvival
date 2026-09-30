@@ -92,9 +92,11 @@ export const MISC_ICONS = {
   storageChest: svg('<path d="M4 15a12 7 0 0 1 24 0z" fill="#b58b5c"/><rect x="4" y="15" width="24" height="12" rx="1.5" fill="#8a5a33"/><path d="M10 8v19M22 8v19" stroke="#c9a06a" stroke-width="2.6"/><rect x="14" y="14" width="4" height="5" rx="1" fill="#8e9398"/>'),
 };
 
-export function iconImg(file: string): string {
-  return `<img class="icon-img" src="${import.meta.env.BASE_URL}${ICON_DIR}${file}" alt="" draggable="false">`;
+export function iconImg(file: string, dir = ICON_DIR): string {
+  return `<img class="icon-img" src="${import.meta.env.BASE_URL}${dir}${file}" alt="" draggable="false">`;
 }
+
+export const CRAFT_TAB_ICON_DIR = 'icons/crafting-tabs/';
 
 function pick(id: IconId, builtIn: string, tier = 1): string {
   const file = iconFile(id, tier);
