@@ -78,6 +78,12 @@ export const RECIPES: Recipe[] = [
     output: { kind: 'tool', tool: 'rod' },
     description: 'Hold left-click to wind up a cast, release to throw. Click the moment a fish bites.',
   },
+  {
+    id: 'knife', name: 'Stone Knife', category: 'tools',
+    inputs: [{ item: 'stone', count: 10 }, { item: 'stick', count: 5 }, { item: 'cordage', count: 3 }],
+    output: { kind: 'tool', tool: 'knife' },
+    description: 'Skin and butcher your kills. A weak weapon in a pinch.',
+  },
   // ---- gear
   {
     id: 'basket', name: 'Grass Basket', category: 'gear',

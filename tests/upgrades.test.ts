@@ -186,7 +186,7 @@ describe('shelter tiers', () => {
 
 describe('tool upgrades', () => {
   it('every tool and weapon has three levels, each much costlier than the last', () => {
-    expect(UPGRADABLE_TOOLS.sort()).toEqual(['axe', 'bow', 'rod', 'spear', 'torch']);
+    expect([...UPGRADABLE_TOOLS].sort()).toEqual(['axe', 'bow', 'knife', 'rod', 'spear', 'torch']);
     for (const t of UPGRADABLE_TOOLS) {
       const levels = TOOL_UPGRADES[t];
       expect(levels).toHaveLength(MAX_TOOL_LEVEL);

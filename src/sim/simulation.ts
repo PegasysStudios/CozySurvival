@@ -25,7 +25,8 @@ import { addToStore, cloneStore, ensureStore } from './storage';
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
-import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
+import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, skinChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
+import { carcassStep, hidesOn } from './carcass';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
@@ -839,7 +840,11 @@ export class Simulation {
       }
       case 'carcass': {
         const c = s.carcasses.find((d) => d.id === t.id);
-        return c ? { name: speciesName(c.species, this.biome), action: 'Butcher', enabled: true } : null;
+        if (!c) return null;
+        const name = `${speciesName(c.species, this.biome)}${c.skinned ? ' · skinned' : ''}`;
+        const step = carcassStep(c);
+        if (s.activeTool === 'knife') return { name, action: step === 'skin' ? 'Skin' : 'Butcher', enabled: true };
+        return { name, action: s.tools.includes('knife') ? `Equip knife [${TOOLS.knife.slot}] to ${step}` : 'Needs a knife', enabled: false };
       }
       case 'structure': {
         const st = s.structures.find((d) => d.id === t.id);
@@ -926,6 +931,8 @@ export class Simulation {
         return c.spear.cooldown;
       case 'torch':
         return c.torch.cooldown;
+      case 'knife':
+        return c.knife.cooldown;
       default:
         return c.hand.cooldown;
     }
@@ -1088,7 +1095,7 @@ export class Simulation {
       case 'drop':
         return this.pickUpDrop(t.id);
       case 'carcass':
-        return this.butcher(t.id);
+        return this.cutCarcass(t.id);
       case 'structure':
         return this.useStructure(t.id);
       case 'animal':
@@ -1410,27 +1417,68 @@ export class Simulation {
     this.worldVersion++;
   }
 
-  private butcher(id: number): void {
+  /** A knife cut on a carcass: the first skins it (if it has a hide), the next butchers it. No knife, no cut. */
+  private cutCarcass(id: number): void {
     const s = this.state;
     const i = s.carcasses.findIndex((c) => c.id === id);
     if (i < 0) return;
     const c = s.carcasses[i];
+    if (s.activeTool !== 'knife') {
+      this.actionCooldown = 0.6;
+      const owned = s.tools.includes('knife');
+      this.emit({ type: 'needTool', message: owned ? `Equip your Stone Knife [${TOOLS.knife.slot}] to skin and butcher.` : 'Needs a knife. Craft a Stone Knife (Crafting > Tools) to skin and butcher your kill.' });
+      return;
+    }
     this.actionCooldown = BALANCE.gather.cooldown;
-    let any = false;
+    spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
+    this.emit({ type: 'swing', tool: 'knife', hit: true });
+    if (carcassStep(c) === 'skin') this.skin(c);
+    else this.butcher(i);
+    this.wearTool('knife', 1);
+    this.worldVersion++;
+    this.progress();
+  }
+
+  /** Skinning: the Skinning skill (and the knife's upgrades) decide whether the hide comes off whole or tears. */
+  private skin(c: CarcassState): void {
+    const s = this.state;
+    const xp = BALANCE.skills.xp;
+    const hides = hidesOn(c);
+    const whole = this.rng.chance(skinChance(s));
+    for (const r of c.remaining) if (r.item === 'hide') r.count = 0;
+    c.skinned = true;
+    const name = speciesName(c.species, this.biome).toLowerCase();
+    let got = 0;
+    if (whole && hides > 0) {
+      got = this.give('hide', hides, c.x, c.y + 0.4, c.z, 'carcass');
+      this.dropAt('hide', hides - got, c.x + 0.5, c.z + 0.5);
+    }
+    s.stats.events.skinned = (s.stats.events.skinned ?? 0) + 1;
+    if (whole) s.stats.events.hidesWhole = (s.stats.events.hidesWhole ?? 0) + 1;
+    this.gainXp('skinning', whole ? xp.skin : xp.skinFail);
+    this.emit({ type: 'skinned', id: c.id, species: c.species, hides: whole ? hides : 0, x: c.x, y: c.y, z: c.z });
+    if (!whole) this.message(`The hide tore. The ${name} is skinned, but there's no hide to keep. Cut again to butcher it.`, 'warn');
+    else if (got < hides) this.message(`You skinned the ${name}. No room in your pack, so the hide is on the ground.`, 'good');
+    else this.message(`You skinned the ${name}. Cut again to butcher it.`, 'good');
+  }
+
+  /** Butchering: everything left on the carcass (what doesn't fit is set down beside it), then it's gone. */
+  private butcher(i: number): void {
+    const s = this.state;
+    const c = s.carcasses[i];
+    let spilled = false;
     for (const r of c.remaining) {
       if (r.count <= 0) continue;
       const added = this.give(r.item, r.count, c.x, c.y + 0.4, c.z, 'carcass');
-      r.count -= added;
-      if (added > 0) any = true;
+      if (added < r.count) spilled = true;
+      this.dropAt(r.item, r.count - added, c.x + 0.4, c.z + 0.4);
+      r.count = 0;
     }
-    if (!any) this.message('Your pack is full.', 'warn');
-    else {
-      spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
-      this.gainXp('hunting', BALANCE.skills.xp.butcher);
-    }
-    if (c.remaining.every((r) => r.count <= 0)) s.carcasses.splice(i, 1);
-    this.emit({ type: 'swing', tool: this.state.activeTool, hit: true });
-    this.worldVersion++;
+    s.carcasses.splice(i, 1);
+    s.stats.events.butchered = (s.stats.events.butchered ?? 0) + 1;
+    this.gainXp('hunting', BALANCE.skills.xp.butcher);
+    this.emit({ type: 'butchered', id: c.id, species: c.species, x: c.x, y: c.y, z: c.z });
+    if (spilled) this.message('Your pack is full, so the rest of the meat is on the ground.', 'warn');
   }
 
   private useStructure(id: number): void {
@@ -1536,7 +1584,7 @@ export class Simulation {
     const a = s.animals.find((x) => x.id === id);
     if (!a) return;
     const c = BALANCE.combat;
-    const stats = s.activeTool === 'axe' ? c.axe : s.activeTool === 'spear' ? c.spear : s.activeTool === 'torch' ? c.torch : c.hand;
+    const stats = s.activeTool === 'axe' ? c.axe : s.activeTool === 'spear' ? c.spear : s.activeTool === 'torch' ? c.torch : s.activeTool === 'knife' ? c.knife : c.hand;
     this.actionCooldown = stats.cooldown;
     spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
     if (dist > stats.reach) {
@@ -1596,13 +1644,14 @@ export class Simulation {
     const meat = remaining.find((r) => r.item === 'rawMeat');
     if (meat && by === null && this.roll(butcherBonusChance(s.skills.hunting))) meat.count += 1;
     if (a.species === 'fish') {
+      // A speared trout needs no knife: it goes in the pack, or onto the ground when the pack is full.
       if (by !== null) return;
       const added = this.give('rawFish', 1, a.x, WATER_LEVEL + 0.2, a.z, 'carcass');
-      if (added > 0) {
-        this.message('Caught a trout!', 'good');
-        this.progress();
-        return;
-      }
+      this.dropAt('rawFish', 1 - added, a.x, a.z);
+      this.message(added > 0 ? 'Caught a trout!' : 'Caught a trout! No room in your pack, so it is on the ground.', 'good');
+      this.worldVersion++;
+      this.progress();
+      return;
     }
     s.carcasses.push({ id: s.nextId++, species: a.species, x: a.x, y: a.y, z: a.z, rot: a.heading, remaining, expiresAt: s.totalHours + 24 });
     this.worldVersion++;
@@ -2564,9 +2613,10 @@ export class Simulation {
 
   putCarcass(v: CarcassState): void {
     const s = this.state;
-    const c = s.carcasses.find((x) => x.id === v.id);
-    if (c) Object.assign(c, v);
-    else s.carcasses.push({ ...v, remaining: v.remaining.map((r) => ({ ...r })) });
+    const i = s.carcasses.findIndex((x) => x.id === v.id);
+    const copy = { ...v, remaining: v.remaining.map((r) => ({ ...r })) };
+    if (i >= 0) s.carcasses[i] = copy;
+    else s.carcasses.push(copy);
     this.worldVersion++;
   }
 

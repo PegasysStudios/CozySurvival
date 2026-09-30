@@ -12,7 +12,7 @@ import { hourOf } from '../src/sim/time';
 import { countItem } from '../src/sim/inventory';
 import { give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 import type { ItemId } from '../src/data/items';
-import { killKey } from '../src/data/objectives';
+import { killKey, OBJECTIVES } from '../src/data/objectives';
 import { BIN_UPGRADES, SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
 import { F_WORK } from '../src/net/protocol';
 import type { Collider } from '../src/sim/colliders';
@@ -528,7 +528,8 @@ describe('multiplayer: round 5', () => {
     const ben = await w.join('Ben');
     const host = w.host.sim;
     const b = guestSim(ben);
-    b.state.objective = 7;
+    const spearStep = OBJECTIVES.findIndex((o) => o.id === 'spear');
+    b.state.objective = spearStep;
     b.state.stats.crafted.spear = 1;
     b.state.tools.push('spear');
     b.selectTool('spear');
@@ -537,7 +538,7 @@ describe('multiplayer: round 5', () => {
     b.hitAnimal(b.state.animals.find((a) => a.id === rabbit.id)!, 999);
     w.pump(0.6);
     expect(b.state.stats.events[killKey('spear', 'rabbit')]).toBe(1);
-    expect(b.state.objective).toBe(8);
+    expect(b.state.objective).toBe(spearStep + 1);
   });
 });
 

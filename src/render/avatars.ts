@@ -114,6 +114,10 @@ function toolGeometry(tool: ToolId): THREE.BufferGeometry | null {
     case 'rod':
       b.add(new CylinderGeometry(0.008, 0.02, 1.9, 5), { matrix: tf(0, 0.55, 0.6, Math.PI / 2 - 0.55, 0, 0), color: '#9a7449' });
       break;
+    case 'knife':
+      b.add(new CylinderGeometry(0.02, 0.022, 0.14, 5), { matrix: tf(0, 0, 0.02, Math.PI / 2, 0, 0), color: '#6e4428' });
+      b.add(new ConeGeometry(0.03, 0.2, 4), { matrix: tf(0, 0, 0.19, Math.PI / 2, 0, 0, 1, 1, 0.3), color: '#a9aeb2' });
+      break;
     default:
       return null;
   }

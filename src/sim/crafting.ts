@@ -1,4 +1,5 @@
 import { BALANCE } from '../data/balance';
+import { lockedToday } from '../data/objectives';
 import { RECIPE_BY_ID, type Recipe } from '../data/recipes';
 import { addItem, cloneInventory, removeItem, roomFor, setCapacity } from './inventory';
 import { canteenCapacity, canteenRoom, canteenUse, fillCanteen, hasItems, haveItem, inCanteen, takeItems } from './canteen';
@@ -8,7 +9,7 @@ export interface CraftContext {
   nearFire: boolean;
 }
 
-export type CraftFailure = 'unknown' | 'missing' | 'station' | 'noRoom' | 'owned' | 'noCanteen' | 'canteenFull';
+export type CraftFailure = 'unknown' | 'missing' | 'station' | 'noRoom' | 'owned' | 'noCanteen' | 'canteenFull' | 'tomorrow';
 
 export interface CraftCheck {
   ok: boolean;
@@ -23,6 +24,7 @@ export const CRAFT_FAILURE_TEXT: Record<CraftFailure, string> = {
   owned: 'You already have one.',
   noCanteen: 'You need a canteen to carry water.',
   canteenFull: 'Your canteen is full.',
+  tomorrow: 'Unlocks tomorrow.',
 };
 
 export function slotsFor(state: GameState): number {
@@ -38,6 +40,7 @@ export function canCraft(state: GameState, recipe: Recipe, ctx: CraftContext): C
   const out = recipe.output;
   if (out.kind === 'tool' && state.tools.includes(out.tool)) return fail('owned');
   if (out.kind === 'gear' && state.gear.includes(out.gear)) return fail('owned');
+  if (lockedToday(state, recipe.id)) return fail('tomorrow');
   if (!hasItems(state, recipe.inputs)) return fail('missing');
   if (recipe.station === 'fire' && !ctx.nearFire) return fail('station');
   if (out.kind === 'item') {

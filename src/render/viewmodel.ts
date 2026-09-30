@@ -77,7 +77,7 @@ export class ViewModel {
   swing(tool: ToolId, hit: boolean): void {
     this.swingT = 0;
     this.swingHit = hit;
-    this.swingKind = tool === 'axe' ? 'chop' : tool === 'spear' ? 'thrust' : tool === 'torch' ? 'swipe' : tool === 'rod' ? 'cast' : 'grab';
+    this.swingKind = tool === 'axe' ? 'chop' : tool === 'spear' ? 'thrust' : tool === 'torch' || tool === 'knife' ? 'swipe' : tool === 'rod' ? 'cast' : 'grab';
   }
 
   /** World-space position of the torch flame (for embers). */

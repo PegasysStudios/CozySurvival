@@ -7,7 +7,7 @@ import type { WearingTool } from './durability';
 
 export const STATE_VERSION = 6;
 
-export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
+export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing' | 'skinning';
 
 export interface Wear {
   dur: number;
@@ -132,6 +132,11 @@ export interface CarcassState {
   rot: number;
   remaining: { item: ItemId; count: number }[];
   expiresAt: number;
+  /**
+   * The hide is off (whether or not the skinning worked): it shows the skinned model and the next knife cut butchers
+   * it. Animals without a hide never get this; they go straight to butchering.
+   */
+  skinned?: boolean;
 }
 
 export type AnimalMode =

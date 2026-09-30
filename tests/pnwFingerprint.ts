@@ -19,6 +19,12 @@ function stable(v: unknown): string {
   return JSON.stringify(v, (_k, x) => (typeof x === 'number' && !Number.isInteger(x) ? Math.round(x * 1e4) / 1e4 : x));
 }
 
+/** Round 10 added the Skinning skill; a new skill's empty XP doesn't change the world or how it plays. */
+function withoutSkinning<T extends { skinning?: number }>(skills: T): Omit<T, 'skinning'> {
+  const { skinning: _, ...rest } = skills;
+  return rest;
+}
+
 /**
  * A fingerprint of everything a PNW world is built from and how it plays for the first stretch: terrain, lakes,
  * worldgen, the starting state, and the state after a scripted walk with wildlife running through dusk.
@@ -30,7 +36,7 @@ export function pnwFingerprint(seed: number): Record<string, string> {
   for (let i = 0; i < t.heights.length; i += 7) heights.push(t.heights[i]);
   const sim = Simulation.newGame(seed);
   // Round 8 added the canteen and bumped the save version; neither changes the world or how it plays.
-  const start: Partial<typeof sim.state> = { ...sim.state, version: 3, runId: '' };
+  const start: Partial<typeof sim.state> = { ...sim.state, version: 3, runId: '', skills: withoutSkinning(sim.state.skills) };
   delete start.canteen;
   run(sim, 20, { moveZ: -1 });
   run(sim, 20, { moveX: 1, sprint: true });
@@ -40,6 +46,7 @@ export function pnwFingerprint(seed: number): Record<string, string> {
   after.runId = '';
   after.version = 3;
   delete after.canteen;
+  after.skills = withoutSkinning(after.skills as typeof sim.state.skills);
   return {
     heights: hash(stable(heights)),
     lakes: hash(stable(t.lakes)),

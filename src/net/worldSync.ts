@@ -43,7 +43,7 @@ function sameTree(a: TreeDyn, b: TreeDyn): boolean {
 }
 
 function sameCarcass(a: CarcassState, b: CarcassState): boolean {
-  return a.expiresAt === b.expiresAt && a.remaining.length === b.remaining.length && a.remaining.every((r, i) => r.count === b.remaining[i].count);
+  return a.expiresAt === b.expiresAt && !!a.skinned === !!b.skinned && a.remaining.length === b.remaining.length && a.remaining.every((r, i) => r.count === b.remaining[i].count);
 }
 
 const sameResource = (a: ResourceDyn, b: ResourceDyn) => a.charges === b.charges && a.respawnAt === b.respawnAt && !!a.scorpion === !!b.scorpion;
@@ -304,6 +304,8 @@ export function mergeRemote(sim: Simulation, d: Delta, from: { x: number; z: num
         const now = d.v.remaining[i]?.count ?? was;
         r.count = Math.max(0, r.count + now - was);
       });
+      // Skinning only ever goes one way: once anyone has skinned it, it stays skinned.
+      if (d.v.skinned) next.skinned = true;
       return next.remaining.every((r) => r.count <= 0) ? sim.deleteCarcass(h.id) : sim.putCarcass(next);
     }
     default:

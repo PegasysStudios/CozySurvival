@@ -90,7 +90,7 @@ export const BALANCE = {
   skills: {
     /** Total XP needed to reach level 2, 3, ... 10. */
     thresholds: [10, 25, 45, 70, 100, 140, 190, 250, 320],
-    xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5, catch: 4, slip: 1 },
+    xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5, catch: 4, slip: 1, skin: 5, skinFail: 2 },
     /**
      * Values at level 1 -> level 10 (linear in between). Tool bonuses (`chopPowerBonus`, `huntDamageBonus`,
      * `catchBonus`) add to the matching tool upgrade's bonus on the same base, so a maxed skill and a fully upgraded
@@ -107,6 +107,10 @@ export const BALANCE = {
     baseCatchChance: 0.35,
     catchBonus: [0, 0.35],
     maxCatchChance: 0.95,
+    /** Chance a skinning cut takes the hide whole: the same start and climb as landing a fish, plus the knife's upgrades. */
+    baseSkinChance: 0.35,
+    skinBonus: [0, 0.35],
+    maxSkinChance: 0.95,
   },
   /** Bonus per tool upgrade level I, II, III (index 0..2). */
   upgrades: {
@@ -114,6 +118,7 @@ export const BALANCE = {
     spear: { damage: [0.15, 0.3, 0.45] },
     bow: { damage: [0.15, 0.3, 0.45], arrowSpeed: [0.08, 0.16, 0.25] },
     rod: { catch: [0.07, 0.14, 0.2] },
+    knife: { skin: [0.07, 0.14, 0.2], damage: [0.15, 0.3, 0.45] },
     /** `burnCut`: share of the torch's burn-down rate saved; `warmth`: extra warmth target while held. */
     torch: { burnCut: [0.2, 0.4, 0.6], warmth: [3, 6, 9] },
   },
@@ -141,6 +146,7 @@ export const BALANCE = {
       bow: { uses: 30, perHour: 0.05 },
       torch: { uses: 60, perHour: 0.05, burnPerHour: 6 },
       rod: { uses: 30, perHour: 0.05 },
+      knife: { uses: 30, perHour: 0.05 },
     },
     /** Shelters and benches weather `perHour` and wear `useCost` per sleep/sit. */
     structures: {
@@ -166,6 +172,7 @@ export const BALANCE = {
     axe: { damage: 1.5, reach: 2.6, cooldown: 0.55 },
     spear: { damage: 2.5, reach: 3.3, cooldown: 0.65 },
     torch: { damage: 0.6, reach: 2.4, cooldown: 0.55 },
+    knife: { damage: 0.8, reach: 2.2, cooldown: 0.4 },
     bow: { minDraw: 0.18, fullDraw: 0.85, minSpeed: 16, maxSpeed: 42, minDamage: 0.6, maxDamage: 1.6, cooldown: 0.35 },
     arrowRecoverChance: 0.6,
     playerHurtInvuln: 0.4,
@@ -182,6 +189,11 @@ export const BALANCE = {
    * `max` out in the world at once. A pile only ever hides one: once it has turned one up, it never does again.
    */
   scorpion: { chance: 0.09, max: 4 },
+  /**
+   * On day 1 only the recipes the onboarding steps have reached can be crafted (see `lockedToday`); the rest unlock
+   * tomorrow. False turns the limit off.
+   */
+  onboarding: { dayOneLimit: true as boolean },
   /** Thirst lost the one time you taste alkali water before you learn to recognise it. */
   water: { alkaliTasteThirst: 4 },
 } as const;
