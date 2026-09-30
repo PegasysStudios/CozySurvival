@@ -1,4 +1,4 @@
-export type PrefabId = 'campfire' | 'leanTo' | 'hideTent' | 'bench';
+export type PrefabId = 'campfire' | 'leanTo' | 'aFrame' | 'barkHut' | 'hideTent' | 'bench';
 
 export interface PrefabDef {
   id: PrefabId;
@@ -36,6 +36,26 @@ export const PREFABS: Record<PrefabId, PrefabDef> = {
     interactRadius: 1.5,
     interactHeight: 0.8,
     shelter: { warmthBonus: 35, healthBonus: 0 },
+  },
+  aFrame: {
+    id: 'aFrame',
+    name: 'A-Frame Shelter',
+    footprint: { type: 'box', hw: 1.6, hd: 1.3 },
+    collider: { type: 'box', hw: 1.45, hd: 1.0 },
+    maxHeightDelta: 0.7,
+    interactRadius: 1.5,
+    interactHeight: 0.9,
+    shelter: { warmthBonus: 40, healthBonus: 4 },
+  },
+  barkHut: {
+    id: 'barkHut',
+    name: 'Bark Hut',
+    footprint: { type: 'box', hw: 1.6, hd: 1.3 },
+    collider: { type: 'box', hw: 1.5, hd: 1.15 },
+    maxHeightDelta: 0.7,
+    interactRadius: 1.6,
+    interactHeight: 1.0,
+    shelter: { warmthBonus: 45, healthBonus: 7 },
   },
   hideTent: {
     id: 'hideTent',

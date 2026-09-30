@@ -7,10 +7,14 @@ import { LobbyWatcher, type ServerInfo } from '../src/net/lobby';
 import type { Profile } from '../src/net/protocol';
 import { ID_BLOCK, type SessionEvent } from '../src/net/session';
 import { LocalTransport, MemoryHub } from '../src/net/transport';
-import { IDLE_INPUT, Simulation } from '../src/sim/simulation';
+import { IDLE_INPUT, Simulation, spawnPlayer } from '../src/sim/simulation';
 import { hourOf } from '../src/sim/time';
 import { countItem } from '../src/sim/inventory';
-import { give, keepAlive, nearestResource, nearestTree, placeStructure, quietSim, teleport } from './helpers';
+import { give, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
+import type { ItemId } from '../src/data/items';
+import { killKey } from '../src/data/objectives';
+import { SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
+import type { Collider } from '../src/sim/colliders';
 
 const DT = 1 / 20;
 
@@ -355,7 +359,8 @@ describe('multiplayer: death', () => {
     expect(b.state.dead).toBe(false);
     expect(b.state.needs.health).toBe(100);
     expect(b.state.skills.gathering).toBe(0);
-    expect(Math.hypot(b.state.player.x - b.terrain.spawn.x, b.state.player.z - b.terrain.spawn.z)).toBeLessThan(0.01);
+    const start = spawnPlayer(b.terrain);
+    expect(Math.hypot(b.state.player.x - start.x, b.state.player.z - start.z)).toBeLessThan(0.01);
     w.pump(0.5);
     expect(w.host.roster().find((r) => r.name === 'Ben')?.dead).toBe(false);
   });
@@ -385,5 +390,148 @@ describe('multiplayer: leaving', () => {
     expect(w.of(cleo).find((e) => e.type === 'ended')).toMatchObject({ reason: expect.stringMatching(/closed/) });
     expect(servers.at(-1)).toHaveLength(0);
     watcher.close();
+  });
+});
+
+describe('multiplayer: round 5', () => {
+  const asGive = (cost: { item: ItemId; count: number }[]) => Object.fromEntries(cost.map((i) => [i.item, i.count]));
+  function roomy(sim: Simulation): void {
+    for (const g of ['basket', 'backpack'] as const) if (!sim.state.gear.includes(g)) sim.state.gear.push(g);
+    while (sim.state.inventory.slots.length < 16) sim.state.inventory.slots.push(null);
+  }
+  function bodyOf(sim: Simulation, id: number) {
+    const st = sim.state.structures.find((s) => s.id === id)!;
+    const out: Collider[] = [];
+    sim.queryColliders(st.x, st.z, 4, out);
+    return out.find((c) => c.kind === 'structure' && c.ref === id)?.body;
+  }
+
+  it("a guest's shelter upgrade reaches the host and the other guests, collider and all", async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const cleo = await w.join('Cleo');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    const c = guestSim(cleo);
+    const hut = placeShelter(b, 'leanTo');
+    w.pump(0.6);
+    expect(host.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('leanTo');
+    roomy(b);
+    give(b, asGive(SHELTER_UPGRADES.aFrame!));
+    expect(b.upgradeShelter(hut.id).ok).toBe(true);
+    w.pump(0.6);
+    for (const sim of [host, c]) {
+      const st = sim.state.structures.find((s) => s.id === hut.id)!;
+      expect(st.prefab).toBe('aFrame');
+      expect(st.wear!.max).toBe(hut.wear!.max);
+      expect(bodyOf(sim, hut.id)).toMatchObject({ type: 'box', hd: 1.0 });
+    }
+  });
+
+  it("the host's shelter upgrade reaches the guests", async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    const hut = placeShelter(host, 'barkHut');
+    w.pump(0.6);
+    expect(b.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('barkHut');
+    roomy(host);
+    give(host, asGive(SHELTER_UPGRADES.hideTent!));
+    expect(host.upgradeShelter(hut.id).ok).toBe(true);
+    w.pump(0.6);
+    expect(b.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('hideTent');
+    expect(bodyOf(b, hut.id)).toMatchObject({ type: 'circle', r: 1.35 });
+  });
+
+  it('two players upgrading the same shelter at once settle on a single tier', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    const hut = placeShelter(host, 'leanTo');
+    w.pump(0.6);
+    for (const sim of [host, b]) {
+      roomy(sim);
+      give(sim, asGive(SHELTER_UPGRADES.aFrame!));
+      expect(sim.upgradeShelter(hut.id).ok).toBe(true);
+    }
+    w.pump(1);
+    expect(host.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('aFrame');
+    expect(b.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('aFrame');
+  });
+
+  it('tool upgrades and the Foraging guide stay personal', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    b.state.tools.push('axe');
+    give(b, asGive(TOOL_UPGRADES.axe[0].inputs));
+    expect(b.upgradeTool('axe').ok).toBe(true);
+    const bush = nearestResource(b, 'berryBush');
+    b.perform({ kind: 'resource', index: bush, dist: 1 });
+    w.pump(1);
+    expect(b.state.toolLevels.axe).toBe(1);
+    expect(b.state.forage).toContain('berryBush');
+    expect(host.state.toolLevels).toEqual({});
+    expect(host.state.forage).toEqual([]);
+  });
+
+  it('sleeping by a campfire joins the sleep vote', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    host.devSetHour(21);
+    w.pump(0.5);
+    const dayBefore = host.day;
+    const fire = placeStructure(host, 'campfire');
+    teleport(host, fire.x + 1.6, fire.z);
+    const tent = placeStructure(b, 'leanTo');
+    w.pump(0.6);
+    host.state.needs.warmth = 70;
+    expect(host.trySleep(fire.id)).toBe(true);
+    w.pump(1);
+    expect(host.sleepingIn).toBe(fire.id);
+    expect(host.day).toBe(dayBefore);
+    expect(b.trySleep(tent.id)).toBe(true);
+    w.pump(0.5);
+    for (const sim of [host, b]) {
+      expect(sim.sleepingIn).toBeNull();
+      expect(sim.day).toBe(dayBefore + 1);
+    }
+    expect(host.state.needs.warmth).toBeGreaterThanOrEqual(70);
+  });
+
+  it('a guest can sleep beside the host\'s campfire', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    host.devSetHour(22);
+    const fire = placeStructure(host, 'campfire');
+    w.pump(0.6);
+    teleport(b, fire.x - 1.6, fire.z);
+    expect(b.trySleep(fire.id)).toBe(true);
+    w.pump(1);
+    expect(w.host.sleeping.has(ben.pid)).toBe(true);
+  });
+
+  it('a guest spear kill counts toward the spear onboarding step', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    b.state.objective = 7;
+    b.state.stats.crafted.spear = 1;
+    b.state.tools.push('spear');
+    b.selectTool('spear');
+    const rabbit = host.devSpawn('rabbit', 6)!;
+    w.pump(0.5);
+    b.hitAnimal(b.state.animals.find((a) => a.id === rabbit.id)!, 999);
+    w.pump(0.6);
+    expect(b.state.stats.events[killKey('spear', 'rabbit')]).toBe(1);
+    expect(b.state.objective).toBe(8);
   });
 });

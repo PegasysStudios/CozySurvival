@@ -20,6 +20,7 @@ const ITEM_ICONS: Record<ItemId, string> = {
   cookedMeat: svg('<path d="M6 17c0-6 6-10 12-10 5 0 9 3 9 8 0 7-7 11-13 11-5 0-8-4-8-9z" fill="#9c5a36"/><path d="M11 13l9 8M15 11l8 7" stroke="#6a3a22" stroke-width="2" stroke-linecap="round"/>'),
   grilledTrout: svg('<path d="M4 16c5-7 14-7 19 0-5 7-14 7-19 0z" fill="#d9a56b"/><path d="M23 16l6-5v10z" fill="#b4834e"/><path d="M9 12l3 8M13 11l3 10M17 12l3 8" stroke="#8a5a30" stroke-width="1.8" stroke-linecap="round"/>'),
   skewer: svg('<path d="M4 28 28 4" stroke="#8a5a2b" stroke-width="2.5" stroke-linecap="round"/><circle cx="11" cy="21" r="4" fill="#d99a3c"/><circle cx="16.5" cy="15.5" r="3.5" fill="#d9c2e6"/><circle cx="21.5" cy="10.5" r="4" fill="#e0982a"/>'),
+  forageSkewer: svg('<path d="M4 28 28 4" stroke="#8a5a2b" stroke-width="2.5" stroke-linecap="round"/><circle cx="10.5" cy="21.5" r="3.6" fill="#f08a3c"/><circle cx="15.5" cy="16.5" r="3.4" fill="#d9c2e6"/><circle cx="20.5" cy="11.5" r="3.6" fill="#e8683a"/>'),
   berryTea: svg('<path d="M7 12h16v10a6 6 0 0 1-6 6h-4a6 6 0 0 1-6-6z" fill="#e0664d"/><path d="M23 15h2a3 3 0 0 1 0 6h-2" stroke="#b8503c" stroke-width="2" fill="none"/><path d="M11 9c0-2 2-2 2-4M17 9c0-2 2-2 2-4" stroke="#f4d8cf" stroke-width="1.8" fill="none" stroke-linecap="round"/>'),
   stew: svg('<path d="M4 15h24c0 7-5 12-12 12S4 22 4 15z" fill="#7a5a3e"/><ellipse cx="16" cy="15" rx="12" ry="3" fill="#a86d3b"/><circle cx="12" cy="15" r="1.6" fill="#f2b441"/><circle cx="19" cy="14.5" r="1.6" fill="#c8574f"/><path d="M11 10c0-2 2-2 2-4M18 10c0-2 2-2 2-4" stroke="#e8e2d8" stroke-width="1.8" fill="none" stroke-linecap="round"/>'),
   cedarTrout: svg('<path d="M5 20c4-8 18-8 22 0-4 6-18 6-22 0z" fill="#efe7da"/><path d="M8 18c4-5 12-5 16 0" fill="#c98b52"/><path d="M10 22h12" stroke="#3b342e" stroke-width="1.6" stroke-linecap="round"/>'),
@@ -60,7 +61,12 @@ export const MISC_ICONS = {
   fire: svg('<path d="M16 3c3 5 8 8 8 15a8 8 0 0 1-16 0c0-4 2-6 4-8 0 3 1 5 3 5 0-5-1-8 1-12z" fill="#ff9a4d"/>'),
   campfire: svg('<path d="M6 27 26 21M6 21l20 6" stroke="#6e4a30" stroke-width="3" stroke-linecap="round"/><path d="M16 4c3 4 6 6 6 10a6 6 0 0 1-12 0c0-3 3-6 6-10z" fill="#ffb347"/>'),
   leanTo: svg('<path d="M4 26 20 8l8 18z" fill="#4c7a42"/><path d="M4 26 20 8" stroke="#6e4a30" stroke-width="2.5"/><path d="M20 8v18" stroke="#6e4a30" stroke-width="2.5"/>'),
+  aFrame: svg('<path d="M16 5 3 27h26z" fill="#4c7a42"/><path d="M16 5 3 27M16 5l13 22" stroke="#6e4a30" stroke-width="2.5"/><path d="M16 14l-4 13h8z" fill="#2a3a2a"/>'),
+  barkHut: svg('<path d="M3 15 16 5l13 10z" fill="#e8dfd0"/><path d="M8 11h5M17 9h4M12 13h7" stroke="#3b342e" stroke-width="1.4"/><rect x="6" y="15" width="20" height="12" fill="#8a5a33"/><path d="M6 19h20M6 23h20" stroke="#6e4a30" stroke-width="1.4"/><rect x="13" y="18" width="6" height="9" fill="#3a2a1f"/>'),
   hideTent: svg('<path d="M16 4 4 27h24z" fill="#c9a06a"/><path d="M16 12l-4 15h8z" fill="#3a2a1f"/><path d="M13 2l6 6M19 2l-6 6" stroke="#6e4a30" stroke-width="2"/>'),
+  upgrade: svg('<path d="M16 4 6 15h6v12h8V15h6z" fill="currentColor"/>'),
+  leaf: svg('<path d="M6 26C6 14 13 6 27 5c0 13-8 21-20 21z" fill="#6f9a4a"/><path d="M7 25 21 11" stroke="#3f6a30" stroke-width="2" stroke-linecap="round"/>'),
+  moonBed: svg('<path d="M4 22h24v5H4z" fill="#8a6038"/><path d="M6 22c0-3 3-5 7-5h9c3 0 5 2 5 5z" fill="#c9a172"/><path d="M22 4a6 6 0 1 0 5 9 5 5 0 0 1-5-9z" fill="#dfe6ff"/>'),
   bench: svg('<rect x="4" y="12" width="24" height="6" rx="3" fill="#c9a172"/><path d="M8 18v8M24 18v8" stroke="#5e4330" stroke-width="4" stroke-linecap="round"/>'),
 };
 

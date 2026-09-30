@@ -1,8 +1,9 @@
+import type { ForageId } from '../data/forage';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
@@ -164,10 +165,14 @@ export interface GameState {
   activeTool: ToolId;
   /** Durability of each owned tool (hands never wear). */
   toolWear: Partial<Record<ToolId, Wear>>;
+  /** Upgrade level 0..3 per tool (missing means 0). Kept when a tool breaks, so its replacement has the same fittings. */
+  toolLevels: Partial<Record<ToolId, number>>;
   gear: GearId[];
   known: string[];
   /** Experience per skill; levels derive from it. */
   skills: Record<SkillId, number>;
+  /** Foraging guide entries unlocked by harvesting each plant at least once. */
+  forage: ForageId[];
   stats: StatsState;
   objective: number;
   trees: TreeDyn[];

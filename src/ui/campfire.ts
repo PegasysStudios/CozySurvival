@@ -3,6 +3,7 @@ import { PREFABS } from '../data/prefabs';
 import { RECIPES, type Recipe } from '../data/recipes';
 import { countItem } from '../sim/inventory';
 import type { Simulation } from '../sim/simulation';
+import { canSleepAt } from '../sim/time';
 
 export interface FuelOption {
   item: 'stick' | 'log';
@@ -25,6 +26,9 @@ export interface CampfireMenu {
   /** Known campfire recipes, ready-to-cook first. */
   recipes: Recipe[];
   undiscovered: number;
+  canSleep: boolean;
+  sleepLabel: string;
+  sleepNote: string;
 }
 
 export const isCampfireRecipe = (r: Recipe): boolean => r.station === 'fire';
@@ -42,6 +46,7 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
   const cooking = RECIPES.filter(isCampfireRecipe);
   const known = cooking.filter((r) => s.known.includes(r.id));
   const recipes = [...known].sort((a, b) => Number(sim.canCraft(b.id).ok) - Number(sim.canCraft(a.id).ok));
+  const canSleep = canSleepAt(sim.hour);
   return {
     fuel: fire.fuel,
     maxFuel: f.maxFuelHours,
@@ -52,5 +57,10 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
     fuelOptions,
     recipes,
     undiscovered: cooking.length - known.length,
+    canSleep,
+    sleepLabel: canSleep ? 'Sleep by the fire' : 'Sleep (after 7 PM)',
+    sleepNote: fire.fuel > 0
+      ? 'Bed down beside the flames until dawn. A burning fire keeps you warm, but you get none of a shelter\'s bonuses.'
+      : 'The fire is out. Sleep here and you will wake up cold, so add fuel first.',
   };
 }

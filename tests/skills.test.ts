@@ -38,7 +38,7 @@ describe('skill levels', () => {
     expect(gatherBonusChance(0)).toBe(0);
     expect(gatherBonusChance(MAX_XP)).toBeCloseTo(0.4);
     expect(huntDamageMultiplier(0)).toBe(1);
-    expect(huntDamageMultiplier(MAX_XP)).toBeCloseTo(1.25);
+    expect(huntDamageMultiplier(MAX_XP)).toBeCloseTo(1.4);
     expect(burnChance(0)).toBeCloseTo(0.2);
     expect(burnChance(MAX_XP)).toBe(0);
     expect(durabilityMultiplier(0)).toBe(1);
@@ -115,7 +115,7 @@ describe('hunting skill', () => {
     expect(a.health).toBeCloseTo(2);
     sim.state.skills.hunting = MAX_XP;
     sim.hitAnimal(b, 1);
-    expect(b.health).toBeCloseTo(3 - 1.25);
+    expect(b.health).toBeCloseTo(3 - 1.4);
   });
 
   it('grows from hits, kills and butchering', () => {

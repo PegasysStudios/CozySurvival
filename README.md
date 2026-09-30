@@ -51,37 +51,63 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 
 ## What's in the demo
 
-- **Day cycle.** A 24-minute day (one real minute per game hour) with sunrise, golden hour, dusk and a moonlit night: sky dome, stars, drifting clouds, fog and light colour all follow the clock. Sleeping in a shelter after 19:00 skips to dawn and fully restores energy.
+- **Day cycle.** A 24-minute day (one real minute per game hour) with sunrise, golden hour, dusk and a moonlit night: sky dome, stars, drifting clouds, fog and light colour all follow the clock. Sleeping in a shelter or beside a campfire after 19:00 skips to dawn and fully restores energy.
 - **Needs.** Health, hunger, thirst, warmth and energy. Empty hunger, thirst or warmth wears health down, and health at zero ends the run.
 - **Cold.** Night pulls warmth toward zero; fires, shelters and a torch hold it up.
   - Cold can't kill you during the first two nights: freezing still hurts, but stops at 1 health. From night 3 on it can be lethal. Hunger and thirst can still kill at any time.
   - Within range of a burning campfire (5.5 m) the cold never lowers your warmth, even at the edge of the firelight or while wading.
   - Sleeping through the night with no burning campfire in range costs 30 of your 100 warmth (`sleep.coldWarmthCost` in `balance.ts`). Beside a burning fire you wake at least as warm as you lay down, and a shelter can still warm you up. Energy is a real resource: walking drains a little (0.1/s), running drains 0.8/s (about two minutes from full), and every task and tool action costs energy: swinging an axe, spear or torch or loosing an arrow 1, gathering 0.5, casting a line 1.2, striking a fish 0.4, crafting 3, building 6, swimming 0.2/s. Standing still or sitting on a bench restores it, food and drink speed up recovery, and sleep refills it.
 - **Skills.** Gathering, hunting, cooking, crafting and fishing each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Pack panel (Tab). The effects are gentle:
-  - gathering: a growing chance of a bonus find (up to 40%)
-  - hunting: up to 25% more damage to animals and a chance of extra meat when you butcher
+  - gathering: a growing chance of a bonus find (up to 40%), and up to +0.5 chop power with the axe
+  - hunting: up to 40% more damage to animals and a chance of extra meat when you butcher
   - cooking: a novice sometimes chars a meal (20% at level 1, never at level 10). The first time you cook a dish it always comes out right, drinks never burn, and a Charred Meal is still edible.
   - crafting: tools and shelters you make last longer (up to 4×)
-  - fishing: the chance to land a hooked fish, from 35% at level 1 (a few tries per fish) to 90% at level 10
+  - fishing: the chance to land a hooked fish, from 35% at level 1 (a few tries per fish) to 70% at level 10 (90% with a fully upgraded pole)
+  - Tool skills and tool upgrades add their bonuses on the same base, so neither alone reaches the top: see **Tool and weapon upgrades** below.
 - **Durability.** Crafted tools, shelters and benches wear out.
   - Tools lose a point per use and a little over time, and a lit torch burns down while you hold it. The HUD shows a bar under each tool, and the bow's slot shows how many arrows you carry (red at zero).
   - Shelters weather slowly and wear a little each night you sleep in them. Benches wear a little each time you sit.
   - You get a warning at 25%. At zero the item breaks: a tool is gone, a structure falls apart. Craft or build a new one; your recipes stay known.
   - Campfires, gear (basket, backpack, canteen) and bare hands don't wear.
-- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack. Recipes are learned by doing (for example, gathering sticks and stones teaches the Stone Axe), and a 12-step guided objective track leads through the basics:
+- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Recipes are learned by doing (for example, gathering sticks and stones teaches the Stone Axe). A 9-step onboarding track leads through the basics:
+  1. Drink from the lake.
+  2. Build a campfire.
+  3. Forage food (3 berries, onions or chanterelles).
+  4. Cook a skewer: the Forager's Skewer (2 salmonberries, a wild onion and a stick) or the Mushroom Skewer.
+  5. Add firewood to the fire (twice).
+  6. Craft a Stone Axe and chop a tree for a log.
+  7. Craft a Fishing Pole, catch a trout and cook it.
+  8. Craft a spear and hunt a hare with it. The task warns that spear hunting is hard.
+  9. Craft a bow and arrows and make a kill with the bow. That completes onboarding; the goal becomes surviving and upgrading.
+
+  Beyond the track:
   - tools: axe, spear, bow and arrows, torch, fishing pole
-  - campfire and fuel
   - water: drink by hand, fill a canteen, boil it at a fire
-  - multi-ingredient meals: Forest Stew, Mushroom Skewer, Salmonberry Tea, Bark-Baked Trout, Trout Chowder, Trout & Berry Skewer, Smoked Trout
+  - multi-ingredient meals: Forager's Skewer, Forest Stew, Mushroom Skewer, Salmonberry Tea, Bark-Baked Trout, Trout Chowder, Trout & Berry Skewer, Smoked Trout
   - gear, tools, structures and cordage cost about 5× what they did in round 3 (a workbench is 10 logs). Arrows, fuel and food recipes are unchanged. The comment above `RECIPES` in `src/data/recipes.ts` lists the few recipes kept below 5× and why.
-  - hunting, chopping trees, and shelters (lean-to, hide tent)
   - carry upgrades: Grass Basket, Hide Backpack
 - **Forage is sparse, so the track spans several days.**
   - Fallen branches and loose stones give one stick or stone per harvest (three per pile), down from two.
   - The starter patch around the spawn has 2 stick piles, 2 stone piles, 2 ferns, 2 berry bushes, 1 chanterelle patch and 1 onion: enough for the first steps (gathering, fiber, the Stone Axe) and most of a campfire.
   - Across the map, 40% of the spots that used to grow sticks, stones or ferns still do, and 50% of the berry, mushroom and onion spots. That's about 260 forage spots per world instead of about 560. Trees, boulders and fallen logs are unchanged.
   - Near the spawn this leaves about a fifth of the old sticks and stones. Averaged over 8 worlds, a 25 m radius holds about 11 sticks, 9 stones and 13 fiber, down from 49, 44 and 28. The whole track needs about 14 sticks, 8 stones and 16 fiber, plus firewood. So after day 1 you range further out and wait on regrowth (sticks 12 h, ferns 16 h, stones 30 h).
-- **Campfire menu.** Clicking a lit campfire opens its own menu instead of the full crafting menu. It has a fuel meter (hours left out of 16), separate buttons to add a stick (+1.5 h) or a log (+4 h), and only the recipes you cook over a fire. **C** still opens the full crafting menu.
+- **Campfire menu.** Clicking a lit campfire opens its own menu instead of the full crafting menu. It has a fuel meter (hours left out of 16), separate buttons to add a stick (+1.5 h) or a log (+4 h), **Sleep by the fire** (from 7 PM), and only the recipes you cook over a fire. **C** still opens the full crafting menu. Sleeping by the fire uses the normal sleep cycle and cold rules: a burning fire keeps your warmth, an out fire means a cold night, and there's no shelter bonus.
+- **Shelters and their menu.** Clicking a shelter opens its own menu with **Sleep** and **Upgrade**. The lean-to is the only shelter you build from the crafting menu; each later tier is built only by upgrading the one before, in place, with all its materials in your pack at once:
+
+  | Tier | Built by | Materials | Warmth / healing |
+  |---|---|---|---|
+  | 1. Lean-to | crafting menu | 12 logs, 12 sticks, 16 fiber, 5 cordage | +35 / +0 |
+  | 2. A-Frame Shelter | upgrading a lean-to | 16 logs, 24 sticks, 12 cordage, 10 birch bark (9 slots: needs a basket) | +40 / +4 |
+  | 3. Bark Hut | upgrading an A-frame | 24 logs, 40 birch bark, 20 cordage, 20 stones (14 slots: needs a backpack) | +45 / +7 |
+  | 4. Hide Tent | upgrading a bark hut | 18 hides, 24 logs, 30 cordage, 20 birch bark (14 slots: needs a backpack) | +50 / +10 |
+
+  An upgrade gives the shelter fresh condition. A bigger tier needs room, so step out of its footprint and clear anything in the way; the menu says what's blocking it and whether your pack can carry the materials.
+- **Tool and weapon upgrades.** Every tool and weapon (axe, spear, bow, torch, fishing pole) has three upgrade levels, each much costlier than the last, and level III always needs hides. Click a tool on the tool belt in the Pack (Tab), or open the **Upgrades** tab in Crafting (C), to see its current stats, what the next level does and its materials. Upgrades are kept when a worn-out tool is re-crafted. Bonuses add to the matching skill's bonus on the same base:
+  - axe: chop power per swing = 1 + Gathering (up to +0.5) + axe (+0.2 / +0.4 / +0.6). A 6-hit fir takes 6 swings at the start, 4 at Gathering level 5 with a level II axe, and 3 with both maxed.
+  - spear and bow: damage × (1 + Hunting (up to +0.4) + weapon (+0.15 / +0.3 / +0.45)), so up to ×1.85. Bow upgrades also shoot faster, flatter arrows (up to +25% speed), which is how they improve accuracy.
+  - fishing pole: landing chance = 35% + Fishing (up to +35%) + pole (+7 / +14 / +20%), capped at 95%.
+  - torch: no skill. Upgrades cut its burn rate (by 20 / 40 / 60%) and add warmth while held (+3 / +6 / +9).
+- **Foraging guide.** The Pack (Tab) has a **Foraging** tab: a numbered guide of every harvestable plant (salmonberry, sword fern, chanterelle, nodding onion, paper birch). Each page unlocks the first time you harvest that plant and shows its effects and hunger when eaten, the recipes you know that use it (and how many are still to discover), where it grows, how fast it regrows, and field notes. Locked pages hint at where to look. Unlocks are saved with your run.
 - **Wildlife.**
   - Rabbits, deer and fish each have their own fear radius and flee behaviour. Deer spook from far away, so a bow helps.
   - Predators are rare early. Day 1 has a single distant grey wolf, black bears appear from day 2, and numbers grow slowly after that. Wolves spot you from farther away at night.
@@ -128,8 +154,9 @@ Up to 4 players share one world over Supabase Realtime. The host's browser runs 
   - **Create multiplayer server** starts a brand-new world. Other players see it in the server list and click **Join**. Everyone picks a name and a male or female character.
   - Your pack, needs and skills are your own. Trees, forage, structures, fires, dropped items and animals are shared.
   - **Enter** opens chat, and messages show as bubbles over heads. **G** waves. **Esc** only opens settings, because the world keeps running.
-  - The host's clock sets the time of day. Sleeping in a shelter lies you down until everyone is in bed, then the night skips. **Space** gets you up.
-  - Dying drops your whole pack as a pile anyone can loot, you included. You respawn with an empty pack and fresh needs and skills.
+  - The host's clock sets the time of day. Sleeping in a shelter or beside a campfire lies you down until everyone is in bed, then the night skips. **Space** gets you up.
+  - Shelter upgrades are shared: anyone can upgrade any shelter and everyone sees the new tier. Tool upgrades and the Foraging guide are your own.
+  - Dying drops your whole pack as a pile anyone can loot, you included. You respawn with an empty pack and fresh needs, skills, tool upgrades and Foraging guide.
   - Multiplayer worlds aren't saved. When the host leaves, the server closes for everyone. Your single-player run is kept as it was.
 
 ## Dev tools
@@ -184,11 +211,16 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 338 tests covering:
+`npm test` runs 380 tests covering:
 
 - inventory stacking and carry limits
 - crafting, recipe unlocks, and ingredients consumed only on success
 - round 4 costs: the 5× rule against the round 3 table, the listed exceptions, unchanged arrows, fuel and food, and every recipe fitting a 6-slot pack
+- round 5 shelters: the tier order, upgrading in place with every material, refusals for missing materials, a blocked spot or the top tier, collider swaps, better sleep per tier, and old saves keeping their shelters
+- round 5 tool upgrades: owning the tool, materials and the level cap, steep costs, persistence, and skill and upgrade bonuses adding up (chop swings, spear damage, landing chance, torch burn and warmth)
+- campfire sleep: the menu option, the normal sleep cycle, warmth by a burning or dead fire, and the usual refusals
+- the 9-step onboarding track walked with real actions, out-of-order progress, spear-only hare kills, old-save migration, and the lake-near spawn across 10 worlds
+- the Foraging guide: first-harvest unlocks, page contents, save/load and old-save unlocks
 - fishing: the pole recipe and unlock, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals
 - placement validity against trees, rocks, felled trunks, structures, water, slope and reach, plus rotation
 - needs, energy drain for movement, swimming, tasks and every tool action, regen and sleep restore
@@ -215,8 +247,10 @@ Rendering is built for 60 fps:
   - the late-join world snapshot
   - shared gathering, chopping and building, co-op chopping, and hunting with kill credit
   - chat, its rate limit and history
-  - the sleep vote
+  - the sleep vote, including sleeping beside a campfire
   - death loot and respawn
+  - shelter upgrades syncing guest to host to guests and host to guests, and simultaneous upgrades settling on one tier
+  - tool upgrades and the Foraging guide staying personal, and guest spear kills counting for onboarding
   - a guest leaving, and the host closing the server
 
 `npm run smoke` boots the real build in headless Chrome as an end-to-end check of placement, the campfire menu and Esc, save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
@@ -239,6 +273,12 @@ Rendering is built for 60 fps:
 - Multiplayer has only run over the in-memory and BroadcastChannel transports here. The Supabase transport is written against the setup guide but hasn't been played live.
 - Multiplayer trusts every client: the host doesn't check a guest's reach or placement. If two players take the last item at the same moment, both may get it, though the world's count stays right.
 - Round 4 pacing (5× costs against sparse forage, faster energy drain) and the fishing timings are tuned from the numbers only, not a playtest.
+- Round 5 upgrade costs and day estimates are from the numbers only. The campfire (25 stones, 20 sticks, 5 fiber) is now the second onboarding step and is likely the slowest part of day 1.
+- Upgrades must be carried in one go: there's no way to deliver materials to a shelter in batches, so the bark hut and hide tent need a Hide Backpack's room.
+- The bench still sits you down on click; only shelters have a structure menu.
+- If two players upgrade the same shelter at the same moment, both spend their materials and it only goes up one tier.
+- Bow upgrades improve accuracy through faster, flatter arrows; there's no aim spread to tighten.
+- Saves from before round 5 load with every tool at level 0, lean-tos and hide tents as the first and last tiers, the Foraging guide unlocked for every plant already harvested, and onboarding replayed against the new track (a finished old track stays finished).
 - A birch only shows bare wood once all its bark is peeled; with one of its two strips left it still looks whole.
 - Other players see your fishing pole but not your line or float, and fishing makes no sound for them.
 - The lake loop measures distance to each lake's round outline (centre and radius), so on irregular shores it can be a few metres off. It keeps streaming silently when you are far from water.

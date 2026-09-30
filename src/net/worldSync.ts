@@ -1,4 +1,5 @@
 import { BALANCE } from '../data/balance';
+import { PREFABS } from '../data/prefabs';
 import { RESOURCES, TREES } from '../data/resources';
 import { createNewState, type Simulation } from '../sim/simulation';
 import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, TreeDyn } from '../sim/state';
@@ -152,6 +153,7 @@ export class WorldTracker {
   }
 
   private structureChanged(base: StructureState, cur: StructureState): boolean {
+    if (base.prefab !== cur.prefab) return true;
     if (!this.tolerant) return base.fuel !== cur.fuel || base.wear?.dur !== cur.wear?.dur;
     if (base.fuel > 0 !== cur.fuel > 0 || Math.abs(base.fuel - cur.fuel) >= 0.05) return true;
     return Math.abs((base.wear?.dur ?? 0) - (cur.wear?.dur ?? 0)) >= 0.5;
@@ -262,6 +264,15 @@ export function mergeRemote(sim: Simulation, d: Delta, from: { x: number; z: num
       if (!d.p) return h ? undefined : sim.putStructure(d.v);
       if (!h) return;
       const next = cloneStructure(h);
+      // A shelter upgrade: the guest rebuilt it as the next tier, with fresh condition. If someone else already
+      // upgraded it meanwhile, the host's tier stands.
+      if (d.v.prefab !== d.p.prefab) {
+        if (h.prefab !== d.p.prefab || !(d.v.prefab in PREFABS)) return;
+        next.prefab = d.v.prefab;
+        next.wear = d.v.wear ? { ...d.v.wear } : undefined;
+        next.fuel = h.fuel;
+        return sim.putStructure(next);
+      }
       next.fuel = Math.min(BALANCE.fire.maxFuelHours, Math.max(0, h.fuel + d.v.fuel - d.p.fuel));
       if (next.wear && d.v.wear && d.p.wear) {
         next.wear.dur = Math.min(next.wear.max, next.wear.dur + d.v.wear.dur - d.p.wear.dur);

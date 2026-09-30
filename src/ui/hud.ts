@@ -3,6 +3,8 @@ import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '..
 import { FREEPLAY_OBJECTIVE, OBJECTIVES } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
 import { toolWears, wearFraction } from '../sim/durability';
+import { toolLevel } from '../sim/upgrades';
+import { LEVEL_NUMERALS } from '../data/upgrades';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
 import { countItem, usedSlots } from '../sim/inventory';
@@ -35,8 +37,10 @@ export function toolBeltHtml(s: GameState): string {
     const dur = pct === null && !(owned && toolWears(id)) ? '' : `<span class="dur ${pct !== null && pct <= BALANCE.durability.lowFraction * 100 ? 'low' : ''}"><i style="transform:scaleX(${(pct ?? 100) / 100})"></i></span>`;
     const ammo = owned ? toolAmmo(s, id) : null;
     const ammoHtml = ammo === null ? '' : `<span class="ammo ${ammo === 0 ? 'empty' : ''}">${ammo}</span>`;
-    const title = `${TOOLS[id].name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}${ammo === null ? '' : ` · ${ammo} ${itemName('arrow', ammo).toLowerCase()}`}`;
-    return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? TOOLS[id].name : '???'}</span>${dur}</div>`;
+    const lv = owned ? toolLevel(s, id) : 0;
+    const name = `${TOOLS[id].name}${lv ? ' ' + LEVEL_NUMERALS[lv] : ''}`;
+    const title = `${name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}${ammo === null ? '' : ` · ${ammo} ${itemName('arrow', ammo).toLowerCase()}`}`;
+    return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${owned ? toolIcon(id) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? name : '???'}</span>${dur}</div>`;
   }).join('');
 }
 

@@ -1,5 +1,5 @@
 /** Bumped whenever the wire format changes; hosts and guests must match. */
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const MAX_PLAYERS = 4;
 export const LOBBY_CHANNEL = 'cozy:lobby';
 

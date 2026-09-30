@@ -42,6 +42,7 @@ const e = (event: string, atLeast = 1): UnlockCond => ({ event, atLeast });
  * progression: every recipe must fit the base 6-slot pack (gear upgrades are optional), the first tool must come
  * out of the starter patch, and cordage (an ingredient in many other recipes whose cordage counts already went 5x)
  * only goes up a little so those don't compound to 25x. Arrows, cooking and campfire fuel keep their costs.
+ * The A-frame, bark hut and hide tent aren't recipes: they're built by upgrading a shelter in place (data/upgrades.ts).
  */
 export const RECIPES: Recipe[] = [
   // ---- materials
@@ -161,6 +162,14 @@ export const RECIPES: Recipe[] = [
     description: 'A hearty fire-roasted skewer.',
   },
   {
+    id: 'forageSkewer', name: "Forager's Skewer", category: 'cooking', station: 'fire',
+    inputs: [{ item: 'berries', count: 2 }, { item: 'onion', count: 1 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'forageSkewer', count: 1 },
+    unlock: { all: [g('berries', 1)] },
+    learnHint: 'Thread salmonberries and a wild onion on a stick and roast them over the fire.',
+    description: 'A simple forage-only meal.',
+  },
+  {
     id: 'berryTea', name: 'Salmonberry Tea', category: 'cooking', station: 'fire',
     inputs: [{ item: 'boiledWater', count: 1 }, { item: 'berries', count: 2 }],
     output: { kind: 'item', item: 'berryTea', count: 1 },
@@ -232,14 +241,6 @@ export const RECIPES: Recipe[] = [
     unlock: { all: [g('log', 2)] },
     learnHint: 'Split a log into a bench. Resting there restores energy faster.',
     description: 'Sit and rest to recover energy quickly.',
-  },
-  {
-    id: 'hideTent', name: 'Hide Tent', category: 'structures',
-    inputs: [{ item: 'hide', count: 15 }, { item: 'log', count: 8 }, { item: 'cordage', count: 10 }],
-    output: { kind: 'place', prefab: 'hideTent' },
-    unlock: { all: [g('hide', 3)] },
-    learnHint: 'Enough hides for a proper tent: warmer sleep, better rest.',
-    description: 'A warm, snug shelter. Sleep heals more.',
   },
 ];
 

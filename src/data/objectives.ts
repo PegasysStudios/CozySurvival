@@ -12,79 +12,78 @@ export interface Objective {
 const got = (s: GameState, item: keyof GameState['stats']['gathered']) => s.stats.gathered[item] ?? 0;
 const made = (s: GameState, id: string) => s.stats.crafted[id] ?? 0;
 const ev = (s: GameState, id: string) => s.stats.events[id] ?? 0;
-const MEALS = ['skewer', 'stew', 'berryTea', 'cedarTrout', 'troutChowder', 'troutSkewer'];
-const CANTEEN_BARK = RECIPE_BY_ID.canteen.inputs.find((i) => i.item === 'bark')!.count;
+const tick = (ok: boolean) => (ok ? '✓' : '·');
+const SKEWERS = ['forageSkewer', 'skewer'];
+const FISH_DISHES = ['grilledTrout', 'cedarTrout', 'troutChowder', 'troutSkewer', 'smokedTrout'];
+const FORAGE_FOOD = 3;
+const FIREWOOD = 2;
+const CAMPFIRE = RECIPE_BY_ID.campfire.inputs;
 
-/** Onboarding chain: gather -> tools -> fire -> water -> meals -> hunting -> chopping -> shelter -> sleep. */
+/** `kill:<tool>` counts every kill made with that tool, `kill:<tool>:<species>` kills of one species. */
+export const killKey = (tool: string, species?: string) => (species ? `kill:${tool}:${species}` : `kill:${tool}`);
+
+/** Onboarding: water -> camp -> food -> first meal -> firewood -> axe -> fishing -> spear -> bow. */
 export const OBJECTIVES: Objective[] = [
   {
-    id: 'gather', title: 'Gather sticks and stones',
-    hint: 'Left-click fallen branches and loose stones on the forest floor.',
-    done: (s) => got(s, 'stick') >= 3 && got(s, 'stone') >= 3,
-    progress: (s) => `Sticks ${Math.min(3, got(s, 'stick'))}/3 · Stones ${Math.min(3, got(s, 'stone'))}/3`,
-  },
-  {
-    id: 'fiber', title: 'Strip fiber from sword ferns',
-    hint: 'Sword ferns grow in the shade. Fiber binds tools together.',
-    done: (s) => got(s, 'fiber') >= 3,
-    progress: (s) => `Fiber ${Math.min(3, got(s, 'fiber'))}/3`,
-  },
-  {
-    id: 'axe', title: 'Craft a Stone Axe',
-    hint: 'Press C to open crafting. New recipes appear as you gather.',
-    done: (s) => made(s, 'axe') >= 1,
-  },
-  {
-    id: 'campfire', title: 'Build a campfire',
-    hint: 'Crafting > Build > Campfire, then left-click flat ground. R rotates, right-click cancels.',
-    done: (s) => made(s, 'campfire') >= 1,
-  },
-  {
-    id: 'drink', title: 'Drink from the lake',
-    hint: 'Walk to the shore and left-click the water.',
+    id: 'drink', title: 'Find water and drink from the lake',
+    hint: 'The lake is a short walk away. Walk to the shore and left-click the water to drink.',
     done: (s) => ev(s, 'drankByHand') >= 1 || got(s, 'lakeWater') >= 1,
   },
   {
-    id: 'canteen', title: 'Make a Bark Canteen',
-    hint: 'Peel bark from white paper birches by hand, twist fiber into cordage, then craft a canteen.',
-    done: (s) => made(s, 'canteen') >= 1,
-    progress: (s) => `Birch bark ${Math.min(CANTEEN_BARK, got(s, 'bark'))}/${CANTEEN_BARK}`,
+    id: 'camp', title: 'Set up camp: build a campfire',
+    hint: 'Gather stones, sticks and fern fiber, then Crafting (C) > Build > Campfire and left-click flat ground.',
+    done: (s) => made(s, 'campfire') >= 1,
+    progress: (s) => CAMPFIRE.map((i) => `${i.item === 'fiber' ? 'Fiber' : i.item === 'stone' ? 'Stones' : 'Sticks'} ${Math.min(i.count, got(s, i.item))}/${i.count}`).join(' · '),
   },
   {
-    id: 'boil', title: 'Fill your canteen and boil water',
-    hint: 'Left-click the lake to fill up, then cook Boiled Water at a lit campfire.',
-    done: (s) => made(s, 'boilWater') >= 1,
+    id: 'forage', title: 'Food keeps you alive: forage',
+    hint: 'Pick salmonberries, wild onions or chanterelles. Each new plant gets a page in your Foraging guide (Tab).',
+    done: (s) => got(s, 'berries') + got(s, 'onion') + got(s, 'mushroom') >= FORAGE_FOOD,
+    progress: (s) => `Food foraged ${Math.min(FORAGE_FOOD, got(s, 'berries') + got(s, 'onion') + got(s, 'mushroom'))}/${FORAGE_FOOD}`,
   },
   {
-    id: 'meal', title: 'Cook a hearty meal',
-    hint: 'Combine ingredients at the fire: Mushroom Skewer (chanterelles + onion + stick) or Salmonberry Tea.',
-    done: (s) => MEALS.some((m) => made(s, m) >= 1),
+    id: 'skewer', title: 'Cook your first meal at the campfire',
+    hint: "Click your lit campfire and roast a Forager's Skewer (salmonberries + wild onion + a stick) or a Mushroom Skewer.",
+    done: (s) => SKEWERS.some((m) => made(s, m) >= 1),
   },
   {
-    id: 'hunt', title: 'Hunt for food',
-    hint: 'Craft a spear or bow. Hares let you get close if you stand still; deer bolt from far away.',
-    done: (s) => Object.values(s.stats.kills).some((n) => (n ?? 0) > 0),
+    id: 'firewood', title: 'Keep the fire going',
+    hint: 'Collect sticks (or logs), click the campfire and add them to the fire before it burns out.',
+    done: (s) => ev(s, 'fuelAdded') >= FIREWOOD,
+    progress: (s) => `Firewood added ${Math.min(FIREWOOD, ev(s, 'fuelAdded'))}/${FIREWOOD}`,
   },
   {
-    id: 'chop', title: 'Chop down a tree and cut it up',
-    hint: 'Equip the Stone Axe (2) and hold left-click on a trunk to fell it, then keep chopping the fallen trunk for logs.',
-    done: (s) => got(s, 'log') >= 1,
+    id: 'axe', title: 'Craft an axe, then chop a tree',
+    hint: 'Craft a Stone Axe, equip it (2) and hold left-click on a trunk to fell it, then keep chopping the fallen trunk for logs.',
+    done: (s) => made(s, 'axe') >= 1 && got(s, 'log') >= 1,
+    progress: (s) => `${tick(made(s, 'axe') >= 1)} Stone Axe · ${tick(got(s, 'log') >= 1)} Log`,
   },
   {
-    id: 'shelter', title: 'Build a lean-to shelter',
-    hint: 'Logs, sticks, fiber and cordage. Find a flat spot clear of trees.',
-    done: (s) => made(s, 'leanTo') >= 1 || made(s, 'hideTent') >= 1,
+    id: 'fish', title: 'Other food: catch and cook a fish',
+    hint: 'Twist fiber into cordage and craft a Fishing Pole. Hold left-click to cast, click when the float dips, then cook the trout at the fire.',
+    done: (s) => made(s, 'rod') >= 1 && got(s, 'rawFish') >= 1 && FISH_DISHES.some((m) => made(s, m) >= 1),
+    progress: (s) => `${tick(made(s, 'rod') >= 1)} Fishing Pole · ${tick(got(s, 'rawFish') >= 1)} Fish · ${tick(FISH_DISHES.some((m) => made(s, m) >= 1))} Cooked`,
   },
   {
-    id: 'sleep', title: 'Sleep through the night',
-    hint: 'After 7 PM, left-click your shelter to sleep until dawn.',
-    done: (s) => ev(s, 'slept') >= 1,
+    id: 'spear', title: 'Craft a spear and hunt a hare',
+    hint: 'Spear hunting is hard: hares bolt when you get close. Creep up slowly, stay still when they look up, then strike.',
+    done: (s) => made(s, 'spear') >= 1 && ev(s, killKey('spear', 'rabbit')) >= 1,
+    progress: (s) => `${tick(made(s, 'spear') >= 1)} Spear · ${tick(ev(s, killKey('spear', 'rabbit')) >= 1)} Hare`,
+  },
+  {
+    id: 'bow', title: 'Craft a bow and arrows, then hunt with the bow',
+    hint: 'Hold left-click to draw and release to shoot. Deer spook from far away, so a bow is the way to reach them.',
+    done: (s) => made(s, 'bow') >= 1 && made(s, 'arrows') >= 1 && ev(s, killKey('bow')) >= 1,
+    progress: (s) => `${tick(made(s, 'bow') >= 1)} Bow · ${tick(made(s, 'arrows') >= 1)} Arrows · ${tick(ev(s, killKey('bow')) >= 1)} Bow kill`,
   },
 ];
 
+/** How many steps the pre-round-5 onboarding track had (old saves store their position in it). */
+export const LEGACY_OBJECTIVE_COUNT = 10;
+
 export const FREEPLAY_OBJECTIVE = {
   title: 'Survive as many days as you can',
-  hint: 'Keep fed, watered and warm. Wolves and bears roam after the first days; fire and torches keep them away.',
+  hint: 'Keep fed, watered and warm, and upgrade your shelter and tools. Wolves and bears roam after the first days; fire and torches keep them away.',
 };
 
 /** Advance past every completed objective. Returns indices completed this call. */

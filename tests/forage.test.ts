@@ -1,138 +1,112 @@
 import { describe, expect, it } from 'vitest';
-import { RESOURCES, RESOURCE_KINDS, type ResourceKind } from '../src/data/resources';
-import { countItem } from '../src/sim/inventory';
+import { FORAGE_GUIDE, forageForResource } from '../src/data/forage';
+import { ITEMS } from '../src/data/items';
+import { RECIPES } from '../src/data/recipes';
+import { RESOURCES, type ResourceKind } from '../src/data/resources';
 import { deserializeState, serializeState } from '../src/sim/save';
-import { generateWorld, type WorldGen } from '../src/sim/worldgen';
-import { nearestResource, quietSim } from './helpers';
+import { Simulation } from '../src/sim/simulation';
+import { foragePage, forageGuide } from '../src/ui/forage';
+import { drain, nearestResource, nearestTree, quietSim } from './helpers';
 
-const SEEDS = [1, 42, 777, 20260929];
-const OLD = {
-  yield: { stickPile: 2, stonePile: 2 },
-  starter: { stickPile: 5, stonePile: 5, fern: 4, berryBush: 3, mushroom: 2, onion: 2 } as Record<ResourceKind, number>,
-};
-
-/** The world as generated before forage was thinned: every candidate spot grows. */
-function legacyWorld(seed: number): WorldGen {
-  const saved = RESOURCE_KINDS.map((k) => ({ k, starter: RESOURCES[k].starter, scatter: RESOURCES[k].scatter }));
-  try {
-    for (const k of RESOURCE_KINDS) Object.assign(RESOURCES[k], { starter: OLD.starter[k], scatter: 1 });
-    return generateWorld(seed);
-  } finally {
-    for (const s of saved) Object.assign(RESOURCES[s.k], { starter: s.starter, scatter: s.scatter });
-  }
+function harvest(sim: Simulation, kind: ResourceKind) {
+  const i = nearestResource(sim, kind);
+  sim.state.resources[i].charges = Math.max(1, sim.state.resources[i].charges);
+  sim.perform({ kind: 'resource', index: i, dist: 1 });
+  return drain(sim);
 }
 
-const count = (g: WorldGen, kind: ResourceKind) => g.resources.filter((r) => r.kind === kind).length;
-
-describe('lower stick and stone yields', () => {
-  it('stick and stone piles give one per harvest (was two); charges and other forage are unchanged', () => {
-    expect(RESOURCES.stickPile.yield).toBe(1);
-    expect(RESOURCES.stonePile.yield).toBe(1);
-    expect(RESOURCES.stickPile.yield).toBeLessThan(OLD.yield.stickPile);
-    expect(RESOURCES.stonePile.yield).toBeLessThan(OLD.yield.stonePile);
-    expect(RESOURCES.stickPile.charges).toBe(3);
-    expect(RESOURCES.stonePile.charges).toBe(3);
-    expect(RESOURCES.fern.yield).toBe(2);
-    expect(RESOURCES.berryBush.yield).toBe(2);
-  });
-
-  it('a stick pile or stone pile now holds three in total', () => {
-    for (const [kind, item] of [['stickPile', 'stick'], ['stonePile', 'stone']] as const) {
-      const sim = quietSim();
-      const i = nearestResource(sim, kind);
-      for (let k = 0; k < 5; k++) sim.perform({ kind: 'resource', index: i, dist: 1 });
-      expect(countItem(sim.state.inventory, item)).toBe(3);
-      expect(sim.state.resources[i].charges).toBe(0);
+describe('Foraging guide', () => {
+  it('has a page for every harvestable plant, and none for sticks or stones', () => {
+    const plants = (Object.keys(RESOURCES) as ResourceKind[]).filter((k) => forageForResource(k));
+    expect(plants.sort()).toEqual(['berryBush', 'fern', 'mushroom', 'onion']);
+    expect(FORAGE_GUIDE.map((e) => e.id).sort()).toEqual(['berryBush', 'birch', 'fern', 'mushroom', 'onion']);
+    for (const e of FORAGE_GUIDE) {
+      expect(e.name.length).toBeGreaterThan(3);
+      expect(e.latin).toMatch(/^[A-Z][a-z]+ [a-z]+/);
+      expect(e.use.length).toBeGreaterThan(20);
+      expect(e.notes.length).toBeGreaterThan(20);
+      expect(ITEMS[e.item]).toBeDefined();
     }
-  });
-});
-
-describe('lower forage spawn rates', () => {
-  it.each(SEEDS)('seed %i: forage grows on a share of the old spots, and trees, rocks and logs are identical', (seed) => {
-    const now = generateWorld(seed);
-    const old = legacyWorld(seed);
-    expect(now.trees).toEqual(old.trees);
-    expect(now.rocks).toEqual(old.rocks);
-    expect(now.logs).toEqual(old.logs);
-    expect(now.resourceSpots).toBe(old.resources.length);
-    // a strict subset of the old layout: same places, same kinds, nothing new
-    for (const r of now.resources) expect(old.resources[r.spot]).toEqual(r);
-    expect(now.resources.length).toBeLessThan(old.resources.length * 0.6);
-    expect(now.resources.length).toBeGreaterThan(old.resources.length * 0.35);
+    expect(forageForResource('stickPile')).toBeNull();
+    expect(forageForResource('stonePile')).toBeNull();
   });
 
-  it('each kind is thinned roughly by its scatter share, and the starter patch keeps a few of each', () => {
-    let nowTotal = 0;
-    for (const kind of RESOURCE_KINDS) {
-      let now = 0;
-      let old = 0;
-      for (const seed of SEEDS) {
-        now += count(generateWorld(seed), kind) - RESOURCES[kind].starter;
-        old += count(legacyWorld(seed), kind) - OLD.starter[kind];
-      }
-      nowTotal += now;
-      expect(now / old).toBeGreaterThan(RESOURCES[kind].scatter - 0.12);
-      expect(now / old).toBeLessThan(RESOURCES[kind].scatter + 0.12);
-      expect(RESOURCES[kind].starter).toBeGreaterThanOrEqual(1);
-      expect(RESOURCES[kind].starter).toBeLessThan(OLD.starter[kind]);
-      expect(RESOURCES[kind].scatter).toBeLessThanOrEqual(0.5);
-    }
-    expect(nowTotal).toBeGreaterThan(0);
-  });
-
-  const supply = (g: WorldGen, r: number, kind: ResourceKind, perHarvest: number) =>
-    g.resources.filter((x) => x.kind === kind && Math.hypot(x.x, x.z) < r).length * RESOURCES[kind].charges * perHarvest;
-
-  it.each(SEEDS)('seed %i: at most a third of the sticks and stones near spawn, but the first steps are still at hand', (seed) => {
-    const now = generateWorld(seed);
-    const old = legacyWorld(seed);
-    const sticks = supply(now, 25, 'stickPile', RESOURCES.stickPile.yield);
-    const stones = supply(now, 25, 'stonePile', RESOURCES.stonePile.yield);
-    expect(sticks).toBeLessThanOrEqual(supply(old, 25, 'stickPile', OLD.yield.stickPile) / 3);
-    expect(stones).toBeLessThanOrEqual(supply(old, 25, 'stonePile', OLD.yield.stonePile) / 3);
-    // gathering, fiber and the stone axe (2 sticks, 2 stones, 2 fiber) come from the starter patch
-    expect(sticks).toBeGreaterThanOrEqual(3);
-    expect(stones).toBeGreaterThanOrEqual(3);
-    expect(supply(now, 20, 'fern', RESOURCES.fern.yield)).toBeGreaterThanOrEqual(3);
-  });
-
-  it('on average the day-1 surroundings no longer hold a whole goal track of sticks, stones and fiber', () => {
-    // axe, campfire, canteen, spear and lean-to need about 14 sticks, 8 stones and 16 fiber, before firewood
-    const avg = (g: (seed: number) => WorldGen, kind: ResourceKind, perHarvest: number) =>
-      SEEDS.reduce((a, seed) => a + supply(g(seed), 25, kind, perHarvest), 0) / SEEDS.length;
-    expect(avg(generateWorld, 'stickPile', RESOURCES.stickPile.yield)).toBeLessThan(14);
-    expect(avg(generateWorld, 'stonePile', RESOURCES.stonePile.yield)).toBeLessThan(8 * 1.5);
-    expect(avg(generateWorld, 'fern', RESOURCES.fern.yield)).toBeLessThan(16);
-    expect(avg(legacyWorld, 'stickPile', OLD.yield.stickPile)).toBeGreaterThan(14 * 2);
-    expect(avg(legacyWorld, 'stonePile', OLD.yield.stonePile)).toBeGreaterThan(8 * 2);
-    expect(avg(legacyWorld, 'fern', RESOURCES.fern.yield)).toBeGreaterThan(16);
-  });
-
-  it('saves from before the thinning load: surviving spots keep their state, vanished ones are skipped', () => {
+  it('starts empty and unlocks a plant the first time you harvest it, once', () => {
     const sim = quietSim();
-    const gen = sim.gen;
-    const kept = gen.resources[5];
-    const gone = gen.resources.findIndex((r, i) => i > 0 && r.spot !== gen.resources[i - 1].spot + 1);
-    const missingSpot = gen.resources[gone].spot - 1;
-    const json = JSON.parse(serializeState(sim.state));
-    json.resources = [[kept.spot, 0, 40], [missingSpot, 1, 12]];
-    const loaded = deserializeState(JSON.stringify(json))!;
-    expect(loaded).not.toBeNull();
-    expect(loaded.resources[5]).toEqual({ charges: 0, respawnAt: 40 });
-    expect(loaded.resources.filter((r, i) => r.charges !== RESOURCES[gen.resources[i].kind].charges)).toHaveLength(1);
-    // spots that never existed still mark the save as corrupt
-    json.resources = [[gen.resourceSpots, 1, 0]];
-    expect(deserializeState(JSON.stringify(json))).toBeNull();
-    json.resources = [[-1, 1, 0]];
-    expect(deserializeState(JSON.stringify(json))).toBeNull();
+    expect(sim.state.forage).toEqual([]);
+    expect(forageGuide(sim.state)).toMatchObject({ unlocked: 0, total: 5 });
+    expect(harvest(sim, 'stickPile').some((e) => e.type === 'forageUnlocked')).toBe(false);
+    const first = harvest(sim, 'berryBush');
+    expect(first).toContainEqual({ type: 'forageUnlocked', id: 'berryBush' });
+    expect(first.some((e) => e.type === 'message' && /Foraging guide/.test(e.text))).toBe(true);
+    expect(sim.state.forage).toEqual(['berryBush']);
+    expect(harvest(sim, 'berryBush').some((e) => e.type === 'forageUnlocked')).toBe(false);
+    harvest(sim, 'fern');
+    harvest(sim, 'mushroom');
+    harvest(sim, 'onion');
+    expect(sim.state.forage.sort()).toEqual(['berryBush', 'fern', 'mushroom', 'onion']);
   });
 
-  it('new saves key resources by spot and round-trip', () => {
+  it('peeling birch bark unlocks the birch page', () => {
     const sim = quietSim();
-    const i = 9;
-    sim.state.resources[i] = { charges: 1, respawnAt: 30 };
-    const json = serializeState(sim.state);
-    expect(JSON.parse(json).resources).toEqual([[sim.gen.resources[i].spot, 1, 30]]);
-    expect(deserializeState(json)!.resources[i]).toEqual({ charges: 1, respawnAt: 30 });
+    sim.selectTool('hands');
+    const b = nearestTree(sim, 'birch');
+    sim.state.trees[b].bark = 2;
+    sim.perform({ kind: 'tree', index: b, dist: 1 });
+    expect(drain(sim)).toContainEqual({ type: 'forageUnlocked', id: 'birch' });
+    expect(sim.state.forage).toContain('birch');
+  });
+
+  it('pages show effects and hunger, recipes that use the plant, and notes; locked pages hide them', () => {
+    const sim = quietSim();
+    const berry = FORAGE_GUIDE.find((e) => e.id === 'berryBush')!;
+    expect(foragePage(sim.state, berry).unlocked).toBe(false);
+    harvest(sim, 'berryBush');
+    const page = foragePage(sim.state, berry);
+    expect(page.unlocked).toBe(true);
+    const food = ITEMS.berries.food!;
+    expect(page.effects).toContain(`+${food.hunger} hunger`);
+    expect(page.effects).toContain(`+${food.thirst} thirst`);
+    expect(page.recipes).toContain("Forager's Skewer");
+    const using = RECIPES.filter((r) => r.inputs.some((i) => i.item === 'berries'));
+    expect(page.recipes.length + page.undiscovered).toBe(using.length);
+    expect(page.regrowHours).toBe(RESOURCES.berryBush.respawnHours);
+    const fern = foragePage(sim.state, FORAGE_GUIDE.find((e) => e.id === 'fern')!);
+    expect(fern.effects).toEqual([]);
+    expect(fern.upgrades).toBeGreaterThanOrEqual(0);
+    const mushroom = foragePage(sim.state, FORAGE_GUIDE.find((e) => e.id === 'mushroom')!);
+    expect(mushroom.effects.some((x) => x.startsWith('-'))).toBe(true);
+  });
+
+  it('unlocks persist through save and load', () => {
+    const sim = quietSim();
+    harvest(sim, 'berryBush');
+    harvest(sim, 'onion');
+    const loaded = deserializeState(serializeState(sim.state))!;
+    expect(loaded.forage).toEqual(['berryBush', 'onion']);
+    expect(forageGuide(loaded).unlocked).toBe(2);
+    const raw = JSON.parse(serializeState(sim.state));
+    raw.forage = ['onion', 'kelp', 3];
+    expect(deserializeState(JSON.stringify(raw))!.forage).toEqual(['onion']);
+  });
+
+  it('old saves unlock every plant already harvested', () => {
+    const sim = quietSim();
+    sim.state.stats.gathered = { fiber: 12, mushroom: 1, bark: 4, stick: 9 };
+    const raw = JSON.parse(serializeState(sim.state));
+    raw.version = 2;
+    delete raw.forage;
+    delete raw.toolLevels;
+    const loaded = deserializeState(JSON.stringify(raw))!;
+    expect(loaded.forage.sort()).toEqual(['birch', 'fern', 'mushroom']);
+    expect(new Simulation(loaded).state.forage).toHaveLength(3);
+  });
+
+  it('respawning after a multiplayer death starts a fresh guide, like skills and recipes', () => {
+    const sim = quietSim();
+    harvest(sim, 'berryBush');
+    sim.state.needs.health = 0;
+    sim.respawn();
+    expect(sim.state.forage).toEqual([]);
   });
 });
