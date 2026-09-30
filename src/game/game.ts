@@ -858,6 +858,18 @@ export class Game {
       case 'forageUnlocked':
         this.panels.refresh();
         break;
+      case 'repairStarted':
+        if (this.panels.mode !== 'none') this.closePanel();
+        this.hud.toast(`Repairing your ${TOOLS[e.tool].name.toLowerCase()}. Stay put for ${e.duration} s; you can still look around.`, 'info', toolIcon(e.tool));
+        break;
+      case 'repaired':
+        this.sfx('craft');
+        this.panels.refresh();
+        break;
+      case 'repairCancelled':
+        this.sfx('deny');
+        this.panels.refresh();
+        break;
       case 'sat':
         this.yaw = e.yaw;
         this.pitch = 0;

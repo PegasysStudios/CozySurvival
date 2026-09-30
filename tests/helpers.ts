@@ -108,11 +108,13 @@ export function giveRecipe(sim: Simulation, recipe: string): void {
   give(sim, recipeInputs(recipe));
 }
 
+export type BuiltRecipe = 'campfire' | 'leanTo' | 'bench' | 'workbench' | 'storageBin';
+
 /**
  * Builds `recipe` from freshly given ingredients without draining events; whatever the pack held beforehand is set
  * aside and put back, since the bigger structures fill a starting pack on their own.
  */
-export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench'): StructureState {
+export function buildFresh(sim: Simulation, recipe: BuiltRecipe): StructureState {
   const inv = sim.state.inventory;
   const held = inv.slots.slice();
   inv.slots.fill(null);
@@ -126,7 +128,7 @@ export function buildFresh(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'ben
 }
 
 /** Like `buildFresh`, then drains the events. */
-export function placeStructure(sim: Simulation, recipe: 'campfire' | 'leanTo' | 'bench'): StructureState {
+export function placeStructure(sim: Simulation, recipe: BuiltRecipe): StructureState {
   const s = buildFresh(sim, recipe);
   drain(sim);
   return s;
@@ -168,7 +170,7 @@ export function placeShelter(sim: Simulation, tier: PrefabId): StructureState {
     if (!next) throw new Error(`${tier} is not a shelter tier`);
     inv.slots.fill(null);
     give(sim, Object.fromEntries(SHELTER_UPGRADES[next]!.map((i) => [i.item, i.count])));
-    const res = sim.upgradeShelter(st.id);
+    const res = sim.upgradeStructure(st.id);
     if (!res.ok) throw new Error(`could not upgrade to ${next}: ${res.reason}`);
   }
   inv.slots.fill(null);

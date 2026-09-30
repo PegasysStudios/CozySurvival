@@ -1,4 +1,4 @@
-export type PrefabId = 'campfire' | 'leanTo' | 'aFrame' | 'barkHut' | 'hideTent' | 'bench';
+export type PrefabId = 'campfire' | 'leanTo' | 'aFrame' | 'barkHut' | 'hideTent' | 'bench' | 'workbench' | 'storageBin' | 'storageCrate' | 'storageChest';
 
 export interface PrefabDef {
   id: PrefabId;
@@ -14,6 +14,10 @@ export interface PrefabDef {
   shelter?: { warmthBonus: number; healthBonus: number };
   fire?: boolean;
   seat?: boolean;
+  /** Repairs worn tools and weapons. */
+  workbench?: boolean;
+  /** Shared storage with this many slots. */
+  storage?: { slots: number };
 }
 
 export const PREFABS: Record<PrefabId, PrefabDef> = {
@@ -76,6 +80,46 @@ export const PREFABS: Record<PrefabId, PrefabDef> = {
     interactRadius: 0.8,
     interactHeight: 0.4,
     seat: true,
+  },
+  workbench: {
+    id: 'workbench',
+    name: 'Repair Workbench',
+    footprint: { type: 'box', hw: 0.85, hd: 0.5 },
+    collider: { type: 'box', hw: 0.75, hd: 0.4 },
+    maxHeightDelta: 0.35,
+    interactRadius: 0.9,
+    interactHeight: 0.85,
+    workbench: true,
+  },
+  storageBin: {
+    id: 'storageBin',
+    name: 'Woven Storage Bin',
+    footprint: { type: 'circle', r: 0.55 },
+    collider: { type: 'circle', r: 0.45 },
+    maxHeightDelta: 0.35,
+    interactRadius: 0.6,
+    interactHeight: 0.5,
+    storage: { slots: 10 },
+  },
+  storageCrate: {
+    id: 'storageCrate',
+    name: 'Log Storage Crate',
+    footprint: { type: 'box', hw: 0.62, hd: 0.46 },
+    collider: { type: 'box', hw: 0.56, hd: 0.4 },
+    maxHeightDelta: 0.35,
+    interactRadius: 0.7,
+    interactHeight: 0.55,
+    storage: { slots: 15 },
+  },
+  storageChest: {
+    id: 'storageChest',
+    name: 'Hide-Lined Chest',
+    footprint: { type: 'box', hw: 0.74, hd: 0.5 },
+    collider: { type: 'box', hw: 0.68, hd: 0.44 },
+    maxHeightDelta: 0.35,
+    interactRadius: 0.8,
+    interactHeight: 0.62,
+    storage: { slots: 20 },
   },
 };
 

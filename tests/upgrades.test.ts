@@ -100,15 +100,15 @@ describe('shelter tiers', () => {
       sim.state.inventory.slots.fill(null);
       // one short of the last material: refused, nothing taken
       give(sim, asGive(cost.map((i, k) => (k === cost.length - 1 ? { ...i, count: i.count - 1 } : i))));
-      expect(sim.canUpgradeShelter(id)).toEqual({ ok: false, reason: 'missing' });
-      expect(sim.upgradeShelter(id).ok).toBe(false);
+      expect(sim.canUpgradeStructure(id)).toEqual({ ok: false, reason: 'missing' });
+      expect(sim.upgradeStructure(id).ok).toBe(false);
       expect(countItem(sim.state.inventory, cost[0].item)).toBe(cost[0].count);
       give(sim, { [cost[cost.length - 1].item]: 1 });
       const m = shelterMenu(sim, id)!;
       expect(m.next!.prefab).toBe(next);
       expect(m.next!.check.ok).toBe(true);
       keepAlive(sim);
-      expect(sim.upgradeShelter(id).ok).toBe(true);
+      expect(sim.upgradeStructure(id).ok).toBe(true);
       const ev = drain(sim);
       const st = sim.state.structures.find((s) => s.id === id)!;
       expect(st).toMatchObject({ prefab: next, x, z, rot });
@@ -118,7 +118,7 @@ describe('shelter tiers', () => {
       for (const i of cost) expect(countItem(sim.state.inventory, i.item), `${next} ${i.item}`).toBe(0);
       expect(sim.state.structures.filter((s) => PREFABS[s.prefab].shelter)).toHaveLength(1);
     }
-    expect(sim.canUpgradeShelter(id)).toEqual({ ok: false, reason: 'maxed' });
+    expect(sim.canUpgradeStructure(id)).toEqual({ ok: false, reason: 'maxed' });
     expect(shelterMenu(sim, id)!.next).toBeNull();
     expect(shelterMenu(sim, id)!.tier).toBe(4);
   });
@@ -151,13 +151,13 @@ describe('shelter tiers', () => {
     const hut = placeShelter(sim, 'barkHut');
     give(sim, asGive(SHELTER_UPGRADES.hideTent!));
     teleport(sim, hut.x, hut.z);
-    expect(sim.canUpgradeShelter(hut.id)).toEqual({ ok: false, reason: 'blocked' });
+    expect(sim.canUpgradeStructure(hut.id)).toEqual({ ok: false, reason: 'blocked' });
     expect(sim.upgradeBlocker(hut.id)).toBe('player');
     expect(shelterMenu(sim, hut.id)!.next!.reason).toMatch(/room to grow/);
-    expect(sim.upgradeShelter(hut.id).ok).toBe(false);
+    expect(sim.upgradeStructure(hut.id).ok).toBe(false);
     expect(countItem(sim.state.inventory, 'hide')).toBe(18);
     teleport(sim, hut.x + 8, hut.z);
-    expect(sim.canUpgradeShelter(hut.id).ok).toBe(true);
+    expect(sim.canUpgradeStructure(hut.id).ok).toBe(true);
   });
 
   it('the menu says when the pack is too small to carry the next tier at once', () => {

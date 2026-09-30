@@ -81,3 +81,41 @@ export function nextShelter(prefab: PrefabId): PrefabId | null {
   const i = SHELTER_TIERS.indexOf(prefab);
   return i >= 0 && i < SHELTER_TIERS.length - 1 ? SHELTER_TIERS[i + 1] : null;
 }
+
+// ------------------------------------------------------------------ storage
+
+/** Storage tiers: the woven bin is crafted, the crate and chest only come from upgrading it in place. */
+export const BIN_TIERS: PrefabId[] = ['storageBin', 'storageCrate', 'storageChest'];
+
+export const BIN_UPGRADES: Partial<Record<PrefabId, Cost>> = {
+  storageCrate: [{ item: 'log', count: 8 }, { item: 'stick', count: 16 }, { item: 'cordage', count: 6 }],
+  storageChest: [{ item: 'log', count: 12 }, { item: 'cordage', count: 8 }, { item: 'hide', count: 6 }, { item: 'bark', count: 10 }],
+};
+
+export const BIN_UPGRADE_TEXT: Partial<Record<PrefabId, string>> = {
+  storageCrate: 'Box the bin in split logs: five more slots, and it keeps the rain off.',
+  storageChest: 'Line it with hides and fit a bark lid: twenty slots, the roomiest store in camp.',
+};
+
+/** The upgrade ladder a structure belongs to (shelters or storage), or null if it has none. */
+export function tierLine(prefab: PrefabId): PrefabId[] | null {
+  if (SHELTER_TIERS.includes(prefab)) return SHELTER_TIERS;
+  if (BIN_TIERS.includes(prefab)) return BIN_TIERS;
+  return null;
+}
+
+/** The tier a structure upgrades into, or null at the top (or for structures without tiers). */
+export function nextTier(prefab: PrefabId): PrefabId | null {
+  const line = tierLine(prefab);
+  const i = line ? line.indexOf(prefab) : -1;
+  return line && i < line.length - 1 ? line[i + 1] : null;
+}
+
+/** Materials to upgrade into tier `prefab`. */
+export function tierCost(prefab: PrefabId): Cost | undefined {
+  return SHELTER_UPGRADES[prefab] ?? BIN_UPGRADES[prefab];
+}
+
+export function tierText(prefab: PrefabId): string {
+  return SHELTER_UPGRADE_TEXT[prefab] ?? BIN_UPGRADE_TEXT[prefab] ?? '';
+}

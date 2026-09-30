@@ -219,6 +219,92 @@ export function benchGeometry(): THREE.BufferGeometry {
   return b.build();
 }
 
+/** A split-log bench on stumps with an anvil stone, a grindstone on its axle and a mallet: the work side faces +Z. */
+export function workbenchGeometry(): THREE.BufferGeometry {
+  const rng = new Rng(101);
+  const b = new GeoBuilder(101);
+  b.add(new BoxGeometry(1.6, 0.12, 0.72), {
+    matrix: tf(0, 0.8, 0),
+    color: (_x, _y, _z, n) => (n.y > 0.9 ? col('#c9a172') : Math.abs(n.x) > 0.9 ? col('#b58b5c') : col('#8a6440')),
+    jitter: 0.012,
+  });
+  for (const sx of [-1, 1]) {
+    for (const sz of [-1, 1]) logPiece(b, sx * 0.64, 0, sz * 0.24, sx * 0.6, 0.76, sz * 0.22, 0.065, '#5e4330');
+    logPiece(b, sx * 0.62, 0.28, -0.25, sx * 0.62, 0.28, 0.25, 0.035, WOOD_LIGHT);
+  }
+  logPiece(b, -0.62, 0.3, 0, 0.62, 0.3, 0, 0.04, WOOD_LIGHT);
+  // back rail with a coil of cordage hanging from a peg
+  for (const sx of [-1, 1]) logPiece(b, sx * 0.7, 0.8, -0.32, sx * 0.7, 1.28, -0.32, 0.035, WOOD);
+  logPiece(b, -0.74, 1.22, -0.32, 0.74, 1.22, -0.32, 0.03, WOOD_LIGHT);
+  b.add(new THREE.TorusGeometry(0.09, 0.022, 5, 10), { matrix: tf(-0.3, 1.1, -0.3), color: '#c9b27a' });
+  // anvil stone
+  b.add(new DodecahedronGeometry(0.15, 0), { matrix: tf(-0.45, 0.93, -0.06, 0.2, 0.5, 0, 1.3, 0.62, 1), color: '#8e9398', vary: 0.06 });
+  // grindstone on its axle
+  b.add(new CylinderGeometry(0.19, 0.19, 0.07, 12), { matrix: tf(0.5, 1.07, -0.12, 0, 0, Math.PI / 2), color: (_x, _y, _z, n) => (Math.abs(n.x) > 0.9 ? col('#a2a6a9') : col('#7c8186')) });
+  for (const dx of [-0.09, 0.09]) logPiece(b, 0.5 + dx, 0.86, -0.12, 0.5 + dx, 1.08, -0.12, 0.025, WOOD);
+  logPiece(b, 0.38, 1.07, -0.12, 0.64, 1.07, -0.12, 0.018, '#3f2a1e');
+  // a mallet and a spare stone head
+  logPiece(b, -0.05, 0.88, 0.2, 0.28, 0.88, 0.12, 0.02, WOOD_LIGHT);
+  b.add(new BoxGeometry(0.1, 0.1, 0.16), { matrix: tf(-0.08, 0.91, 0.2, 0, 0.25, 0), color: '#6e4a30' });
+  stone(b, rng, 0.08, 0.89, -0.2, 0.06);
+  return b.build();
+}
+
+/** Tier 1 storage: a lidded basket woven from grass and sticks. */
+export function storageBinGeometry(): THREE.BufferGeometry {
+  const b = new GeoBuilder(102);
+  b.add(new CylinderGeometry(0.44, 0.37, 0.62, 12, 4), {
+    matrix: tf(0, 0.31, 0),
+    color: (x, y, z) => ((Math.floor((Math.atan2(x, z) + Math.PI) * 3) + Math.floor(y * 12)) % 2 ? col('#c9a86a') : col('#a88650')),
+    jitter: 0.012,
+  });
+  b.add(new CylinderGeometry(0.47, 0.47, 0.06, 12), { matrix: tf(0, 0.62, 0), color: '#9a7a44' });
+  b.add(new CylinderGeometry(0.43, 0.46, 0.06, 12), { matrix: tf(0.02, 0.67, 0.01, 0.06, 0, -0.05), color: (_x, _y, _z, n) => (n.y > 0.5 ? col('#bf9d5e') : col('#8e7040')) });
+  b.add(new IcosahedronGeometry(0.05, 0), { matrix: tf(0.02, 0.73, 0.01), color: '#6e4a30' });
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + 0.4;
+    logPiece(b, Math.cos(a) * 0.38, 0, Math.sin(a) * 0.38, Math.cos(a) * 0.46, 0.64, Math.sin(a) * 0.46, 0.02, WOOD);
+  }
+  return b.build();
+}
+
+/** Tier 2 storage: a crate of split logs with corner posts and a cordage band. */
+export function storageCrateGeometry(): THREE.BufferGeometry {
+  const b = new GeoBuilder(103);
+  b.add(new BoxGeometry(1.08, 0.6, 0.78), {
+    matrix: tf(0, 0.32, 0),
+    color: (_x, y, _z, n) => (Math.abs(n.y) > 0.9 ? col('#8a6440') : Math.floor(y * 6.5) % 2 ? col('#9a7048') : col('#86603c')),
+    jitter: 0.01,
+  });
+  b.add(new BoxGeometry(1.16, 0.08, 0.86), { matrix: tf(0, 0.66, 0), color: (_x, _y, _z, n) => (n.y > 0.9 ? col('#b58b5c') : col('#7a5634')) });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) logPiece(b, sx * 0.54, 0, sz * 0.39, sx * 0.54, 0.7, sz * 0.39, 0.045, '#5e4330');
+  b.add(new BoxGeometry(1.11, 0.04, 0.81), { matrix: tf(0, 0.45, 0), color: '#c9b27a' });
+  b.add(new BoxGeometry(0.16, 0.06, 0.05), { matrix: tf(0, 0.6, 0.43), color: '#5e4330' });
+  return b.build();
+}
+
+/** Tier 3 storage: a hide-lined chest with a rounded bark lid, straps and a stone latch. */
+export function storageChestGeometry(): THREE.BufferGeometry {
+  const b = new GeoBuilder(104);
+  b.add(new BoxGeometry(1.28, 0.54, 0.88), {
+    matrix: tf(0, 0.29, 0),
+    color: (_x, y, _z, n) => (Math.abs(n.y) > 0.9 ? col('#6e4a30') : Math.floor(y * 7) % 2 ? col('#8a5a33') : col('#7a4e2c')),
+    jitter: 0.01,
+  });
+  b.add(new CylinderGeometry(0.44, 0.44, 1.3, 10, 1, false, 0, Math.PI), {
+    matrix: tf(0, 0.56, 0, 0, 0, Math.PI / 2, 0.55, 1, 1),
+    color: (_x, _y, _z, n) => (Math.abs(n.x) > 0.9 ? col('#b58b5c') : col('#d8cdb8')),
+    jitter: 0.01,
+  });
+  for (const x of [-0.38, 0.38]) {
+    b.add(new BoxGeometry(0.12, 0.56, 0.9), { matrix: tf(x, 0.29, 0), color: '#c9a06a' });
+    b.add(new CylinderGeometry(0.445, 0.445, 0.12, 10, 1, false, 0, Math.PI), { matrix: tf(x, 0.56, 0, 0, 0, Math.PI / 2, 0.57, 1, 1), color: '#c9a06a' });
+  }
+  b.add(new BoxGeometry(0.14, 0.16, 0.06), { matrix: tf(0, 0.54, 0.46), color: '#8e9398' });
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.add(new BoxGeometry(0.12, 0.06, 0.12), { matrix: tf(sx * 0.56, 0.03, sz * 0.36), color: '#5e4330' });
+  return b.build();
+}
+
 export function structureGeometry(prefab: PrefabId): THREE.BufferGeometry {
   switch (prefab) {
     case 'campfire':
@@ -233,6 +319,14 @@ export function structureGeometry(prefab: PrefabId): THREE.BufferGeometry {
       return hideTentGeometry();
     case 'bench':
       return benchGeometry();
+    case 'workbench':
+      return workbenchGeometry();
+    case 'storageBin':
+      return storageBinGeometry();
+    case 'storageCrate':
+      return storageCrateGeometry();
+    case 'storageChest':
+      return storageChestGeometry();
   }
 }
 

@@ -9,20 +9,22 @@ import { OBJECTIVES, advanceObjectives, killKey, objectiveText, type ObjectiveNe
 import { PLACE_MAX_DIST, PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPE_BY_ID, recipeOnMap } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
-import { LEVEL_NUMERALS, nextShelter, SHELTER_UPGRADES, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
+import { LEVEL_NUMERALS, nextTier, tierCost, tierLine, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type SpeciesId } from '../data/species';
 import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
-import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearResult } from './durability';
+import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearingTool, type WearResult } from './durability';
 import type { SimEvent } from './events';
-import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor } from './inventory';
-import { createPlayer, horizontalSpeed, lookDir, stepPlayer, surfaceAt, type MoveEnv } from './movement';
+import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot, removeItem, roomFor, usedSlots } from './inventory';
+import { createPlayer, horizontalSpeed, lookDir, stepPlayer, surfaceAt, type MoveEnv, type MoveInput } from './movement';
+import { canRepair, repairCost, repairSeconds, type RepairCheck } from './repair';
+import { addToStore, cloneStore, ensureStore } from './storage';
 import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
-import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
+import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
@@ -311,6 +313,7 @@ export class Simulation {
   private readonly look = { x: 0, y: 0, z: 1 };
   private readonly hit = { x: 0, y: 0, z: 0, water: false };
   private readonly moveEnv: MoveEnv;
+  private readonly locked: MoveInput = { moveX: 0, moveZ: 0, jumpPressed: false, sprint: false, yaw: 0 };
   private readonly animalEnv: AnimalEnv;
 
   constructor(state: GameState) {
@@ -482,8 +485,9 @@ export class Simulation {
     p.yaw = input.yaw;
     p.pitch = clamp(input.pitch, -1.55, 1.55);
     p.hurtTimer = Math.max(0, p.hurtTimer - dt);
-    if (p.seat && (Math.hypot(input.moveX, input.moveZ) > 0.05 || input.jumpPressed)) this.standUp();
-    const move = p.seat ? STILL : stepPlayer(p, input, this.moveEnv, dt, { canSprint: s.needs.energy > 0, exhausted: s.needs.exhausted });
+    const moveIn = s.repair ? this.lockedInput(input) : input;
+    if (p.seat && (Math.hypot(moveIn.moveX, moveIn.moveZ) > 0.05 || moveIn.jumpPressed)) this.standUp();
+    const move = p.seat ? STILL : stepPlayer(p, moveIn, this.moveEnv, dt, { canSprint: s.needs.energy > 0, exhausted: s.needs.exhausted });
     if (move.jumped) {
       spendEnergy(s.needs, BALANCE.needs.energy.jumpCost);
       this.emit({ type: 'jump' });
@@ -500,7 +504,9 @@ export class Simulation {
     // interaction
     this.updateTarget();
     this.actionCooldown = Math.max(0, this.actionCooldown - dt);
-    if (this.placement) {
+    if (s.repair) {
+      this.updateRepair(dt);
+    } else if (this.placement) {
       this.updatePlacementPreview();
       if (input.primaryPressed) this.confirmPlacement();
     } else {
@@ -532,6 +538,12 @@ export class Simulation {
     s.rng = this.rng.s;
   }
 
+  /** Movement input with everything but looking zeroed, for standing at a workbench. */
+  private lockedInput(input: SimInput): MoveInput {
+    this.locked.yaw = input.yaw;
+    return this.locked;
+  }
+
   private checkPopulation(): void {
     const s = this.state;
     if (s.totalHours >= s.spawnCheckAt) {
@@ -551,6 +563,7 @@ export class Simulation {
     s.deathCause = cause;
     s.needs.health = 0;
     this.standUp();
+    this.cancelRepair();
     this.placement = null;
     this.bowDraw = -1;
     this.endFishing('reeled');
@@ -564,6 +577,7 @@ export class Simulation {
     if (p.hurtTimer > 0) return;
     p.hurtTimer = BALANCE.combat.playerHurtInvuln;
     this.standUp();
+    this.cancelRepair('You were hurt and dropped your work.');
     s.lastDamage = source;
     // small knockback away from the attacker
     const dx = p.x - fromX;
@@ -787,6 +801,8 @@ export class Simulation {
         const name = st.wear ? `${def.name} · ${conditionText(st.wear)}` : def.name;
         if (def.shelter) return { name, action: canSleepAt(this.hour) ? 'Sleep or upgrade' : 'Upgrade (sleep after 7 PM)', enabled: true };
         if (def.seat) return { name, action: s.player.seat?.id === st.id ? 'Stand up' : 'Sit and rest', enabled: true };
+        if (def.workbench) return { name, action: s.repair ? 'Repairing…' : 'Repair tools', enabled: !s.repair };
+        if (def.storage) return { name: `${def.name} · ${usedSlots({ slots: st.store ?? [] })}/${def.storage.slots}`, action: 'Open storage', enabled: true };
         return { name: def.name, action: '', enabled: false };
       }
       case 'animal': {
@@ -1342,7 +1358,7 @@ export class Simulation {
     if (def.fire) {
       if (st.fuel <= 0) this.addFuel(id);
       else this.emit({ type: 'openCooking', structure: id });
-    } else if (def.shelter) {
+    } else if (def.shelter || def.storage || def.workbench) {
       this.emit({ type: 'openStructure', structure: id });
     } else if (def.seat) {
       if (this.state.player.seat?.id === st.id) {
@@ -1897,6 +1913,7 @@ export class Simulation {
     const def = PREFABS[pl.prefab];
     const st: StructureState = { id: s.nextId++, prefab: pl.prefab, x: pl.x, y: res.y, z: pl.z, rot: pl.rot, fuel: def.fire ? BALANCE.fire.initialFuelHours : 0 };
     if (prefabWears(st.prefab)) st.wear = newStructureWear(st.prefab, s.skills.crafting);
+    if (def.storage) ensureStore(st);
     s.structures.push(st);
     this.addStructureCollider(st);
     s.stats.crafted[recipe.id] = (s.stats.crafted[recipe.id] ?? 0) + 1;
@@ -2017,6 +2034,10 @@ export class Simulation {
     const st = s.structures.find((x) => x.id === structureId);
     const rest = st ? restBonus(st.prefab) : null;
     if (!st || !rest) return false;
+    if (s.repair) {
+      this.emit({ type: 'sleepDenied', reason: 'Finish your repair first.' });
+      return false;
+    }
     if (!canSleepAt(this.hour)) {
       this.emit({ type: 'sleepDenied', reason: 'You can only sleep after 7 PM.' });
       return false;
@@ -2075,6 +2096,109 @@ export class Simulation {
     return true;
   }
 
+  // ------------------------------------------------------------------ storage
+
+  /** Move up to `count` from pack slot `index` into storage `id`. Returns how many moved. */
+  storeItem(id: number, index: number, count = Infinity): number {
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === id);
+    const slot = s.inventory.slots[index];
+    if (!st || !PREFABS[st.prefab].storage || !slot) return 0;
+    const moved = addToStore(ensureStore(st), slot.item, Math.min(count, slot.count));
+    if (moved === 0) {
+      this.message(`The ${PREFABS[st.prefab].name.toLowerCase()} is full.`, 'warn');
+      return 0;
+    }
+    removeFromSlot(s.inventory, index, moved);
+    this.worldVersion++;
+    return moved;
+  }
+
+  /** Move up to `count` from slot `index` of storage `id` into the pack. Returns how many moved. */
+  takeItem(id: number, index: number, count = Infinity): number {
+    const s = this.state;
+    const st = s.structures.find((x) => x.id === id);
+    const slot = st?.store?.[index];
+    if (!st || !slot) return 0;
+    const moved = addItem(s.inventory, slot.item, Math.min(count, slot.count));
+    if (moved === 0) {
+      s.stats.events.packFull = (s.stats.events.packFull ?? 0) + 1;
+      this.emit({ type: 'packFull', item: slot.item });
+      return 0;
+    }
+    slot.count -= moved;
+    if (slot.count <= 0) st.store![index] = null;
+    this.worldVersion++;
+    return moved;
+  }
+
+  // ------------------------------------------------------------------ repairs
+
+  canRepair(tool: WearingTool, structureId: number): RepairCheck {
+    const st = this.state.structures.find((x) => x.id === structureId);
+    if (!st || !PREFABS[st.prefab].workbench) return { ok: false, reason: 'gone' };
+    return canRepair(this.state, tool);
+  }
+
+  /** Pay for and start mending `tool` at workbench `structureId`. You can look around but not move until it's done. */
+  startRepair(tool: WearingTool, structureId: number): RepairCheck {
+    const check = this.canRepair(tool, structureId);
+    if (!check.ok) return check;
+    const s = this.state;
+    const level = toolLevel(s, tool);
+    const paid = repairCost(tool, level);
+    removeAll(s.inventory, paid);
+    s.repair = { tool, structure: structureId, elapsed: 0, duration: repairSeconds(level), paid: paid.map((c) => ({ ...c })) };
+    this.standUp();
+    this.placement = null;
+    this.bowDraw = -1;
+    this.endFishing('reeled');
+    const p = s.player;
+    p.vx = 0;
+    p.vz = 0;
+    this.emit({ type: 'repairStarted', tool, duration: s.repair.duration });
+    return check;
+  }
+
+  /** 0..1 progress of the repair under way, or null. */
+  get repairProgress(): number | null {
+    const r = this.state.repair;
+    return r ? Math.min(1, r.elapsed / r.duration) : null;
+  }
+
+  private updateRepair(dt: number): void {
+    const s = this.state;
+    const r = s.repair;
+    if (!r) return;
+    if (!s.tools.includes(r.tool)) return this.cancelRepair('Your tool is gone.');
+    if (!s.structures.some((x) => x.id === r.structure && PREFABS[x.prefab].workbench)) return this.cancelRepair('The workbench is gone.');
+    r.elapsed += dt;
+    if (r.elapsed < r.duration) return;
+    s.repair = undefined;
+    const w = s.toolWear[r.tool];
+    if (w) w.dur = w.max;
+    s.stats.events.repairs = (s.stats.events.repairs ?? 0) + 1;
+    spendEnergy(s.needs, BALANCE.needs.energy.craftCost);
+    this.gainXp('crafting', BALANCE.skills.xp.craft);
+    this.emit({ type: 'repaired', tool: r.tool });
+    this.message(`${TOOLS[r.tool].name} repaired to full condition.`, 'good');
+  }
+
+  /** Stop a repair part-way and get its materials back (whatever doesn't fit the pack drops at your feet). */
+  cancelRepair(reason = 'Repair interrupted.'): void {
+    const s = this.state;
+    const r = s.repair;
+    if (!r) return;
+    s.repair = undefined;
+    const p = s.player;
+    for (const c of r.paid) {
+      const left = c.count - addItem(s.inventory, c.item, c.count);
+      this.dropAt(c.item, left, p.x, p.z);
+    }
+    this.emit({ type: 'repairCancelled', tool: r.tool });
+    this.message(`${reason} Your materials are back in your pack.`, 'warn');
+  }
+
   // ------------------------------------------------------------------ upgrades
 
   canUpgradeTool(tool: ToolId): UpgradeCheck {
@@ -2096,15 +2220,15 @@ export class Simulation {
     return res;
   }
 
-  /** Whether shelter `id` can be upgraded in place into its next tier right now. */
-  canUpgradeShelter(id: number): UpgradeCheck {
+  /** Whether shelter or storage `id` can be upgraded in place into its next tier right now. */
+  canUpgradeStructure(id: number): UpgradeCheck {
     const fail = (reason: UpgradeCheck['reason']): UpgradeCheck => ({ ok: false, reason });
     const st = this.state.structures.find((x) => x.id === id);
     if (!st) return fail('gone');
-    if (!PREFABS[st.prefab].shelter) return fail('fixed');
-    const next = nextShelter(st.prefab);
+    if (!tierLine(st.prefab)) return fail('fixed');
+    const next = nextTier(st.prefab);
     if (!next) return fail('maxed');
-    if (!hasAll(this.state.inventory, SHELTER_UPGRADES[next]!)) return fail('missing');
+    if (!hasAll(this.state.inventory, tierCost(next)!)) return fail('missing');
     if (checkUpgradeRoom(this.placementEnv(), next, st.x, st.z, st.rot, st.id)) return fail('blocked');
     return { ok: true, reason: null };
   }
@@ -2112,24 +2236,29 @@ export class Simulation {
   /** Why an upgrade into the next tier has no room (null when it fits), for the structure menu. */
   upgradeBlocker(id: number): PlacementReason | null {
     const st = this.state.structures.find((x) => x.id === id);
-    const next = st ? nextShelter(st.prefab) : null;
+    const next = st ? nextTier(st.prefab) : null;
     return st && next ? checkUpgradeRoom(this.placementEnv(), next, st.x, st.z, st.rot, st.id) : null;
   }
 
-  /** Rebuild shelter `id` in place as its next tier: new shape, fresh condition, better sleep. */
-  upgradeShelter(id: number): UpgradeCheck {
-    const check = this.canUpgradeShelter(id);
+  /**
+   * Rebuild shelter or storage `id` in place as its next tier: a new shape, fresh condition and better sleep for a
+   * shelter, more slots (with everything still inside) for storage.
+   */
+  upgradeStructure(id: number): UpgradeCheck {
+    const check = this.canUpgradeStructure(id);
     if (!check.ok) return check;
     const s = this.state;
     const st = s.structures.find((x) => x.id === id)!;
     const from = st.prefab;
-    const next = nextShelter(from)!;
-    removeAll(s.inventory, SHELTER_UPGRADES[next]!);
+    const next = nextTier(from)!;
+    removeAll(s.inventory, tierCost(next)!);
     st.prefab = next;
     if (prefabWears(next)) st.wear = newStructureWear(next, s.skills.crafting);
+    if (PREFABS[next].storage) ensureStore(st);
     this.reshapeStructure(st);
     s.stats.crafted[next] = (s.stats.crafted[next] ?? 0) + 1;
-    s.stats.events.shelterUpgrades = (s.stats.events.shelterUpgrades ?? 0) + 1;
+    if (PREFABS[next].shelter) s.stats.events.shelterUpgrades = (s.stats.events.shelterUpgrades ?? 0) + 1;
+    else s.stats.events.storageUpgrades = (s.stats.events.storageUpgrades ?? 0) + 1;
     spendEnergy(s.needs, BALANCE.needs.energy.buildCost);
     this.emit({ type: 'upgraded', structure: st.id, from, prefab: next });
     this.gainXp('crafting', BALANCE.skills.xp.build);
@@ -2240,6 +2369,7 @@ export class Simulation {
     s.dead = false;
     s.deathCause = null;
     s.lastDamage = null;
+    s.repair = undefined;
     this.sleepingIn = null;
     this.placement = null;
     this.bowDraw = -1;
@@ -2291,10 +2421,10 @@ export class Simulation {
     const st = s.structures.find((x) => x.id === v.id);
     if (st) {
       const reshaped = st.prefab !== v.prefab;
-      Object.assign(st, v);
+      Object.assign(st, v, { store: cloneStore(v.store) });
       if (reshaped) this.reshapeStructure(st);
     } else {
-      const copy = { ...v };
+      const copy = { ...v, store: cloneStore(v.store) };
       s.structures.push(copy);
       this.addStructureCollider(copy);
     }

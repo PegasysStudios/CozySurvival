@@ -4,6 +4,7 @@ import { RESOURCES, TREES } from '../data/resources';
 import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import { createNewState, type Simulation } from '../sim/simulation';
 import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, TreeDyn } from '../sim/state';
+import { addToStore, cloneStore, ensureStore, removeFromStore, sameStore, storeTotals } from '../sim/storage';
 import { freshTree } from '../sim/trunks';
 import { getWorldGen } from '../sim/worldgen';
 
@@ -34,7 +35,7 @@ export function deltaKey(d: Delta): string {
   }
 }
 
-const cloneStructure = (s: StructureState): StructureState => ({ ...s, wear: s.wear ? { ...s.wear } : undefined });
+const cloneStructure = (s: StructureState): StructureState => ({ ...s, wear: s.wear ? { ...s.wear } : undefined, store: cloneStore(s.store) });
 const cloneCarcass = (c: CarcassState): CarcassState => ({ ...c, remaining: c.remaining.map((r) => ({ ...r })) });
 
 function sameTree(a: TreeDyn, b: TreeDyn): boolean {
@@ -154,7 +155,7 @@ export class WorldTracker {
   }
 
   private structureChanged(base: StructureState, cur: StructureState): boolean {
-    if (base.prefab !== cur.prefab) return true;
+    if (base.prefab !== cur.prefab || !sameStore(base.store, cur.store)) return true;
     if (!this.tolerant) return base.fuel !== cur.fuel || base.wear?.dur !== cur.wear?.dur;
     if (base.fuel > 0 !== cur.fuel > 0 || Math.abs(base.fuel - cur.fuel) >= 0.05) return true;
     return Math.abs((base.wear?.dur ?? 0) - (cur.wear?.dur ?? 0)) >= 0.5;
@@ -272,8 +273,11 @@ export function mergeRemote(sim: Simulation, d: Delta, from: { x: number; z: num
         next.prefab = d.v.prefab;
         next.wear = d.v.wear ? { ...d.v.wear } : undefined;
         next.fuel = h.fuel;
+        // Storage keeps whatever is in it now; the bigger tier just adds slots.
+        if (PREFABS[next.prefab].storage) ensureStore(next);
         return sim.putStructure(next);
       }
+      if (PREFABS[h.prefab].storage) mergeStore(sim, next, d.v.store, d.p.store);
       next.fuel = Math.min(BALANCE.fire.maxFuelHours, Math.max(0, h.fuel + d.v.fuel - d.p.fuel));
       if (next.wear && d.v.wear && d.p.wear) {
         next.wear.dur = Math.min(next.wear.max, next.wear.dur + d.v.wear.dur - d.p.wear.dur);
@@ -302,6 +306,27 @@ export function mergeRemote(sim: Simulation, d: Delta, from: { x: number; z: num
     }
     default:
       return applyState(sim, d);
+  }
+}
+
+/**
+ * Storage: apply what the guest put in and took out, item by item, to the host's current contents. What no longer
+ * fits (two players filling the last slots at once) is set down beside it as a pile.
+ */
+function mergeStore(sim: Simulation, st: StructureState, v: StructureState['store'], p: StructureState['store']): void {
+  const store = ensureStore(st);
+  const now = storeTotals(v);
+  const was = storeTotals(p);
+  for (const item of new Set([...now.keys(), ...was.keys()])) {
+    const d = (now.get(item) ?? 0) - (was.get(item) ?? 0);
+    if (d < 0) removeFromStore(store, item, -d);
+    else if (d > 0) {
+      const left = d - addToStore(store, item, d);
+      if (left > 0) {
+        const x = st.x + 0.9;
+        sim.putDrop({ id: sim.state.nextId++, item, count: left, x, y: sim.terrain.heightAt(x, st.z), z: st.z });
+      }
+    }
   }
 }
 

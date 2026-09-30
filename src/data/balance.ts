@@ -59,8 +59,8 @@ export const BALANCE = {
   player: {
     radius: 0.35,
     eyeHeight: 1.62,
-    /** Eye height sitting on a bench: hips on the seat, about half a metre up. */
-    seatedEyeHeight: 1.15,
+    /** Eye height sitting on a bench: hips on its rounded top, 0.7 m up. */
+    seatedEyeHeight: 1.38,
     walkSpeed: 4.3,
     sprintSpeed: 6.8,
     wadeSpeedMul: 0.55,
@@ -151,6 +151,13 @@ export const BALANCE = {
       bench: { max: 120, perHour: 0.5, useCost: 1 },
     },
     lowFraction: 0.25,
+  },
+  /** Mending a worn tool at the Repair Workbench, by the tool's upgrade level 0..III. */
+  repair: {
+    /** Share of the tool's crafting cost it takes, rounded up: always a small part, never the full cost. */
+    costFraction: [0.15, 0.2, 0.25, 0.3],
+    /** Seconds at the bench, standing still. */
+    seconds: [4, 5.5, 7, 8.5],
   },
   carry: { baseSlots: 6, basketSlots: 4, backpackSlots: 6, canteenCapacity: 4 },
   fire: { initialFuelHours: 8, maxFuelHours: 16, stickFuelHours: 1.5, logFuelHours: 4, predatorSafeRadius: 9 },

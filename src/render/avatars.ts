@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { clamp, damp } from '../core/math';
 import type { ToolId } from '../data/items';
 import type { Avatar } from '../net/protocol';
-import { F_AIR, F_DEAD, F_SIT, F_SLEEP, F_SWIM } from '../net/protocol';
+import { F_AIR, F_DEAD, F_SIT, F_SLEEP, F_SWIM, F_WORK } from '../net/protocol';
 import type { Peer } from '../net/peers';
 import { between, col, GeoBuilder, mix, tf } from './geo';
 
@@ -31,6 +31,9 @@ interface AvatarParts {
 }
 
 const HIP_Y = 0.92;
+/** Seated on a bench: hips drop onto its rounded top (0.7 m up) and the legs reach forward and down. */
+const SIT_DROP = HIP_Y - 0.7;
+const SIT_LEGS = 1.15;
 const SHOULDER_Y = 1.43;
 const NECK_Y = 1.52;
 
@@ -319,8 +322,8 @@ export class AvatarLayer {
     const s = Math.sin(v.phase);
     const air = f & F_AIR ? 1 : 0;
     const legAmp = 0.62 * moveK * (1 - v.sit) * (1 - v.swim) * (1 - air * 0.6);
-    m.legL.rotation.x = s * legAmp - v.sit * 1.45 - air * 0.35 + v.swim * Math.sin(v.phase * 2) * 0.35;
-    m.legR.rotation.x = -s * legAmp - v.sit * 1.45 - air * 0.2 - v.swim * Math.sin(v.phase * 2) * 0.35;
+    m.legL.rotation.x = s * legAmp - v.sit * SIT_LEGS - air * 0.35 + v.swim * Math.sin(v.phase * 2) * 0.35;
+    m.legR.rotation.x = -s * legAmp - v.sit * SIT_LEGS - air * 0.2 - v.swim * Math.sin(v.phase * 2) * 0.35;
     let armLx = -s * 0.5 * moveK * (1 - v.swim) - v.sit * 0.3;
     let armRx = s * 0.5 * moveK * (1 - v.swim) - v.sit * 0.3;
     let armRz = 0;
@@ -335,6 +338,12 @@ export class AvatarLayer {
     } else if (peer.tool !== 'hands' && !lying && v.swim < 0.5) {
       armRx = Math.min(armRx, -0.45);
     }
+    if (f & F_WORK && !lying) {
+      // Hunched over the workbench, tapping away at the tool with both hands.
+      v.phase += dt * 9;
+      armLx = -1.05;
+      armRx = -1.25 + Math.sin(v.phase) * 0.35;
+    }
     if (peer.waveT < 2.2 && !lying) {
       armRx = 0;
       armRz = -2.7 + Math.sin(peer.waveT * 11) * 0.35;
@@ -348,13 +357,13 @@ export class AvatarLayer {
     m.head.rotation.x = clamp(-(peer.target?.pitch ?? 0) * 0.6, -0.5, 0.5) * (1 - v.lie);
     // Lying (asleep or dead), sitting, swimming.
     m.body.rotation.x = v.lie * (-Math.PI / 2) + v.swim * 1.2 + (1 - v.lie) * moveK * 0.06;
-    m.body.position.y = -v.sit * 0.47 + v.lie * 0.15 - v.swim * 0.95 + (1 - v.lie) * Math.abs(Math.sin(v.phase)) * 0.035 * moveK;
+    m.body.position.y = -v.sit * SIT_DROP + v.lie * 0.15 - v.swim * 0.95 + (1 - v.lie) * Math.abs(Math.sin(v.phase)) * 0.035 * moveK;
     m.body.position.z = v.lie * 0.9;
 
     // Labels keep a readable on-screen size at any distance.
     const d = Math.hypot(peer.x - camX, peer.y + 2 - camY, peer.z - camZ);
     const k = clamp(d * 0.028, 0.28, 1.6);
-    const topY = 2.12 - v.lie * 1.5 - v.sit * 0.45 - v.swim * 0.9;
+    const topY = 2.12 - v.lie * 1.5 - v.sit * SIT_DROP - v.swim * 0.9;
     v.tag.set(peer.name);
     v.tag.sprite.scale.set(k * 0.36 * v.tag.aspect, k * 0.36, 1);
     v.tag.sprite.position.set(0, topY + k * 0.1, 0);

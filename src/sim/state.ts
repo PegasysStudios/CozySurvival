@@ -3,6 +3,7 @@ import type { ForageId } from '../data/forage';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
+import type { WearingTool } from './durability';
 
 export const STATE_VERSION = 4;
 
@@ -98,6 +99,17 @@ export interface StructureState {
   fuel: number;
   /** Shelters and benches only: they weather over time and wear with use. */
   wear?: Wear;
+  /** Storage bins only: shared slots anyone can put things in or take them out of. */
+  store?: (Slot | null)[];
+}
+
+/** A tool being mended at a workbench. Its materials are paid up front and refunded if the repair is interrupted. */
+export interface RepairState {
+  tool: WearingTool;
+  structure: number;
+  elapsed: number;
+  duration: number;
+  paid: { item: ItemId; count: number }[];
 }
 
 export interface DropState {
@@ -201,4 +213,6 @@ export interface GameState {
   lastDamage: DamageSource | null;
   /** Day index of the most recent start-of-day snapshot. */
   snapshotDay: number;
+  /** Set while standing at a workbench mending a tool: you can look around but not move. */
+  repair?: RepairState;
 }

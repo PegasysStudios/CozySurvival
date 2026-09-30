@@ -10,10 +10,11 @@ import { LocalTransport, MemoryHub } from '../src/net/transport';
 import { IDLE_INPUT, Simulation, spawnPlayer } from '../src/sim/simulation';
 import { hourOf } from '../src/sim/time';
 import { countItem } from '../src/sim/inventory';
-import { give, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
+import { give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 import type { ItemId } from '../src/data/items';
 import { killKey } from '../src/data/objectives';
-import { SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
+import { BIN_UPGRADES, SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
+import { F_WORK } from '../src/net/protocol';
 import type { Collider } from '../src/sim/colliders';
 
 const DT = 1 / 20;
@@ -418,7 +419,7 @@ describe('multiplayer: round 5', () => {
     expect(host.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('leanTo');
     roomy(b);
     give(b, asGive(SHELTER_UPGRADES.aFrame!));
-    expect(b.upgradeShelter(hut.id).ok).toBe(true);
+    expect(b.upgradeStructure(hut.id).ok).toBe(true);
     w.pump(0.6);
     for (const sim of [host, c]) {
       const st = sim.state.structures.find((s) => s.id === hut.id)!;
@@ -438,7 +439,7 @@ describe('multiplayer: round 5', () => {
     expect(b.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('barkHut');
     roomy(host);
     give(host, asGive(SHELTER_UPGRADES.hideTent!));
-    expect(host.upgradeShelter(hut.id).ok).toBe(true);
+    expect(host.upgradeStructure(hut.id).ok).toBe(true);
     w.pump(0.6);
     expect(b.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('hideTent');
     expect(bodyOf(b, hut.id)).toMatchObject({ type: 'circle', r: 1.35 });
@@ -454,7 +455,7 @@ describe('multiplayer: round 5', () => {
     for (const sim of [host, b]) {
       roomy(sim);
       give(sim, asGive(SHELTER_UPGRADES.aFrame!));
-      expect(sim.upgradeShelter(hut.id).ok).toBe(true);
+      expect(sim.upgradeStructure(hut.id).ok).toBe(true);
     }
     w.pump(1);
     expect(host.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('aFrame');
@@ -533,5 +534,101 @@ describe('multiplayer: round 5', () => {
     w.pump(0.6);
     expect(b.state.stats.events[killKey('spear', 'rabbit')]).toBe(1);
     expect(b.state.objective).toBe(8);
+  });
+});
+
+describe('multiplayer: round 8', () => {
+  const binOf = (sim: Simulation, id: number) => sim.state.structures.find((s) => s.id === id);
+  const slotOf = (sim: Simulation, item: ItemId) => sim.state.inventory.slots.findIndex((s) => s?.item === item);
+
+  async function camp() {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const cleo = await w.join('Cleo');
+    return { w, ben, host: w.host.sim, b: guestSim(ben), c: guestSim(cleo) };
+  }
+
+  it("anyone can use anyone's storage bin, and everyone sees what's inside", async () => {
+    const { w, host, b, c } = await camp();
+    const bin = placeStructure(host, 'storageBin');
+    w.pump(0.6);
+    expect(binOf(b, bin.id)?.store).toHaveLength(10);
+
+    b.state.inventory.slots.fill(null);
+    give(b, { stick: 7 });
+    expect(b.storeItem(bin.id, slotOf(b, 'stick'))).toBe(7);
+    w.pump(0.6);
+    for (const sim of [host, c]) expect(countItem({ slots: binOf(sim, bin.id)!.store! }, 'stick')).toBe(7);
+
+    c.state.inventory.slots.fill(null);
+    const at = binOf(c, bin.id)!.store!.findIndex((s) => s?.item === 'stick');
+    expect(c.takeItem(bin.id, at, 3)).toBe(3);
+    w.pump(0.6);
+    expect(countItem(c.state.inventory, 'stick')).toBe(3);
+    for (const sim of [host, b, c]) expect(countItem({ slots: binOf(sim, bin.id)!.store! }, 'stick')).toBe(4);
+  });
+
+  it('deposits made at the same moment by two players are both kept', async () => {
+    const { w, host, b, c } = await camp();
+    const bin = placeStructure(host, 'storageBin');
+    w.pump(0.6);
+    for (const [sim, item] of [[host, 'bark'], [b, 'fiber'], [c, 'fiber']] as const) {
+      sim.state.inventory.slots.fill(null);
+      give(sim, { [item]: 5 });
+      expect(sim.storeItem(bin.id, slotOf(sim, item))).toBe(5);
+    }
+    w.pump(1);
+    for (const sim of [host, b, c]) {
+      const store = { slots: binOf(sim, bin.id)!.store! };
+      expect([countItem(store, 'bark'), countItem(store, 'fiber')]).toEqual([5, 10]);
+    }
+  });
+
+  it("a guest's bin upgrade grows it for everyone and keeps the contents", async () => {
+    const { w, host, b, c } = await camp();
+    const bin = placeStructure(host, 'storageBin');
+    teleport(host, bin.x + 6, bin.z);
+    binOf(host, bin.id)!.store![0] = { item: 'hide', count: 2 };
+    w.pump(0.6);
+    expect(binOf(b, bin.id)!.store![0]).toEqual({ item: 'hide', count: 2 });
+    teleport(b, bin.x - 6, bin.z);
+    teleport(c, bin.x, bin.z + 6);
+    b.state.inventory.slots.fill(null);
+    give(b, Object.fromEntries(BIN_UPGRADES.storageCrate!.map((i) => [i.item, i.count])));
+    expect(b.upgradeStructure(bin.id).ok).toBe(true);
+    w.pump(0.6);
+    for (const sim of [host, c]) {
+      const st = binOf(sim, bin.id)!;
+      expect(st.prefab).toBe('storageCrate');
+      expect(st.store).toHaveLength(15);
+      expect(countItem({ slots: st.store! }, 'hide')).toBe(2);
+    }
+  });
+
+  it("a guest repairs at the host's workbench: others see them working, and the mended tool survives a resync", async () => {
+    const { w, ben, host, b } = await camp();
+    const bench = placeStructure(host, 'workbench');
+    w.pump(0.6);
+    giveRecipe(b, 'axe');
+    expect(b.craft('axe').ok).toBe(true);
+    const wear = b.state.toolWear.axe!;
+    wear.dur = 5;
+    b.state.inventory.slots.fill(null);
+    give(b, { stick: 1, stone: 1, fiber: 1 });
+    expect(b.startRepair('axe', bench.id).ok).toBe(true);
+    w.pump(1);
+    expect((w.host.peers.get(ben.pid)!.flags & F_WORK) !== 0).toBe(true);
+    w.pump(BALANCE.repair.seconds[0]);
+    expect(b.state.repair).toBeUndefined();
+    expect((w.host.peers.get(ben.pid)!.flags & F_WORK) !== 0).toBe(false);
+    expect(b.state.toolWear.axe!.dur).toBeGreaterThan(b.state.toolWear.axe!.max - 0.5);
+    expect(binOf(host, bench.id)?.prefab).toBe('workbench');
+
+    (ben as unknown as { rev: number }).rev -= 3;
+    w.pump(1);
+    expect(w.of(ben).some((e) => e.type === 'ready' && e.resync)).toBe(true);
+    const after = guestSim(ben);
+    expect(after).not.toBe(b);
+    expect(after.state.toolWear.axe!.dur).toBeGreaterThan(after.state.toolWear.axe!.max - 0.5);
   });
 });

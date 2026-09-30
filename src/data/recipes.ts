@@ -238,6 +238,18 @@ export const RECIPES: Recipe[] = [
     output: { kind: 'place', prefab: 'bench' },
     description: 'Sit and rest to recover energy quickly.',
   },
+  {
+    id: 'workbench', name: 'Repair Workbench', category: 'structures',
+    inputs: [{ item: 'log', count: 8 }, { item: 'stick', count: 12 }, { item: 'stone', count: 10 }, { item: 'cordage', count: 4 }],
+    output: { kind: 'place', prefab: 'workbench' },
+    description: 'Mend worn tools and weapons for a fraction of what they cost to make.',
+  },
+  {
+    id: 'storageBin', name: 'Woven Storage Bin', category: 'structures',
+    inputs: [{ item: 'stick', count: 24 }, { item: 'fiber', count: 20 }, { item: 'cordage', count: 3 }],
+    output: { kind: 'place', prefab: 'storageBin' },
+    description: 'Ten slots of storage anyone in camp can use. Upgrade it into a bigger crate and chest.',
+  },
 ];
 
 export const RECIPE_BY_ID: Record<string, Recipe> = Object.fromEntries(RECIPES.map((r) => [r.id, r]));

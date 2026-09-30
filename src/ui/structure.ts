@@ -1,8 +1,12 @@
 import { BALANCE } from '../data/balance';
 import { ITEMS, itemName, type ItemId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
-import { nextShelter, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier } from '../data/upgrades';
-import { wearFraction } from '../sim/durability';
+import { TOOLS } from '../data/items';
+import { LEVEL_NUMERALS, nextTier, SHELTER_TIERS, shelterTier, tierCost, tierLine, tierText } from '../data/upgrades';
+import { wearFraction, type WearingTool } from '../sim/durability';
+import { usedSlots } from '../sim/inventory';
+import { REPAIR_FAILURE_TEXT, repairableTools, repairCost, repairSeconds, type RepairCheck } from '../sim/repair';
+import { toolLevel } from '../sim/upgrades';
 import { haveItem, inCanteen } from '../sim/canteen';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
@@ -75,22 +79,6 @@ export function shelterMenu(sim: Simulation, id: number): ShelterMenu | null {
   const st = sim.state.structures.find((x) => x.id === id);
   if (!st || !PREFABS[st.prefab].shelter) return null;
   const canSleep = canSleepAt(sim.hour);
-  const nextId = nextShelter(st.prefab);
-  let next: ShelterMenu['next'] = null;
-  if (nextId) {
-    const check = sim.canUpgradeShelter(id);
-    const blocker = check.reason === 'blocked' ? sim.upgradeBlocker(id) : null;
-    next = {
-      prefab: nextId,
-      name: PREFABS[nextId].name,
-      text: SHELTER_UPGRADE_TEXT[nextId] ?? '',
-      rest: restText(nextId),
-      inputs: ingredients(sim, SHELTER_UPGRADES[nextId]!),
-      check,
-      reason: check.ok ? null : blocker ? `${PLACEMENT_REASON_TEXT[blocker]}. It needs a little more room to grow.` : UPGRADE_FAILURE_TEXT[check.reason!],
-      room: packRoomNote(sim.state, SHELTER_UPGRADES[nextId]!),
-    };
-  }
   return {
     id,
     prefab: st.prefab,
@@ -101,6 +89,100 @@ export function shelterMenu(sim: Simulation, id: number): ShelterMenu | null {
     canSleep,
     sleepLabel: canSleep ? 'Sleep until dawn' : 'Sleep (after 7 PM)',
     rest: restText(st.prefab),
-    next,
+    next: nextTierInfo(sim, id, st.prefab),
   };
+}
+
+/** The next tier of an upgradable structure, as its menu shows it. */
+function nextTierInfo(sim: Simulation, id: number, prefab: PrefabId): ShelterMenu['next'] {
+  const nextId = nextTier(prefab);
+  if (!nextId) return null;
+  const cost = tierCost(nextId)!;
+  const check = sim.canUpgradeStructure(id);
+  const blocker = check.reason === 'blocked' ? sim.upgradeBlocker(id) : null;
+  const def = PREFABS[nextId];
+  return {
+    prefab: nextId,
+    name: def.name,
+    text: tierText(nextId),
+    rest: def.shelter ? restText(nextId) : def.storage ? `${def.storage.slots} slots` : '',
+    inputs: ingredients(sim, cost),
+    check,
+    reason: check.ok ? null : blocker ? `${PLACEMENT_REASON_TEXT[blocker]}. It needs a little more room to grow.` : UPGRADE_FAILURE_TEXT[check.reason!],
+    room: packRoomNote(sim.state, cost),
+  };
+}
+
+export interface StorageMenu {
+  id: number;
+  prefab: PrefabId;
+  name: string;
+  tier: number;
+  tiers: number;
+  line: PrefabId[];
+  slots: number;
+  used: number;
+  next: ShelterMenu['next'];
+}
+
+/** A storage bin's menu: its shared slots and the next, roomier tier. */
+export function storageMenu(sim: Simulation, id: number): StorageMenu | null {
+  const st = sim.state.structures.find((x) => x.id === id);
+  const def = st ? PREFABS[st.prefab] : null;
+  if (!st || !def?.storage) return null;
+  const line = tierLine(st.prefab) ?? [st.prefab];
+  return {
+    id,
+    prefab: st.prefab,
+    name: def.name,
+    tier: line.indexOf(st.prefab) + 1,
+    tiers: line.length,
+    line,
+    slots: def.storage.slots,
+    used: usedSlots({ slots: st.store ?? [] }),
+    next: nextTierInfo(sim, id, st.prefab),
+  };
+}
+
+export interface RepairRow {
+  tool: WearingTool;
+  name: string;
+  level: number;
+  /** Condition in percent. */
+  condition: number;
+  cost: Ingredient[];
+  seconds: number;
+  check: RepairCheck;
+  reason: string | null;
+}
+
+export interface WorkbenchMenu {
+  id: number;
+  rows: RepairRow[];
+  /** The tool being repaired right now, with progress 0..1. */
+  busy: { tool: WearingTool; progress: number } | null;
+}
+
+/** Every carried tool or weapon that wears, with what mending it costs and how long it takes. */
+export function workbenchMenu(sim: Simulation, id: number): WorkbenchMenu | null {
+  const s = sim.state;
+  const st = s.structures.find((x) => x.id === id);
+  if (!st || !PREFABS[st.prefab].workbench) return null;
+  const rows = repairableTools(s).map((tool): RepairRow => {
+    const level = toolLevel(s, tool);
+    const w = s.toolWear[tool];
+    const check = sim.canRepair(tool, id);
+    return {
+      tool,
+      name: `${TOOLS[tool].name}${level ? ' ' + LEVEL_NUMERALS[level] : ''}`,
+      level,
+      condition: w ? Math.max(1, Math.round(wearFraction(w) * 100)) : 100,
+      cost: ingredients(sim, repairCost(tool, level)),
+      seconds: repairSeconds(level),
+      check,
+      reason: check.ok ? null : REPAIR_FAILURE_TEXT[check.reason!],
+    };
+  });
+  const r = s.repair;
+  return { id, rows, busy: r ? { tool: r.tool, progress: Math.min(1, r.elapsed / r.duration) } : null };
 }
