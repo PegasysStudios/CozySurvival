@@ -22,7 +22,7 @@ import { addItem, countItem, createInventory, hasAll, removeAll, removeFromSlot,
 import { createPlayer, horizontalSpeed, lookDir, stepPlayer, surfaceAt, type MoveEnv, type MoveInput } from './movement';
 import { canRepair, repairCost, repairSeconds, type RepairCheck } from './repair';
 import { addToStore, cloneStore, ensureStore } from './storage';
-import { applyDamage, applyFood, applySleep, createNeeds, spendEnergy, updateNeeds, type Activity } from './needs';
+import { applyDamage, applyFood, applySleep, createNeeds, restWhileWaiting, spendEnergy, updateNeeds, type Activity, type SleepResult } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
 import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, skinChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
@@ -479,6 +479,13 @@ export class Simulation {
 
     // Multiplayer only: the world keeps running while this player is dead or asleep.
     if (s.dead || this.sleepingIn !== null) {
+      if (!s.dead) {
+        const cause = restWhileWaiting(s.needs, gameHours, this.sleepByFire, this.coldLethal);
+        if (cause) {
+          this.getUp();
+          this.die(cause);
+        }
+      }
       this.updateProjectiles(dt);
       this.updateAnimals(dt);
       if (world) {
@@ -2215,12 +2222,13 @@ export class Simulation {
       return true;
     }
     this.endFishing('reeled');
+    const coldLethal = this.coldLethal;
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
-    applySleep(s.needs, rest, byFire);
+    const night = applySleep(s.needs, rest, byFire, elapsed, coldLethal);
     this.updateWear(elapsed, false);
     if (prefabWears(st.prefab) && s.structures.includes(st)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.standUp();
@@ -2244,8 +2252,21 @@ export class Simulation {
     this.worldVersion++;
     this.emit({ type: 'slept', day: this.day, byFire });
     this.emit({ type: 'dayStart', day: this.day });
+    this.afterNight(night);
     this.progress();
     return true;
+  }
+
+  /** Dying in your sleep, or waking weaker, when a meter sat empty through the night. */
+  private afterNight(night: SleepResult): void {
+    if (night.cause) {
+      this.die(night.cause);
+      return;
+    }
+    if (night.lost < 0.5) return;
+    const why = night.from.map((f) => SLEPT_EMPTY[f] ?? f);
+    const list = why.length > 1 ? `${why.slice(0, -1).join(', ')} and ${why[why.length - 1]}` : why[0];
+    this.message(`You slept ${list} and woke up weaker (-${Math.round(night.lost)} health).`, 'warn');
   }
 
   // ------------------------------------------------------------------ storage
@@ -2469,7 +2490,8 @@ export class Simulation {
     const s = this.state;
     const st = s.structures.find((x) => x.id === id);
     const rest = st ? restBonus(st.prefab) : null;
-    if (rest) applySleep(s.needs, rest, this.sleepByFire);
+    const coldLethal = dayOf(Math.max(0, s.totalHours - elapsed)) > BALANCE.needs.coldGraceNights;
+    const night = rest ? applySleep(s.needs, rest, this.sleepByFire, elapsed, coldLethal) : null;
     this.updateWear(elapsed, false, false);
     if (st && prefabWears(st.prefab)) this.wearStructure(st, BALANCE.durability.structures[st.prefab].useCost);
     this.wasNight = this.night;
@@ -2477,6 +2499,7 @@ export class Simulation {
     this.worldVersion++;
     this.emit({ type: 'slept', day: this.day, byFire: this.sleepByFire });
     this.emit({ type: 'dayStart', day: this.day });
+    if (night) this.afterNight(night);
     this.progress();
   }
 
@@ -2681,6 +2704,8 @@ export class Simulation {
 }
 
 const NO_SHELTER = { warmthBonus: 0, healthBonus: 0 };
+/** How a night spent with an empty meter reads in the wake-up message. */
+const SLEPT_EMPTY: Partial<Record<DamageSource, string>> = { starvation: 'hungry', dehydration: 'thirsty', cold: 'cold' };
 
 const STILL = { jumped: false, landed: 0, distance: 0, splash: 0 };
 

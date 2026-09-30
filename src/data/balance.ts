@@ -52,8 +52,12 @@ export const BALANCE = {
       exhaustedSpeedMul: 0.8,
       sittingMultiplier: 1.8,
     },
-    /** `coldWarmthCost`: warmth points (of 100) lost sleeping through the night with no burning campfire in range. */
-    sleep: { hungerCost: 18, thirstCost: 22, floor: 8, healthGain: 12, coldWarmthCost: 30 },
+    /**
+     * `coldWarmthCost`: warmth points (of 100) lost sleeping through the night with no burning campfire in range.
+     * `emptyDrainShare`: asleep (or waiting in bed in multiplayer), an empty hunger, thirst or warmth meter drains
+     * health at this share of the awake rates above, and the drains add up.
+     */
+    sleep: { hungerCost: 18, thirstCost: 22, floor: 8, healthGain: 12, coldWarmthCost: 30, emptyDrainShare: 0.25 },
     handDrink: { thirst: 9, warmth: -1, cooldown: 0.8 },
   },
   player: {
