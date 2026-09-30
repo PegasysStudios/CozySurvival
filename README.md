@@ -1,6 +1,6 @@
 # CozySurvival
 
-A first-person, low-poly cozy survival game for the browser with two maps: a Pacific Northwest / Canadian forest and the Arizona high desert. You wake up stranded with nothing but your hands. Gather, craft, cook, hunt, build a camp and see how many days you can last. One in-game day lasts 24 real minutes.
+A first-person, low-poly cozy survival game for the browser with three maps: a Pacific Northwest / Canadian forest, the Arizona high desert and a tropical island. You wake up stranded with nothing but your hands. Gather, craft, cook, hunt, build a camp and see how many days you can last. One in-game day lasts 24 real minutes.
 
 Pick the map with the arrows beside the title (or ← / → on the title screen). Each map keeps its own save and records. Everything below the **Maps** section describes the Pacific Northwest map, which plays exactly as it did before the desert was added.
 
@@ -174,8 +174,9 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | --- | --- |
 | Pacific Northwest | Fir, cedar, birch and maple forest around a lake and a pond. The original map, unchanged. |
 | Arizona Desert | Red-rock buttes and mesas, creosote flats and grass plains, a volcanic spire, and juniper, pinyon and ponderosa high country to the north. |
+| Tropical Island | A volcanic island four times the size, ringed by a reef: palm beaches, a rocky cove, windward jungle, leeward grassland, a waterfall, streams, pools and caves. |
 
-Every difference lives in one biome config (`src/data/biomes.ts`) plus biome branches in world gen, forage, recipes and rendering. The Pacific Northwest path is pinned by a golden-fingerprint test (`tests/pnw-unchanged.test.ts`).
+Every difference lives in one biome config (`src/data/biomes.ts`) plus biome branches in world gen, forage, recipes and rendering. The island's layout is in `src/sim/island.ts` and `src/sim/islandgen.ts`. The Pacific Northwest and desert are pinned by golden-fingerprint tests (`tests/pnw-unchanged.test.ts`, and `tests/desert-unchanged.test.ts` captured from the round 10 build), and the island didn't change either.
 
 ### Arizona Desert
 
@@ -251,10 +252,76 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
   On the Pacific Northwest map wolves go up to four (one more every two days) and bears appear from day 2, two from day 5.
 - **Onboarding** is the same 11 steps, reworded for the spring, desert forage, the Desert Skewer, the cold desert night and jackrabbits. Quail, roadrunners, lizards and snakes have no hide, so the knife step counts their butchering.
 
+### Tropical Island
+
+Round 11. The numbers below are averages over the eight seeds in `tests/island.test.ts`.
+
+- **Four times the area.** The island sits in a 960 m world square (the other maps are 320 m). Its land averages about 336,000 m²: 3.97× the forest's dry land and 3.85× the desert's, or 3.8× their 296 m play square. With the lagoon you can swim in (about 94,000 m²) it is about 5×.
+- **An irregular coast.** Four or five rocky headlands, three or four bays, one or two sand spits, a palm islet 18–24 m out in the lagoon, and a cove. A fringing reef runs about 35–50 m offshore all the way round, with surf breaking on its crest; past it the bottom drops to 24 m.
+- **Regions, placed by seed:**
+  - beaches: about 45,000 m² of pale sand, with coconut palms, sea grape, naupaka, pandanus and driftwood
+  - the cove: turquoise water behind a mouth 12–15 m wide, walled by grey limestone 6–9 m high, with a beach at its head and two sea stacks at the mouth
+  - windward jungle: about 141,000 m² at about 220 trees per hectare (kukui, breadfruit, tree ferns and beach hibiscus), with ferns, ti plants and elephant ears underneath
+  - leeward grassland and the grassy upper slopes of a 56–68 m volcanic peak with a small summit crater: about 121,000 m² at about 12 trees per hectare
+  - a waterfall that drops 16 m on average (never less than 12) from a mossy cliff amphitheatre into its plunge pool
+  - two streams (about 360 m of stream per island) and three freshwater pools: the plunge pool, one partway down the main stream, and the spring that feeds the second
+  - three small caves: one in the waterfall's cliff and one in the side of each of two rock knolls
+- **Salt water.** The lagoon, the cove and the open ocean are salt: you can't drink them or fill a canteen from them ("Seawater is far too salty to drink…"). Fresh water is only in the streams, the pools and the plunge pool. You start on a beach about 13 m from where a stream meets the sea, facing it.
+- **The reef current.** Swimming anywhere inside the reef is free. From 2 m past the crest a current pushes you back toward the island, reaching 3.2 m/s (faster than you swim) by 14 m out, so nobody gets much more than 11–12 m past the reef. The first time, a message warns you about the deep water and the sharks.
+- **Climate.** Warm nights: the air holds 88 warmth by day and never drops below 58 at night (the forest: 80 and 0), and a night asleep away from a fire costs 8 warmth instead of 30. Thirst drains 1.45× as fast (11.6 an hour instead of 8), and a night's sleep costs 32 thirst instead of 22. There is no rain or storm yet (Jon moved weather to a later round), so fires only burn down with their fuel.
+- **Coconuts.** Every coconut palm carries three coconuts in its crown, too high to reach. Shoot one with the bow and it thumps down onto the sand beside the trunk; the arrow usually drops with it (75%). A palm picked clean ripens three more after 30 hours. About one palm in fourteen has a fallen coconut lying underneath (about 55 per island), which comes back 36 hours after you pick it up. A coconut gives +18 thirst, +9 hunger and +4 energy.
+- **Trees.**
+
+  | Tree | Where | Logs | By hand |
+  | --- | --- | --- | --- |
+  | Coconut palm | beaches and the islet | 2 | coconuts, with a bow |
+  | Breadfruit | jungle | 3 | 2 breadfruit, 36 h to ripen more |
+  | Kukui (candlenut) | jungle, a few on the grassland | 3 | |
+  | Hau (beach hibiscus) | behind the beach, by the streams | 2 | 2 strips of bark |
+  | Tree fern | jungle understory, by the water | 1 | |
+
+- **Edibles.**
+
+  | Food | Source | Raw effect |
+  | --- | --- | --- |
+  | Coconut | palm crowns (bow), fallen under palms | +18 thirst, +9 hunger, +4 energy |
+  | Sea Grapes | sea grape shrubs on the beach, 2 per pick | +4 hunger, +3 thirst, +2 energy |
+  | Wild Banana | banana plants in the jungle, 2 per bunch, 36 h to regrow | +6 hunger, +1 thirst, +5 energy |
+  | Breadfruit | breadfruit trees | +4 hunger, −1 health (roast it) |
+  | Taro Root | wet ground by streams and pools | +3 hunger, −5 health (cook it) |
+  | Purslane | sand and grassland | +2 hunger, +3 thirst |
+
+  Pandanus is the fiber plant (Pandanus Fiber). Island recipes replace the forest meals (the fish, meat and water recipes stay, as Grilled Fish and Smoked Fish):
+
+  | Recipe | Ingredients | Effect |
+  | --- | --- | --- |
+  | Beach Skewer | 2 sea grapes, 1 purslane, 1 stick | +16 hunger, +6 thirst |
+  | Roast Breadfruit | 1 breadfruit, 2 sticks | +30 hunger |
+  | Poi | 2 taro, 1 boiled water | +26 hunger, +10 thirst |
+  | Coconut Fish | 1 raw fish, 1 coconut | +36 hunger, +10 thirst, +8 health |
+  | Fish Laulau | 1 raw fish, 1 taro | +34 hunger, +8 health |
+  | Island Stew | boiled water, raw meat, taro, breadfruit | +44 hunger, +16 thirst, +12 health |
+  | Coconut Bananas | 2 bananas, 1 coconut | +22 hunger, +8 thirst, +14 energy |
+  | Sea Grape Tea | boiled water, 2 sea grapes | +32 thirst |
+  | Fish & Sea Grape Skewer | 1 raw fish, 2 sea grapes, 1 stick | +24 hunger |
+
+  On the island, plant fiber is Pandanus Fiber, birch bark is Hau Bark, lake water is Stream Water and trout are Raw Fish.
+- **Wildlife.** Fish are the main meat. On day 1 a world holds 30 parrotfish in the lagoon and cove, 12 stream gobies in the fresh water, 12 land crabs on the beaches, 10 red junglefowl, 7 feral goats on the grassland, 6 wild boar and 5 fer-de-lance in the jungle, 12 box jellyfish in the shallows and 2 tiger sharks past the reef (3 from day 3). There are no big land predators, as on real oceanic islands.
+  - **Wild boar:** territorial like a javelina, but bolder. It holds 18 m around its home, notices you at 15 m, charges at 6.3 m/s (slower than your 6.8 m/s sprint) and butts for 12 every 1.4 s. It flees once badly hurt, and gives 3 meat and 2 hides.
+  - **Fer-de-lance:** coils in the jungle leaf litter and doesn't rattle, so you notice it late (5 m). Its bite does 6 and its venom 0.6 a second for 20 s more; another bite adds to the time, up to 45 s. Venom can kill.
+  - **Box jellyfish:** drift in the sunny shallows (under 2.4 m deep, well inside the reef, near the beaches) and sting for 7 every 1.8 s, but only when you're wading or swimming. One hit kills one; there's nothing to butcher.
+  - **Tiger shark:** only in the deep water past the reef. It hears a swimmer out there from 220 m, circles in, rushes at 5.4 m/s (you swim 2.6) and bites for 24, then peels away and comes round again. It can't cross the reef, so the lagoon is safe.
+  - Feral goats spook from far off like deer (2 meat, 1 hide). Junglefowl are the spear-hunt target. Land crabs are slow and easy.
+  - Fruit bats roost in every cave and stream out at dusk, or whenever you walk in. They are scenery.
+- **Caves.** Each has a flat floor under a 5 m rock shell, a mouth onto open ground (the waterfall cave's opens onto the ledge beside the pool), and five loose stone piles inside. You can build a campfire in one.
+- **Knife and carcasses.** Boar and goat carcasses are skinned, then butchered. Junglefowl, crabs and vipers have no hide and go straight to butchering. Fish go straight into your pack.
+- **Onboarding** is the same 11 steps with the day-1 crafting limit, reworded for the island: drink from a stream, pandanus fiber for the campfire, sea grapes, purslane or coconuts, the Beach Skewer, fishing in the lagoon, cove or a stream, spearing a junglefowl, the bow (for goats and coconuts), and the knife.
+- **Rendering four times the area.** The island's ground is 120 m chunks culled to the fog (deep ocean isn't built at all; a flat seabed sits under it), one ocean sheet covers the lagoon, the sea and every stream and pool, trees and forage are instanced in chunks with low-detail far models, ground cover stops within 70–85 m, and the jungle's trees stop just inside the fog. In the headless smoke run the island draws about as many triangles and draw calls per frame as the forest (see [Testing](#testing)).
+
 ### Map select and saves
 
 - The title screen has ◀ and ▶ arrows either side of the title. They (or ← / →) cycle the maps; the name, tagline, record and **Continue** button update, and the background cross-fades to that map.
-- Each map has its own save and dawn snapshot. The Pacific Northwest map keeps the original storage keys (`cozysurvival.v1.save` and `cozysurvival.v1.daySnapshot`), so every existing save loads unchanged as a Pacific Northwest run. The desert uses the same keys with a `.desert` suffix.
+- Each map has its own save and dawn snapshot. The Pacific Northwest map keeps the original storage keys (`cozysurvival.v1.save` and `cozysurvival.v1.daySnapshot`), so every existing save loads unchanged as a Pacific Northwest run. The desert uses the same keys with a `.desert` suffix, and the island with `.island`.
 - Best days and deaths are kept per map. **Start from scratch** on one map wipes only that map's save and record.
 - The last map you picked is remembered.
 
@@ -282,7 +349,7 @@ Available on the dev server, or on any build with `?dev=1` in the URL.
   - jump to a time of day, or to the next morning (which lifts the day-1 crafting limit)
   - give item kits
   - unlock all tools (the Stone Knife included) and gear
-  - spawn an animal nearby: a wolf, bear, deer or rabbit on the Pacific Northwest map, or any desert predator or prey (or a scorpion) on the desert
+  - spawn an animal nearby: a wolf, bear, deer or rabbit on the Pacific Northwest map, any desert predator or prey (or a scorpion) on the desert, or any island animal on the island (swimmers go in the nearest water they live in)
   - refill needs, take damage, or die
   - show an FPS counter
 - **T** cycles the time scale through 1×, 10×, 60× and 240×. At 60× a full day takes 24 seconds. A `DEV ×N` badge on the clock shows when time is sped up.
@@ -325,7 +392,9 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 659 tests covering:
+`npm test` runs 701 tests covering:
+
+- round 11, the island (`tests/island.test.ts`, eight seeds): about four times the area; an irregular coast (headlands, shoreline length, spits, a separate islet) with deep ocean all round; beaches, the cove with its walls and narrow mouth, grassland with few trees, dense jungle, a 12 m+ waterfall into a fresh plunge pool, two or more streams, three or more pools and two or more caves with flat floors, open mouths and stones; salt water you can't drink or bottle and fresh streams and pools you can; a walkable way from the spawn beach to fresh water; 1.45× thirst awake and asleep, warm nights, and no weather; coconuts shot down one at a time, out of reach by hand, fallen under palms, and their food; the reef current; boar charges, fer-de-lance venom, jellyfish that only sting in the water, sharks that stay past the reef and never reach the lagoon; fish outnumbering land game; the knife on island carcasses; the day-1 limit and the onboarding wording; island saves; and an island multiplayer server with coconuts in sync. Also the desert golden fingerprint (`tests/desert-unchanged.test.ts`) and upgrades restoring durability (`tests/upgrades.test.ts`)
 
 - round 10: the knife (`tests/knife.test.ts`: recipe, key 7 and icon, the three tiers and their bonuses, repair costs and a workbench repair, the weak two-slash weapon, a use per cut until it breaks), carcasses (`tests/carcass.test.ts`: "Needs a knife" without one, skin then butcher then gone, a torn hide still skinned and butcherable, full-pack drops, hideless birds, lizards and snakes butchered in one cut, the Skinning curve and its progression, the slimmer raw-muscle model, skinned carcasses in saves and old carcasses loading), the day-1 limit (`tests/dayOne.test.ts`: step-by-step unlocks on both maps, no crafting or placing a locked recipe, everything open on day 2 or past the night step, the off switch, old saves past day 1 never locked or held, old track positions moved onto the new track, the locked tiles and header, the dev Next morning), health and needs (`tests/health.test.ts`: each drain rate awake and asleep, drains adding up, death only at health 0 with the worst cause named, no regen while a meter is empty, the cold grace awake and asleep, dying in your sleep, both maps), the 11-step onboarding and the survive-the-night hold (`tests/onboarding.test.ts`), 9% scorpions and one per pile (`tests/scorpions.test.ts`), yucca and agave spines and the agave fiber rate (`tests/spines.test.ts`), and in multiplayer: skin and butcher sync (late joiners too), a hideless quail, a waiting sleeper's drain and death, the night skip's drain, the day-1 limit following the host's day, and a spent stone pile
 
@@ -381,7 +450,7 @@ Rendering is built for 60 fps:
 
 `npm run smoke` boots the real build in headless Chrome as an end-to-end check of the day-1 crafting lock (every Tools tile locked at the first step, with the Day 1 header), then skips to the next morning with the dev hook and checks the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair from its icon grid (greyed tiles, the ring, locked walking, full condition after), a storage bin (the stacked layout with its upgrade panel on the right, moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
-It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. The multiplayer part runs on a desert server, and the guest's server list shows "Arizona Desert". Along the way it saves four screenshots: each map's title screen and each map in first person.
+It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. Then it moves on to the island, the third map: the cross-fade and three map dots, a new island run with its own save (the forest and desert saves untouched), the fresh-water first step, salt water refused, the island crafting menu, and **Continue** on both the desert and the island. The multiplayer part runs on an island server, and the guest's server list shows "Tropical Island". Along the way it saves six screenshots (each map's title screen and each map in first person) and measures each map's frame time, draw calls, triangles and heap into `perf.json` next to them. The island has to stay within twice the forest's frame time and draw calls.
 
 ## Menus and icons (round 6)
 
@@ -472,11 +541,24 @@ It also switches the title to the desert with the arrow (checking the cross-fade
   - kept: the round 3 cold grace holds asleep too, so cold alone stops at 1 health during the first two nights.
 - **Saves and multiplayer.** Round 10 saves are version 6 and the multiplayer protocol is version 7. Older saves load on both maps: carcasses whose hide is already gone count as skinned, skills start Skinning at 0, the onboarding position moves onto the new track (steps from the fishing step on shift one later, and a finished old track picks up the knife step), and a save already past day 1 is never locked or held by the night step. The Pacific Northwest layout is unchanged.
 
+## Round 11
+
+- **The Tropical Island**, a third map. See [Tropical Island](#tropical-island).
+- **Upgrades restore durability.** Upgrading a tool, weapon or the knife rebuilds it at full condition: its durability resets to 100% of the new level's maximum, made at your current crafting skill (never below the maximum it had). This works on every map, and for each player in multiplayer, where tool upgrades are personal. Shelter and storage upgrades already came back at full condition.
+- **Saves and multiplayer.** Saves stay at version 6; island saves go in their own slot. The multiplayer protocol is version 8 (the island's animals and world), so older clients can't join newer servers.
+
 ## Known gaps
 
 - Desktop only: it needs a mouse and keyboard with pointer lock. The layout adapts to small screens, but there are no touch controls yet.
 - Visual and feel tuning (movement, lighting, animal behaviour) has only been checked through automated tests and a headless boot, not a hands-on playtest.
-- There is one world size (320 m square), and no weather yet.
+- The island is 960 m square; the forest and desert stay 320 m until they grow in a later round. There is no weather yet: rain, storms and fires put out by storms wait for a weather system Jon will schedule.
+- The island has had no playtest and no visual review. Its coastline, reef surf, waterfall, caves, bats, palms and animal models, and the new terrain colours, are checked only by tests and the headless smoke run.
+- Venom shows as a message and the health bar draining; there's no separate venom icon on the HUD.
+- The island reuses the lake loop for all its water; there's no surf, waterfall roar or jungle ambience yet.
+- Box jellyfish are always in the shallows. Real box jellyfish come inshore about 8–10 days after each full moon; the game has no moon cycle to tie them to.
+- Tiger sharks can be hurt but leave nothing to butcher. Fruit bats are scenery and can't be hunted.
+- The waterfall cave is reached along the pool's narrow, sometimes ankle-deep ledge, and the islet needs a short swim or wade.
+- Building a new island takes about 0.25 s (world and terrain) in Node and about 0.4 s for its views in headless Chrome; switching the title to the island took about 3 s in the headless run, most of it the cross-fade and compiling shaders in software GL.
 - The desert is tuned from real-world densities and the numbers only, not a playtest. Its animal models, plants and terrain colours haven't had a visual review.
 - The desert has three pools against the Pacific Northwest map's two bodies of water (a lake and a pond), so it has less water rather than fewer bodies: 8.5% of the area, none bigger than a 7.2 m radius. The spring and the alkali pool are needed for the drinkable/undrinkable rule; the tinaja is the third.
 - Apart from scorpions under stones, the desert has no bugs, huntable or ambient.
@@ -485,7 +567,7 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - One or two mountain lions and a bear on a 9-hectare map is far above real territory density. That's a deliberate game choice, as it is for the wolves.
 - Saguaros are scenery and can't be chopped or harvested.
 - The title cross-fade fades out a snapshot of the old map's canvas, so the menu itself doesn't fade.
-- Multiplayer protocol version 7 (round 10: per-pile scorpion flags and skinned carcasses), so older clients can't join newer servers (and the other way round).
+- Multiplayer protocol version 8 (round 11: the island's animals and world; round 10 was 7), so older clients can't join newer servers (and the other way round).
 - Hunger, thirst, fire fuel and resource regrowth are still tuned per game hour, so with 24-minute days they tick 2.5× faster in real time than before. Cold and warmth are unchanged per game hour.
 - Trunk and boulder surfaces approximate the rendered meshes (a flat-topped slab and a half-ellipsoid dome).
 - Predators don't follow you into the water.

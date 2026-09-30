@@ -62,6 +62,8 @@ async function measure(page, label) {
           const r = g.view.renderer.info;
           r.autoReset = false;
           r.reset();
+          // Collect first, so the heap is what the map keeps alive rather than garbage from the last one.
+          window.gc?.();
           requestAnimationFrame(() => {
             const out = {
               medianMs: +times[Math.floor(times.length / 2)].toFixed(1),
@@ -119,6 +121,7 @@ async function main() {
       '--mute-audio',
       '--autoplay-policy=no-user-gesture-required',
       '--enable-precise-memory-info',
+      '--js-flags=--expose-gc',
       '--window-size=1280,720',
     ],
   });

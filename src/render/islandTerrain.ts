@@ -30,6 +30,10 @@ const C = {
   mossCliff: new THREE.Color('#2f5228'),
 };
 
+function releaseArray(this: THREE.BufferAttribute): void {
+  (this as unknown as { array: ArrayLike<number> | null }).array = null;
+}
+
 /** Chunks of this many cells a side; deep ocean chunks (all corners under `SKIP_BELOW`) aren't built at all. */
 const CHUNK_CELLS = 60;
 const SKIP_BELOW = -12;
@@ -164,6 +168,9 @@ export class IslandTerrain {
         g.setAttribute('color', new THREE.BufferAttribute(col, 3));
         g.computeVertexNormals();
         g.computeBoundingSphere();
+        // The ground never changes and nothing reads these arrays back (the sim has its own height grid), so drop
+        // the CPU copies once they are on the GPU.
+        for (const name of ['position', 'color', 'normal']) (g.getAttribute(name) as THREE.BufferAttribute).onUpload(releaseArray);
         const mesh = new THREE.Mesh(g, this.material);
         mesh.receiveShadow = true;
         mesh.name = 'terrain-chunk';
