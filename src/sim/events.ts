@@ -14,6 +14,8 @@ export type SimEvent =
   | { type: 'treeFell'; tree: number; dirX: number; dirZ: number }
   | { type: 'needTool'; message: string }
   | { type: 'crafted'; recipe: string; burnt?: boolean }
+  /** A pinned tool, piece of gear or building was made, so it came off the crafting checklist. */
+  | { type: 'checklistDone'; recipe: string }
   | { type: 'skillUp'; skill: SkillId; level: number }
   | { type: 'wornLow'; name: string }
   | { type: 'broke'; name: string; tool?: ToolId; structure?: number }
@@ -52,6 +54,8 @@ export type SimEvent =
   | { type: 'predatorAttack'; id: number; species: SpeciesId }
   /** A rattlesnake coiled and rattled at the player. */
   | { type: 'rattle'; id: number; x: number; z: number }
+  /** The stone this player just gathered had a scorpion under it. */
+  | { type: 'scorpion'; x: number; z: number }
   | { type: 'arrowFired'; power: number }
   | { type: 'arrowHit'; x: number; y: number; z: number; target: 'ground' | 'tree' | 'water' | 'animal' }
   | { type: 'cast'; power: number }

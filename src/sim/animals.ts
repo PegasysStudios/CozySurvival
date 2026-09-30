@@ -3,7 +3,7 @@ import { damp, headingTo, turnToward } from '../core/math';
 import type { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { biomeDef } from '../data/biomes';
-import { SPECIES, type PredatorSpecies, type PreySpecies, type SpeciesId } from '../data/species';
+import { SPECIES, type PestSpecies, type PredatorSpecies, type PreySpecies, type SpeciesId, type Territory } from '../data/species';
 import type { Collider } from './colliders';
 import type { SimEvent } from './events';
 import type { AnimalMode, AnimalState, DamageSource } from './state';
@@ -22,6 +22,8 @@ export interface AnimalEnv {
   playerDeterrent: boolean;
   litFires: readonly { x: number; z: number }[];
   night: boolean;
+  /** Every animal in the world, so territorial ones can see who wanders in. */
+  readonly animals: readonly AnimalState[];
   events: SimEvent[];
   hurtPlayer(amount: number, source: DamageSource, fromX: number, fromZ: number): void;
 }
@@ -173,9 +175,43 @@ function updateCoiled(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: numb
   }
 }
 
+/** Idle and wander: stand a while, then amble to a new spot around home. */
+function roam(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number): void {
+  if (a.mode === 'idle') {
+    steer(a, env, a.heading, 0, dt);
+    if (a.timer <= 0) {
+      pickTarget(a, env, a.homeX, a.homeZ, def.wanderRadius);
+      setMode(a, 'wander', env.rng.range(6, 12));
+    }
+  } else {
+    const td = Math.hypot(a.tx - a.x, a.tz - a.z);
+    steer(a, env, headingTo(a.x, a.z, a.tx, a.tz), def.walkSpeed, dt);
+    if (td < 0.8 || a.timer <= 0) setMode(a, 'idle', env.rng.range(2, 6));
+  }
+}
+
+/** Runs from the player, or from the animal in `foe` (a charging javelina) while there is one. */
+function flee(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
+  const from = a.foe === undefined ? null : (env.animals.find((o) => o.id === a.foe) ?? null);
+  if (a.foe !== undefined && !from) a.foe = undefined;
+  const away = from ? headingTo(from.x, from.z, a.x, a.z) : headingTo(env.playerX, env.playerZ, a.x, a.z);
+  const wobble = Math.sin(a.modeTime * 2.3 + a.id) * 0.35;
+  steer(a, env, away + wobble, def.runSpeed * (a.hurt > 0 ? 1.1 : 1), dt);
+  const fd = from ? Math.hypot(from.x - a.x, from.z - a.z) : d;
+  if (a.timer <= 0 && fd > def.calmRadius * a.temperament) {
+    a.homeX = a.x;
+    a.homeZ = a.z;
+    a.foe = undefined;
+    setMode(a, 'idle', env.rng.range(2, 5));
+  }
+}
+
 function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
+  if (def.territory) {
+    updateTerritorial(a, def, def.territory, env, dt, d);
+    return;
+  }
   const { alert, fear } = env.playerDead ? { alert: 0, fear: 0 } : preyRadii(a, env);
-  const away = headingTo(env.playerX, env.playerZ, a.x, a.z);
   if (def.strike && a.mode === 'alert') {
     updateCoiled(a, def, env, dt, d);
     return;
@@ -193,17 +229,7 @@ function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number
         if (def.strike) env.events.push({ type: 'rattle', id: a.id, x: a.x, z: a.z });
         break;
       }
-      if (a.mode === 'idle') {
-        steer(a, env, a.heading, 0, dt);
-        if (a.timer <= 0) {
-          pickTarget(a, env, a.homeX, a.homeZ, def.wanderRadius);
-          setMode(a, 'wander', env.rng.range(6, 12));
-        }
-      } else {
-        const td = Math.hypot(a.tx - a.x, a.tz - a.z);
-        steer(a, env, headingTo(a.x, a.z, a.tx, a.tz), def.walkSpeed, dt);
-        if (td < 0.8 || a.timer <= 0) setMode(a, 'idle', env.rng.range(2, 6));
-      }
+      roam(a, def, env, dt);
       break;
     }
     case 'alert': {
@@ -218,16 +244,156 @@ function updatePrey(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number
       }
       break;
     }
-    case 'flee': {
-      const wobble = Math.sin(a.modeTime * 2.3 + a.id) * 0.35;
-      steer(a, env, away + wobble, def.runSpeed * (a.hurt > 0 ? 1.1 : 1), dt);
-      if (a.timer <= 0 && d > def.calmRadius * a.temperament) {
-        a.homeX = a.x;
-        a.homeZ = a.z;
-        setMode(a, 'idle', env.rng.range(2, 5));
+    case 'flee':
+      flee(a, def, env, dt, d);
+      break;
+    default:
+      setMode(a, 'idle', 1);
+  }
+}
+
+const PLAYER = -1;
+const NOBODY = -2;
+
+/** Other land animals a territorial one drives off: not its own kind, and not scorpions. */
+function trespasser(o: AnimalState): boolean {
+  const def = SPECIES[o.species];
+  return def.habitat === 'land' && def.kind !== 'pest' && !(def.kind === 'prey' && def.territory);
+}
+
+/** Who is inside the territory and close enough to see: the player first, then any other animal. */
+function intruder(a: AnimalState, t: Territory, env: AnimalEnv, d: number): number {
+  if (!env.playerDead && d < t.sight && Math.hypot(env.playerX - a.homeX, env.playerZ - a.homeZ) < t.radius) return PLAYER;
+  for (const o of env.animals) {
+    if (o === a || Math.abs(o.x - a.x) > t.sight || Math.abs(o.z - a.z) > t.sight || !trespasser(o)) continue;
+    if (Math.hypot(o.x - a.x, o.z - a.z) < t.sight && Math.hypot(o.x - a.homeX, o.z - a.homeZ) < t.radius) return o.id;
+  }
+  return NOBODY;
+}
+
+/** Where the current foe is (the player unless `foe` names an animal), or null once it is gone or dead. */
+function foeAt(a: AnimalState, env: AnimalEnv): { x: number; z: number } | null {
+  if (a.foe === undefined) return env.playerDead ? null : { x: env.playerX, z: env.playerZ };
+  return env.animals.find((o) => o.id === a.foe) ?? null;
+}
+
+/** Clack a warning at `foe`. Prey it targets bolts at once; herd-mates nearby join in against a player. */
+function warn(a: AnimalState, t: Territory, env: AnimalEnv, foe: number, rally: boolean): void {
+  a.foe = foe === PLAYER ? undefined : foe;
+  setMode(a, 'warn', t.warnTime);
+  if (foe === PLAYER) {
+    env.events.push({ type: 'predatorAlert', id: a.id, species: a.species, x: a.x, z: a.z });
+    if (!rally) return;
+    for (const o of env.animals) {
+      if (o === a || o.species !== a.species || o.aggroCooldown > 0 || Math.hypot(o.x - a.x, o.z - a.z) > t.rally) continue;
+      if (o.mode === 'idle' || o.mode === 'wander' || o.mode === 'alert') warn(o, t, env, PLAYER, false);
+    }
+    return;
+  }
+  const o = env.animals.find((x) => x.id === foe);
+  if (o && SPECIES[o.species].kind === 'prey') {
+    o.foe = a.id;
+    setMode(o, 'flee', env.rng.range(2.5, 4));
+  }
+}
+
+/** A charge connected with an animal: prey runs from this one, a predator slinks off home. */
+function butt(a: AnimalState, o: AnimalState, env: AnimalEnv): void {
+  const def = SPECIES[o.species];
+  o.hurt = 0.35;
+  if (def.kind === 'predator') {
+    setMode(o, 'retreat', 20);
+    o.aggroCooldown = Math.max(o.aggroCooldown, def.aggroCooldown);
+  } else if (def.kind === 'prey') {
+    o.foe = a.id;
+    setMode(o, 'flee', env.rng.range(2.5, 4));
+  }
+}
+
+/** Gives up the charge and walks home, ignoring intruders for a few seconds. */
+function standDown(a: AnimalState): void {
+  a.foe = undefined;
+  setMode(a, 'retreat', 12);
+  a.aggroCooldown = 4;
+}
+
+/**
+ * Javelinas hold ground around home (see `Territory`): `warn` while clacking at an intruder, `chase` while charging
+ * it, `reposition` while backing off after a hit, `retreat` while walking home. Outside the territory they only
+ * watch you (`alert`); badly hurt they `flee`.
+ */
+function updateTerritorial(a: AnimalState, def: PreySpecies, t: Territory, env: AnimalEnv, dt: number, d: number): void {
+  switch (a.mode) {
+    case 'idle':
+    case 'wander':
+    case 'alert': {
+      if (a.aggroCooldown <= 0) {
+        const foe = intruder(a, t, env, d);
+        if (foe !== NOBODY) {
+          warn(a, t, env, foe, true);
+          break;
+        }
+      }
+      const alert = env.playerDead ? 0 : preyRadii(a, env).alert;
+      if (a.mode === 'alert') {
+        a.speed = damp(a.speed, 0, 8, dt);
+        a.heading = turnToward(a.heading, headingTo(a.x, a.z, env.playerX, env.playerZ), def.turnRate * dt);
+        if (d > alert * 1.2) setMode(a, 'idle', env.rng.range(1, 3));
+      } else if (d < alert) {
+        setMode(a, 'alert', env.rng.range(def.alertTime[0], def.alertTime[1]));
+      } else {
+        roam(a, def, env, dt);
       }
       break;
     }
+    case 'warn': {
+      const f = foeAt(a, env);
+      if (!f) {
+        standDown(a);
+        break;
+      }
+      a.speed = damp(a.speed, 0, 8, dt);
+      a.heading = turnToward(a.heading, headingTo(a.x, a.z, f.x, f.z), def.turnRate * 1.5 * dt);
+      if (a.timer <= 0) {
+        setMode(a, 'chase', 0);
+        if (a.foe === undefined) env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+      }
+      break;
+    }
+    case 'chase': {
+      const f = foeAt(a, env);
+      if (!f || a.modeTime > t.maxCharge || Math.hypot(f.x - a.homeX, f.z - a.homeZ) > t.radius * t.leash) {
+        standDown(a);
+        break;
+      }
+      steer(a, env, headingTo(a.x, a.z, f.x, f.z), t.chargeSpeed, dt);
+      if (Math.hypot(f.x - a.x, f.z - a.z) <= t.range && a.cooldown <= 0) {
+        a.cooldown = t.cooldown;
+        if (a.foe === undefined) env.hurtPlayer(t.damage, a.species as DamageSource, a.x, a.z);
+        else butt(a, f as AnimalState, env);
+        setMode(a, 'reposition', 0.8);
+      }
+      break;
+    }
+    case 'reposition': {
+      const f = foeAt(a, env);
+      if (!f) {
+        standDown(a);
+        break;
+      }
+      steer(a, env, headingTo(f.x, f.z, a.x, a.z), def.walkSpeed * 2.5, dt);
+      if (a.timer <= 0) setMode(a, 'chase', 0);
+      break;
+    }
+    case 'retreat': {
+      steer(a, env, headingTo(a.x, a.z, a.homeX, a.homeZ), def.walkSpeed * 2, dt);
+      if (Math.hypot(a.homeX - a.x, a.homeZ - a.z) < 3 || a.timer <= 0) setMode(a, 'idle', env.rng.range(2, 5));
+      else if (a.aggroCooldown <= 0 && intruder(a, t, env, d) !== NOBODY) setMode(a, 'idle', 0);
+      break;
+    }
+    case 'flee':
+      flee(a, def, env, dt, d);
+      break;
     default:
       setMode(a, 'idle', 1);
   }
@@ -358,6 +524,56 @@ function updatePredator(a: AnimalState, def: PredatorSpecies, env: AnimalEnv, dt
   }
 }
 
+/**
+ * A scorpion out from under its stone: `alert` while it rears up, `chase` while it goes after the nearest player,
+ * `retreat` while it burrows back in (the simulation removes it once `burrowed`).
+ */
+function updatePest(a: AnimalState, def: PestSpecies, env: AnimalEnv, dt: number, d: number): void {
+  const toPlayer = headingTo(a.x, a.z, env.playerX, env.playerZ);
+  switch (a.mode) {
+    case 'retreat':
+      a.speed = damp(a.speed, 0, 10, dt);
+      break;
+    case 'alert':
+      a.speed = damp(a.speed, 0, 10, dt);
+      a.heading = turnToward(a.heading, toPlayer, def.turnRate * dt);
+      if (a.timer <= 0) setMode(a, 'chase', def.giveUpTime);
+      break;
+    case 'chase': {
+      if (d < def.giveUpDist && !env.playerDead) a.timer = def.giveUpTime;
+      if (a.timer <= 0 || a.modeTime > def.maxChase) {
+        setMode(a, 'retreat', def.burrowTime);
+        break;
+      }
+      steer(a, env, toPlayer, d > def.sting.range * 0.6 ? def.runSpeed : 0, dt);
+      if (d < 1.5) a.heading = turnToward(a.heading, toPlayer, def.turnRate * dt);
+      if (d <= def.sting.range && a.cooldown <= 0 && !env.playerDead) {
+        a.cooldown = def.sting.cooldown;
+        env.hurtPlayer(def.sting.damage, a.species as DamageSource, a.x, a.z);
+        env.events.push({ type: 'predatorAttack', id: a.id, species: a.species });
+      }
+      break;
+    }
+    default:
+      setMode(a, 'alert', def.revealTime);
+  }
+}
+
+const PREDATOR_ACTIVE: readonly AnimalMode[] = ['stalk', 'chase', 'attack', 'warn', 'reposition'];
+
+/** Hunting, charging or stinging someone right now: nobody can sleep with one of these close by. */
+export function hostile(a: AnimalState): boolean {
+  const def = SPECIES[a.species];
+  if (def.kind === 'predator') return PREDATOR_ACTIVE.includes(a.mode);
+  if (def.kind === 'pest') return a.mode === 'alert' || a.mode === 'chase';
+  return !!def.territory && a.foe === undefined && (a.mode === 'warn' || a.mode === 'chase' || a.mode === 'reposition');
+}
+
+/** A scorpion that has finished digging back in; the simulation drops it. */
+export function burrowed(a: AnimalState): boolean {
+  return SPECIES[a.species].kind === 'pest' && a.mode === 'retreat' && a.timer <= 0;
+}
+
 export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
   const def = SPECIES[a.species];
   const d = Math.hypot(env.playerX - a.x, env.playerZ - a.z);
@@ -373,6 +589,7 @@ export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
   a.aggroCooldown -= dt;
   a.hurt = Math.max(0, a.hurt - dt);
   if (def.kind === 'prey') updatePrey(a, def, env, dt, d);
+  else if (def.kind === 'pest') updatePest(a, def, env, dt, d);
   else updatePredator(a, def, env, dt, d);
 }
 
@@ -382,8 +599,22 @@ export function damageAnimal(a: AnimalState, amount: number, env: AnimalEnv): bo
   a.health -= amount;
   a.hurt = 0.35;
   if (a.health <= 0) return true;
-  if (def.kind === 'prey') startFlee(a, env, false);
-  else if (a.health / def.maxHealth <= def.retreatHealthFrac) {
+  if (def.kind === 'prey' && def.territory) {
+    // Stands its ground and charges whoever hit it, unless badly hurt or shot from well outside its range.
+    const t = def.territory;
+    const near = Math.hypot(env.playerX - a.homeX, env.playerZ - a.homeZ) < t.radius * t.leash;
+    if (a.health / def.maxHealth > t.fleeFrac && near) {
+      a.foe = undefined;
+      a.aggroCooldown = 0;
+      if (a.mode !== 'chase' && a.mode !== 'reposition') setMode(a, 'chase', 0);
+    } else {
+      a.foe = undefined;
+      startFlee(a, env, false);
+    }
+  } else if (def.kind === 'prey') startFlee(a, env, false);
+  else if (def.kind === 'pest') {
+    if (a.mode !== 'retreat') setMode(a, 'chase', def.giveUpTime);
+  } else if (a.health / def.maxHealth <= def.retreatHealthFrac) {
     setMode(a, 'retreat', 30);
     a.aggroCooldown = def.aggroCooldown * 2;
   } else {

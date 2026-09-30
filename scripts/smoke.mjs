@@ -425,22 +425,47 @@ async function main() {
       await page.evaluate(() => {
         const sim = window.__cozy.game.sim;
         const s = sim.state;
-        if (!s.tools.includes('axe')) s.tools.push('axe');
+        for (const tool of ['axe', 'spear']) if (!s.tools.includes(tool)) s.tools.push(tool);
         s.toolWear.axe = { dur: 2, max: Math.max(10, s.toolWear.axe?.max ?? 10) };
+        s.toolWear.spear = { dur: 1, max: Math.max(10, s.toolWear.spear?.max ?? 10) };
         s.inventory.slots.fill(null);
         for (const item of ['stick', 'stone', 'fiber']) sim.devGive(item, 1);
         Object.assign(s.needs, { health: 100, hunger: 100, thirst: 100 });
       });
       await openStructure(benchId);
       await waitFrames(3);
-      const menu = await page.evaluate(() => ({
-        mode: window.__cozy.game.mode,
-        rows: [...document.querySelectorAll('.panel .repair-row')].map((r) => r.dataset.tool),
-        ready: !document.querySelector('.repair-row[data-tool="axe"] .btn.primary')?.disabled,
-        table: document.querySelectorAll('.repair-table > div').length,
-      }));
-      check('the workbench menu lists carried tools with durability and a Repair button', menu.mode === 'panel' && menu.rows.includes('axe') && menu.ready && menu.table === 4, JSON.stringify(menu));
-      await page.click('.repair-row[data-tool="axe"] .btn.primary');
+      const menu = await page.evaluate(() => {
+        const tile = (tool) => document.querySelector(`.panel .tile-grid .tile[data-key="w:${tool}"]`);
+        return {
+          mode: window.__cozy.game.mode,
+          tiles: [...document.querySelectorAll('.panel .tile-grid .tile')].map((t) => t.dataset.key),
+          axe: { ready: tile('axe')?.classList.contains('ready') ?? false, greyed: tile('axe')?.classList.contains('greyed') ?? true, dur: !!tile('axe')?.querySelector('.dur i') },
+          spearGreyed: tile('spear')?.classList.contains('greyed') ?? false,
+          oldLayout: !!document.querySelector('.workbench-info, .repair-table, .repair-row'),
+        };
+      });
+      check('the workbench menu is an icon grid of carried tools with durability bars, greyed without repair materials, and no how-repairs-work section', menu.mode === 'panel' && menu.tiles.includes('w:axe') && menu.axe.ready && !menu.axe.greyed && menu.axe.dur && menu.spearGreyed && !menu.oldLayout, JSON.stringify(menu));
+      await page.click('.panel .tile-grid .tile[data-key="w:spear"]');
+      await waitFrames(2);
+      const spear = await page.evaluate(() => {
+        const d = document.querySelector('.panel .repair-detail');
+        return { tool: d?.dataset.tool, disabled: d?.querySelector('.btn.primary')?.disabled ?? false, missing: d?.querySelectorAll('.ingredient.missing').length ?? 0 };
+      });
+      check('clicking the greyed spear shows its missing materials and a disabled Repair button', spear.tool === 'spear' && spear.disabled && spear.missing > 0, JSON.stringify(spear));
+      await page.click('.panel .tile-grid .tile[data-key="w:axe"]');
+      await waitFrames(2);
+      const detail = await page.evaluate(() => {
+        const d = document.querySelector('.panel .repair-detail');
+        return {
+          tool: d?.dataset.tool,
+          durability: d?.querySelector('.repair-cond span')?.textContent ?? '',
+          counts: [...(d?.querySelectorAll('.ingredient b') ?? [])].map((b) => b.textContent),
+          time: d?.querySelector('.repair-time')?.textContent ?? '',
+          ready: d ? !d.querySelector('.btn.primary')?.disabled : false,
+        };
+      });
+      check('clicking the axe shows its durability, materials as have/need, repair time and an enabled Repair button', detail.tool === 'axe' && /^\d+%$/.test(detail.durability) && detail.counts.length === 3 && detail.counts.every((c) => c === '1/1') && /\d s/.test(detail.time) && detail.ready, JSON.stringify(detail));
+      await page.click('.panel .repair-detail .btn.primary');
       await waitFrames(3);
       const started = await page.evaluate(() => ({
         mode: window.__cozy.game.mode,
@@ -483,7 +508,22 @@ async function main() {
       await openStructure(binId);
       await waitFrames(3);
       const binMenu = await page.evaluate(() => ({ mode: window.__cozy.game.mode, store: document.querySelectorAll('.store-grid .slot').length, pack: !!document.querySelector('.pack-grid .slot[data-item="stick"]') }));
-      check('the storage bin opens with ten slots beside the pack', binMenu.mode === 'panel' && binMenu.store === 10 && binMenu.pack, JSON.stringify(binMenu));
+      check('the storage bin opens with ten slots and the pack', binMenu.mode === 'panel' && binMenu.store === 10 && binMenu.pack, JSON.stringify(binMenu));
+      const layout = await page.evaluate(() => {
+        const box = (sel) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+        const store = box('.storage-left > .store-col');
+        const pack = box('.storage-left > .pack-col');
+        const upgrade = box('.storage-body > .structure-upgrade');
+        const slots = [...document.querySelectorAll('.store-grid .slot, .pack-grid .slot')].map((s) => Math.round(s.getBoundingClientRect().width));
+        return {
+          stacked: !!store && !!pack && pack.top >= store.bottom - 1 && Math.abs(pack.left - store.left) < 1,
+          upgradeRight: !!upgrade && !!store && upgrade.left >= store.right,
+          title: document.querySelector('.storage-body > .structure-upgrade h3')?.textContent ?? '',
+          upgradeButton: !!document.querySelector('.storage-body > .structure-upgrade .btn.primary'),
+          minSlot: Math.min(...slots),
+        };
+      });
+      check('the bin menu stacks In storage over Your pack on the left, with the upgrade panel on the right and full-size slots', layout.stacked && layout.upgradeRight && /Upgrade to/.test(layout.title) && layout.upgradeButton && layout.minSlot >= 64, JSON.stringify(layout));
       await page.click('.pack-grid .slot[data-item="stick"]');
       await sleep(150);
       const stored = await page.evaluate((id) => {
@@ -501,7 +541,7 @@ async function main() {
       });
       await openStructure(binId);
       await waitFrames(3);
-      await page.click('.storage-foot .btn.primary');
+      await page.click('.storage-body > .structure-upgrade .btn.primary');
       await sleep(150);
       const grown = await page.evaluate((id) => {
         const st = window.__cozy.game.sim.state.structures.find((x) => x.id === id);

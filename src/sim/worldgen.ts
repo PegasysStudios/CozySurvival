@@ -72,6 +72,8 @@ interface Occ {
 }
 
 export const SPAWN_CLEAR_RADIUS = 12;
+/** Desert rocks smaller than this are gatherable stone piles, not boulders. */
+export const MIN_DESERT_BOULDER = 1;
 
 class Occupancy {
   private readonly grid = new SpatialGrid<Occ>(6);
@@ -265,8 +267,10 @@ export function generateDesert(seed: number): WorldGen {
   const spring = t.lakes.find((l) => l.kind === 'spring')!;
   const nearDrinkable = (x: number, z: number) => t.lakes.some((l) => isDrinkable(l) && Math.hypot(l.x - x, l.z - z) < l.r * 2.6);
   const along = (x: number, z: number) => x * t.upDir.x + z * t.upDir.z;
+  const looseStones: { x: number; z: number }[] = [];
 
-  // Boulders: sandstone talus below the cliffs, loose rock on the slickrock, a few on the plains.
+  // Boulders: sandstone talus below the cliffs, loose rock on the slickrock, a few on the plains. Anything smaller
+  // than a boulder is a pile of stones you can pick up instead (placed with the other stones at the end).
   const rockCell = 12;
   for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += rockCell) {
     for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += rockCell) {
@@ -278,6 +282,10 @@ export function generateDesert(seed: number): WorldGen {
       if (spawnDist(x, z) < 10) continue;
       if (!dryAndGentle(t, x, z, 0.4, 1.3) || lf.rock > 0.9) continue;
       const r = rng.range(0.6, talus > 0 ? 2.4 : 1.7);
+      if (r < MIN_DESERT_BOULDER) {
+        looseStones.push({ x, z });
+        continue;
+      }
       if (!occ.free(x, z, r + 0.4)) continue;
       occ.add(x, z, r);
       rocks.push({ x, z, r, scaleY: rng.range(0.5, 0.85), rot: rng.range(0, Math.PI * 2), variant: rng.int(0, 2), tint: rng.next() });
@@ -395,6 +403,22 @@ export function generateDesert(seed: number): WorldGen {
       else if (t.upland(x, z) > 0.35) kind = roll < 0.3 ? 'stickPile' : roll < 0.48 ? 'yucca' : roll < 0.64 ? 'agave' : roll < 0.78 ? 'stonePile' : roll < 0.9 ? 'chia' : 'pricklyPear';
       else kind = roll < 0.22 ? 'pricklyPear' : roll < 0.38 ? 'cholla' : roll < 0.56 ? 'yucca' : roll < 0.7 ? 'stonePile' : roll < 0.84 ? 'stickPile' : roll < 0.92 ? 'wolfberry' : roll < 0.97 ? 'chia' : 'agave';
       addResource(x, z, kind, growRng.chance(RESOURCES[kind].scatter));
+    }
+  }
+
+  // Loose stones lie all over open ground, thickest on the slickrock, in the washes and below the cliffs, and
+  // every one can be picked up. They come last, from their own rng, so the forage above keeps its spots.
+  const stoneRng = new Rng(seed ^ 0x2b7e1516);
+  for (const p of looseStones) addResource(p.x, p.z, 'stonePile', true);
+  const stoneCell = 5.6;
+  for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += stoneCell) {
+    for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += stoneCell) {
+      const x = gx + stoneRng.range(0.5, stoneCell - 0.5);
+      const z = gz + stoneRng.range(0.5, stoneCell - 0.5);
+      const rocky = t.landformAt(x, z).rock > 0.02 || t.slickrock(x, z) > 0.3 || t.wash(x, z) > 0.3;
+      const chance = rocky ? 0.95 : nearDrinkable(x, z) ? 0.35 : 0.72 - t.upland(x, z) * 0.22;
+      if (!stoneRng.chance(chance) || spawnDist(x, z) < 3.5 || !openDesert(t, x, z, 0.75)) continue;
+      addResource(x, z, 'stonePile', true);
     }
   }
 

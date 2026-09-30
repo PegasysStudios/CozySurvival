@@ -16,6 +16,10 @@ import { killKey } from '../src/data/objectives';
 import { BIN_UPGRADES, SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
 import { F_WORK } from '../src/net/protocol';
 import type { Collider } from '../src/sim/colliders';
+import { RESOURCES } from '../src/data/resources';
+import { SPECIES, type PreySpecies } from '../src/data/species';
+import { createAnimal } from '../src/sim/animals';
+import { Rng } from '../src/core/rng';
 
 const DT = 1 / 20;
 
@@ -630,5 +634,137 @@ describe('multiplayer: round 8', () => {
     const after = guestSim(ben);
     expect(after).not.toBe(b);
     expect(after.state.toolWear.axe!.dur).toBeGreaterThan(after.state.toolWear.axe!.max - 0.5);
+  });
+});
+
+describe('multiplayer: round 9', () => {
+  it("a guest's crafting checklist is their own and survives a resync", async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    expect(b.togglePin('axe')).toEqual({ pinned: true, dropped: null });
+    w.pump(0.6);
+    expect(w.host.sim.state.pinned).toBeUndefined();
+    (ben as unknown as { rev: number }).rev -= 3;
+    w.pump(1);
+    expect(w.of(ben).some((e) => e.type === 'ready' && e.resync)).toBe(true);
+    const after = guestSim(ben);
+    expect(after).not.toBe(b);
+    expect(after.state.pinned).toEqual(['axe']);
+  });
+
+  it('cactus spines prick a guest in their own world, and the host only when the host touches one', async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    mortal.add(b);
+    mortal.add(w.host.sim);
+    const pear = b.gen.resources.findIndex((r) => r.kind === 'pricklyPear');
+    const r = b.gen.resources[pear];
+    teleport(b, r.x + 0.2, r.z);
+    w.pump(0.5);
+    expect(b.state.lastDamage).toBe('spines');
+    expect(b.state.needs.health).toBeLessThan(100);
+    expect(w.host.sim.state.needs.health).toBe(100);
+    expect(w.host.sim.state.lastDamage).toBeNull();
+  });
+
+  it("a guest's stone can hide a scorpion: the host spawns it, everyone sees it, it stings the guest, and the guest can kill it", async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const cleo = await w.join('Cleo');
+    const b = guestSim(ben);
+    const c = guestSim(cleo);
+    const host = w.host.sim;
+    mortal.add(b);
+    const hp = host.state.player;
+    const away = (x: number, z: number) => Math.hypot(x - hp.x, z - hp.z);
+    const piles = b.gen.resources.map((r, i) => ({ r, i })).filter(({ r }) => r.kind === 'stonePile' && away(r.x, r.z) > 25 && away(r.x, r.z) < 70);
+    let found: { x: number; z: number } | null = null;
+    for (const { r, i } of piles) {
+      teleport(b, r.x + 1.6, r.z);
+      teleport(c, r.x + 3, r.z + 3);
+      w.pump(0.3);
+      for (let k = 0; k < RESOURCES.stonePile.charges && !found; k++) {
+        b.state.inventory.slots.fill(null);
+        b.perform({ kind: 'resource', index: i, dist: 1.6 });
+        const req = b.netOut.find((q) => q.k === 'scorpion');
+        if (req && req.k === 'scorpion') found = { x: req.x, z: req.z };
+      }
+      if (found) break;
+    }
+    expect(found).not.toBeNull();
+    expect(b.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
+    w.pump(0.3);
+    const onHost = host.state.animals.filter((a) => a.species === 'scorpion');
+    expect(onHost).toHaveLength(1);
+    const sc = onHost[0];
+    expect(Math.hypot(sc.x - found!.x, sc.z - found!.z)).toBeLessThan(1.5);
+    expect(b.state.animals.some((a) => a.id === sc.id)).toBe(true);
+    expect(c.state.animals.some((a) => a.id === sc.id)).toBe(true);
+
+    w.pump(3);
+    expect(b.state.lastDamage).toBe('scorpion');
+    expect(b.state.needs.health).toBeLessThan(100);
+    expect(host.state.lastDamage).toBeNull();
+
+    b.state.tools.push('spear');
+    b.state.activeTool = 'spear';
+    b.perform({ kind: 'animal', id: sc.id, dist: 1 });
+    w.pump(0.5);
+    expect(host.state.animals.some((a) => a.id === sc.id)).toBe(false);
+    expect(b.state.animals.some((a) => a.id === sc.id)).toBe(false);
+    expect(c.state.animals.some((a) => a.id === sc.id)).toBe(false);
+    expect(b.state.stats.kills.scorpion).toBe(1);
+    expect(host.state.carcasses).toHaveLength(0);
+
+    b.netOut.push({ k: 'scorpion', x: hp.x + 90, z: hp.z });
+    w.pump(0.3);
+    expect(host.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
+  });
+
+  it('a javelina charges a guest who walks into its ground, and turns on them when they fight back', async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    const host = w.host.sim;
+    mortal.add(b);
+    const hp = host.state.player;
+    const t = host.terrain;
+    let spot: { x: number; z: number } | null = null;
+    for (let k = 0; k < 64 && !spot; k++) {
+      const ang = (k / 64) * Math.PI * 2;
+      const x = hp.x + Math.cos(ang) * 40;
+      const z = hp.z + Math.sin(ang) * 40;
+      const ok = [0, 3, 6].every((dx) => t.heightAt(x + dx, z) > 0.5 && t.slopeAt(x + dx, z) < 0.3);
+      if (ok) spot = { x, z };
+    }
+    expect(spot).not.toBeNull();
+    const jav = createAnimal(host.state.nextId++, 'javelina', spot!.x, spot!.z, new Rng(9), t);
+    host.state.animals.push(jav);
+    teleport(b, spot!.x + 6, spot!.z);
+    w.pump(0.6);
+    expect(['warn', 'chase']).toContain(b.state.animals.find((a) => a.id === jav.id)?.mode);
+    w.pump(2.5);
+    expect(b.state.lastDamage).toBe('javelina');
+    expect(b.state.needs.health).toBeLessThan(100);
+    expect(host.state.lastDamage).toBeNull();
+
+    b.state.tools.push('axe');
+    b.state.activeTool = 'axe';
+    b.perform({ kind: 'animal', id: jav.id, dist: 1 });
+    w.pump(0.3);
+    expect(jav.health).toBeLessThan((SPECIES.javelina as PreySpecies).maxHealth);
+    expect(['chase', 'reposition']).toContain(jav.mode);
+    expect(jav.foe).toBeUndefined();
   });
 });

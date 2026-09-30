@@ -83,6 +83,7 @@ export const MISC_ICONS = {
   barkHut: svg('<path d="M3 15 16 5l13 10z" fill="#e8dfd0"/><path d="M8 11h5M17 9h4M12 13h7" stroke="#3b342e" stroke-width="1.4"/><rect x="6" y="15" width="20" height="12" fill="#8a5a33"/><path d="M6 19h20M6 23h20" stroke="#6e4a30" stroke-width="1.4"/><rect x="13" y="18" width="6" height="9" fill="#3a2a1f"/>'),
   hideTent: svg('<path d="M16 4 4 27h24z" fill="#c9a06a"/><path d="M16 12l-4 15h8z" fill="#3a2a1f"/><path d="M13 2l6 6M19 2l-6 6" stroke="#6e4a30" stroke-width="2"/>'),
   upgrade: svg('<path d="M16 4 6 15h6v12h8V15h6z" fill="currentColor"/>'),
+  pin: svg('<path d="M11 3h10l-2 3v6l4 5H9l4-5V6z" fill="currentColor"/><path d="M16 17v12" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>'),
   leaf: svg('<path d="M6 26C6 14 13 6 27 5c0 13-8 21-20 21z" fill="#6f9a4a"/><path d="M7 25 21 11" stroke="#3f6a30" stroke-width="2" stroke-linecap="round"/>'),
   moonBed: svg('<path d="M4 22h24v5H4z" fill="#8a6038"/><path d="M6 22c0-3 3-5 7-5h9c3 0 5 2 5 5z" fill="#c9a172"/><path d="M22 4a6 6 0 1 0 5 9 5 5 0 0 1-5-9z" fill="#dfe6ff"/>'),
   bench: svg('<rect x="4" y="12" width="24" height="6" rx="3" fill="#c9a172"/><path d="M8 18v8M24 18v8" stroke="#5e4330" stroke-width="4" stroke-linecap="round"/>'),

@@ -9,8 +9,8 @@ import { barkStripped, TRUNK_AXIS_LIFT, trunkSpan } from '../sim/trunks';
 import type { WorldGen } from '../sim/worldgen';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
-import { creosoteGeometry, desertFlowerGeometry, desertGrassGeometry, SAGUARO_HEIGHT, saguaroGeometry, shrubGeometry } from './desertModels';
-import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, stumpGeometry, treeGeometry, trunkGeometry } from './models';
+import { creosoteGeometry, desertFlowerGeometry, desertGrassGeometry, SAGUARO_HEIGHT, saguaroGeometry, sagebrushGeometry } from './desertModels';
+import { fallenLogGeometry, flowerGeometry, grassGeometry, resourceGeometry, rockGeometry, STONE_VARIANTS, stoneLook, stonePileGeometry, stumpGeometry, treeGeometry, trunkGeometry } from './models';
 
 const ALL_SPECIES = Object.keys(TREES) as TreeSpecies[];
 /** Plants that shrink to a stub when picked instead of vanishing. */
@@ -74,6 +74,9 @@ export class NatureView {
   private readonly strippedGeos: Partial<Record<TreeSpecies, THREE.BufferGeometry>> = {};
   private readonly treeLocal: Int32Array;
   private readonly resources = {} as Record<ResourceKind, ChunkedInstances>;
+  /** Loose stones, one instance set per shape. */
+  private readonly stones: ChunkedInstances[] = [];
+  private readonly stoneVariant: Uint8Array;
   /** Fruit, berries and buds that disappear when a plant is picked. */
   private readonly extras: Partial<Record<ResourceKind, ChunkedInstances>> = {};
   private readonly resLocal: Int32Array;
@@ -107,6 +110,7 @@ export class NatureView {
     this.resourceUp = new Int8Array(gen.resources.length).fill(-1);
     this.treeLocal = new Int32Array(gen.trees.length);
     this.resLocal = new Int32Array(gen.resources.length);
+    this.stoneVariant = new Uint8Array(gen.resources.length);
     this.buildTrees();
     this.buildRocksAndLogs();
     this.buildResources();
@@ -221,22 +225,41 @@ export class NatureView {
     }
   }
 
-  private resourceMatrix(i: number, cut: boolean): THREE.Matrix4 {
+  private resourceMatrix(i: number, cut: boolean, size = 1): THREE.Matrix4 {
     const r = this.gen.resources[i];
     const y = this.terrain.heightAt(r.x, r.z) - 0.02;
-    const s = cut ? r.scale * 0.38 : r.scale;
+    const s = (cut ? r.scale * 0.38 : r.scale) * size;
     return tf(r.x, y, r.z, 0, r.rot, 0, s, cut ? s * 0.6 : s, s);
+  }
+
+  /** The instance set drawing resource `i`: stone piles are split by shape, everything else by kind. */
+  private resourceSet(i: number): ChunkedInstances {
+    const kind = this.gen.resources[i].kind;
+    return kind === 'stonePile' ? this.stones[this.stoneVariant[i]] : this.resources[kind];
   }
 
   private buildResources(): void {
     const specs = {} as Record<ResourceKind, InstanceSpec[]>;
     for (const k of RESOURCE_KINDS) specs[k] = [];
+    const stoneSpecs: InstanceSpec[][] = Array.from({ length: STONE_VARIANTS }, () => []);
     this.gen.resources.forEach((r, i) => {
+      if (r.kind === 'stonePile') {
+        const look = stoneLook(this.gen.seed, r.spot);
+        this.stoneVariant[i] = look.variant;
+        this.resLocal[i] = stoneSpecs[look.variant].length;
+        stoneSpecs[look.variant].push({ matrix: this.resourceMatrix(i, false, look.size), color: new THREE.Color(look.tint + look.warm, look.tint, look.tint - look.warm) });
+        return;
+      }
       this.resLocal[i] = specs[r.kind].length;
       specs[r.kind].push({ matrix: this.resourceMatrix(i, false) });
     });
+    stoneSpecs.forEach((list, v) => {
+      const inst = new ChunkedInstances(this.own(stonePileGeometry(v, this.gen.biome === 'desert')), this.mats.solid, list, { chunkSize: 48, name: `res-stonePile-${v}` });
+      this.stones.push(inst);
+      this.group.add(inst.group);
+    });
     for (const k of RESOURCE_KINDS) {
-      if (!specs[k].length) continue;
+      if (!specs[k].length || k === 'stonePile') continue;
       const model = resourceGeometry(k);
       this.own(model.main);
       const mat = model.doubleSided ? this.mats.plant : SWAYING.has(k) ? this.mats.foliage : this.mats.solid;
@@ -272,8 +295,9 @@ export class NatureView {
 
   /**
    * Desert ground cover. Creosote fills 80% of a jittered 5.2 m grid on the low flats (about 300 bushes per hectare,
-   * a little under measured Sonoran stands of 440/ha) with white bursage between; big sagebrush and bunchgrass take over in the high
-   * country; wildflowers are scattered thinly; bare slickrock, cliffs and pools stay open.
+   * a little under measured Sonoran stands of 440/ha); big sagebrush and bunchgrass take over in the high country;
+   * wildflowers are scattered thinly; bare slickrock, cliffs and pools stay open. Nothing here looks like a stone:
+   * low grey mounds read as rocks you should be able to pick up.
    */
   private buildDesertGround(): void {
     const t = this.terrain;
@@ -285,7 +309,6 @@ export class NatureView {
       return t.landformAt(x, z).rock < 0.3 && t.slickrock(x, z) < 0.45;
     };
     const creo: InstanceSpec[][] = [[], []];
-    const burs: InstanceSpec[][] = [[], []];
     const sage: InstanceSpec[][] = [[], []];
     const grass: InstanceSpec[][] = [[], [], []];
     const flowers: InstanceSpec[][] = [[], [], [], []];
@@ -315,7 +338,6 @@ export class NatureView {
       if (!open(x, z, 0.62)) continue;
       const u = t.upland(x, z);
       const plains = t.field(x, z, 3);
-      if (u < 0.3 && rng.chance(0.3)) put(burs, rng.int(0, 1), x, z, rng.range(0.8, 1.3));
       const g = u > 0.25 ? 0.35 + 0.5 * smoothstep(0.25, 0.7, u) : 0.1 + 0.55 * smoothstep(0.55, 0.8, plains);
       if (rng.chance(g)) put(grass, rng.int(0, 2), x, z, rng.range(0.75, 1.3), undefined);
     }
@@ -337,8 +359,7 @@ export class NatureView {
     };
     const made = new Map<InstanceSpec[][], (ChunkedInstances | null)[]>([
       [creo, add(creo, (v) => creosoteGeometry(v), this.scrub, 'creosote', this.mats.foliage, (v) => creosoteGeometry(v, 1))],
-      [burs, add(burs, (v) => shrubGeometry('bursage', v), this.scrub, 'bursage')],
-      [sage, add(sage, (v) => shrubGeometry('sage', v), this.scrub, 'sagebrush')],
+      [sage, add(sage, (v) => sagebrushGeometry(v), this.scrub, 'sagebrush')],
       [grass, add(grass, (v) => desertGrassGeometry(v), this.grass, 'grass', this.mats.plant)],
     ]);
     add(flowers, (v) => desertFlowerGeometry(v), this.flowers, 'flowers', this.mats.plant);
@@ -424,7 +445,7 @@ export class NatureView {
       if (up === this.resourceUp[i]) continue;
       this.resourceUp[i] = up;
       const kind = this.gen.resources[i].kind;
-      const inst = this.resources[kind];
+      const inst = this.resourceSet(i);
       const local = this.resLocal[i];
       const extra = this.extras[kind];
       if (SHRINK_WHEN_PICKED.has(kind)) inst.setMatrix(local, this.resourceMatrix(i, !up));
@@ -477,6 +498,7 @@ export class NatureView {
       this.resources[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
       this.extras[k]?.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
     }
+    for (const s of this.stones) s.cullByDistance(px, pz, Math.min(RESOURCE_VIEW, viewDist));
     for (const o of this.others) o.cullByDistance(px, pz, viewDist);
     for (let i = this.falling.length - 1; i >= 0; i--) {
       const f = this.falling[i];
@@ -519,7 +541,7 @@ export class NatureView {
       this.resources[k]?.dispose();
       this.extras[k]?.dispose();
     }
-    for (const g of [...this.grass, ...this.flowers, ...this.scrub, ...this.others]) g.dispose();
+    for (const g of [...this.grass, ...this.flowers, ...this.scrub, ...this.stones, ...this.others]) g.dispose();
     for (const g of this.ownedGeos) g.dispose();
   }
 }

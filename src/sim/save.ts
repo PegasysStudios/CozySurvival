@@ -7,12 +7,15 @@ import { RESOURCES, TREES } from '../data/resources';
 import { isUpgradable, MAX_TOOL_LEVEL } from '../data/upgrades';
 import { BALANCE } from '../data/balance';
 import { canteenServings, emptyCanteen, migratePackWater } from './canteen';
+import { parsePins } from './checklist';
 import { newStructureWear, prefabWears, toolWears } from './durability';
 import { addItem } from './inventory';
+import { seatHeight } from './placement';
 import { parseStore } from './storage';
 import { createSkills, SKILL_IDS } from './skills';
 import { STATE_VERSION, type GameState, type RepairState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
 import { freshTree } from './trunks';
+import { getTerrain } from './terrain';
 import { getWorldGen } from './worldgen';
 
 export const SAVE_FORMAT = 'cozysurvival-save';
@@ -65,6 +68,8 @@ function parseWear(v: unknown): Wear | null {
  * simply the first and last shelter tiers, the Foraging guide unlocks every plant already harvested, and the
  * onboarding position is replayed against the new track (a finished old track stays finished).
  * Version 3 saves (before round 8) carried water in pack slots: it is poured into the canteen, up to its capacity.
+ * Version 4 desert saves (before round 9) were made on the old desert: its trees and plants start fresh, and
+ * structures, drops and carcasses settle onto the new ground. Pacific Northwest saves load unchanged.
  */
 export function deserializeState(json: string | null): GameState | null {
   if (!json) return null;
@@ -76,7 +81,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) return null;
   const version = raw.version;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== STATE_VERSION) return null;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== STATE_VERSION) return null;
   if (typeof raw.seed !== 'number' || typeof raw.totalHours !== 'number') return null;
   for (const k of REQUIRED_OBJECTS) if (!isObj(raw[k])) return null;
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
@@ -87,8 +92,11 @@ export function deserializeState(json: string | null): GameState | null {
   const biome: BiomeId = isBiomeId(raw.biome) ? raw.biome : DEFAULT_BIOME;
 
   const gen = getWorldGen(raw.seed, biome);
+  // Round 9 reshaped the desert around its pools and scattered stones in place of the pebbles, so an older desert
+  // save's trees and plants no longer line up with the world: they start fresh.
+  const regrown = biome === 'desert' && version < 5;
   const trees: TreeDyn[] = gen.trees.map((t) => freshTree(t.species));
-  for (const e of raw.trees as unknown[]) {
+  if (!regrown) for (const e of raw.trees as unknown[]) {
     if (!Array.isArray(e) || e.length < 5) return null;
     const [i, hp, felled, bark, barkAt, logs, cuts, fall] = e as number[];
     if (!trees[i]) return null;
@@ -102,7 +110,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   const resources: ResourceDyn[] = gen.resources.map((r) => ({ charges: RESOURCES[r.kind].charges, respawnAt: 0 }));
   const bySpot = new Map(gen.resources.map((r, i) => [r.spot, i]));
-  for (const e of raw.resources as unknown[]) {
+  if (!regrown) for (const e of raw.resources as unknown[]) {
     if (!Array.isArray(e) || e.length < 3) return null;
     const [spot, charges, respawnAt] = e as number[];
     if (!Number.isInteger(spot) || spot < 0 || spot >= gen.resourceSpots) return null;
@@ -165,7 +173,19 @@ export function deserializeState(json: string | null): GameState | null {
   const repair = parseRepair(raw.repair, state);
   if (repair) state.repair = repair;
   else delete state.repair;
+  const pinned = parsePins(raw.pinned, biome);
+  if (pinned.length) state.pinned = pinned;
+  else delete state.pinned;
+  if (regrown) settleOnNewGround(state);
   return state;
+}
+
+/** Seats structures, drops and carcasses on the reshaped ground; people and animals find it themselves as they move. */
+function settleOnNewGround(s: GameState): void {
+  const t = getTerrain(s.seed, s.biome);
+  for (const st of s.structures) st.y = seatHeight(t, st.prefab, st.x, st.z, st.rot);
+  for (const d of s.drops) d.y = t.heightAt(d.x, d.z);
+  for (const c of s.carcasses) c.y = t.heightAt(c.x, c.z);
 }
 
 /** A repair saved part-way through resumes if its tool and workbench are still there; otherwise its materials come back. */

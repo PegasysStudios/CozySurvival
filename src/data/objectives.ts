@@ -39,15 +39,15 @@ const FIREWOOD = 2;
 
 const goal = (label: string, icon: IconId, have: number, need = 1): ObjectiveNeed => ({ label, icon, have: Math.min(have, need), need });
 
-/** Pack counts against the summed ingredients of the step's recipes that haven't been made yet. */
-function ingredients(s: GameState, recipes: string[]): ObjectiveNeed[] {
+/** Pack (and canteen) counts against the summed ingredients of `recipes`: one row per item, so shared materials count once. */
+export function recipeNeeds(s: GameState, recipes: readonly string[]): ObjectiveNeed[] {
   const total = new Map<ItemId, number>();
-  for (const id of recipes) {
-    if (made(s, id) >= 1) continue;
-    for (const i of RECIPE_BY_ID[id].inputs) total.set(i.item, (total.get(i.item) ?? 0) + i.count);
-  }
+  for (const id of recipes) for (const i of RECIPE_BY_ID[id].inputs) total.set(i.item, (total.get(i.item) ?? 0) + i.count);
   return [...total].map(([item, n]) => goal(itemName(item, n), item, haveItem(s, item), n));
 }
+
+/** The step's recipes that haven't been made yet. */
+const ingredients = (s: GameState, recipes: string[]) => recipeNeeds(s, recipes.filter((id) => made(s, id) < 1));
 
 /** `kill:<tool>` counts every kill made with that tool, `kill:<tool>:<species>` kills of one species. */
 export const killKey = (tool: string, species?: string) => (species ? `kill:${tool}:${species}` : `kill:${tool}`);

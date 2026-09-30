@@ -53,6 +53,9 @@ const CAUSES: Record<string, string> = {
   bear: 'A black bear defended its territory.',
   cougar: 'A mountain lion took you from behind.',
   snake: 'A rattlesnake bite finished you off.',
+  spines: 'One cactus too many. The spines won.',
+  scorpion: 'A scorpion sting was the last straw.',
+  javelina: 'A javelina herd ran you down.',
   dev: 'Struck down by the developer.',
   unknown: 'The forest was too much this time.',
 };

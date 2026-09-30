@@ -5,7 +5,7 @@ import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 import type { WearingTool } from './durability';
 
-export const STATE_VERSION = 4;
+export const STATE_VERSION = 5;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing';
 
@@ -169,9 +169,11 @@ export interface AnimalState {
   hurt: number;
   /** Accumulated dt for low-frequency updates when far from the player. */
   lod: number;
+  /** Id of the animal this one is charging (a javelina) or running from; unset means the player. */
+  foe?: number;
 }
 
-export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'dev';
+export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'spines' | 'scorpion' | 'javelina' | 'dev';
 
 export interface GameState {
   version: number;
@@ -215,4 +217,6 @@ export interface GameState {
   snapshotDay: number;
   /** Set while standing at a workbench mending a tool: you can look around but not move. */
   repair?: RepairState;
+  /** Recipe ids pinned to the HUD's crafting checklist, oldest first (absent means none). */
+  pinned?: string[];
 }

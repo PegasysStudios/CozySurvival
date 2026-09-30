@@ -160,9 +160,11 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
 ### Arizona Desert
 
 - **Water is scarce.** Each world has three small pools and no lake:
-  - **Spring:** always drinkable. Radius 6.2–7.2 m, about 2.6 m deep, stocked with Gila trout. It sits about 26 m from the spawn on average, and you start facing it.
-  - **Tinaja:** a slickrock rain pool in the rock country. Radius 3.3–4 m, drinkable.
-  - **Alkali pool:** radius 5–6.4 m and shallow, with a pale crust and milky water. It shows as "Milky Pool" until you taste it, then "Alkali Pool". The first sip costs 4 thirst and teaches you; after that you refuse to drink it and a canteen won't fill there.
+  - **Spring:** always drinkable. Radius 6.2–7.2 m, about 1.8 m deep in the middle, stocked with Gila trout. It sits about 26 m from the spawn on average, and you start facing it.
+  - **Tinaja:** a slickrock rain pool in the rock country. Radius 3.3–4 m, about 1.2 m deep, drinkable.
+  - **Alkali pool:** radius 5–6.4 m and about 0.6 m deep, with a pale crust and milky water. It shows as "Milky Pool" until you taste it, then "Alkali Pool". The first sip costs 4 thirst and teaches you; after that you refuse to drink it and a canteen won't fill there.
+
+  All three sit in shallow basins like the Pacific Northwest lakes: the bank rises gently from the waterline (about 1 m higher 3 m out, against 1.1 m at the big forest lake), and you can walk in and out anywhere. Pools never sit in the high country.
 
   Across 40 seeds the desert averages 285 m² of open water against 3,357 m² on the Pacific Northwest map (8.5%), and its largest pool is 7.2 m across the radius against a 31 m lake.
 - **Hot days, cold nights.** The day holds warmth at 95 (Pacific Northwest: 80). From 16:00 to 19:30 it falls at 36 an hour (Pacific Northwest: 22 an hour from 17:00 to 21:30), and it climbs back from 5:30 to 9:00. Starting at 90 warmth at 16:00 with no fire:
@@ -187,7 +189,9 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
   | Ponderosa pine | high country | 3 |
 
   For comparison, fir and cedar give 3 logs and birch and maple give 2.
-- **Plants.** Creosote fills the low flats at about 300 bushes per hectare, with sagebrush, bunchgrass and rocks around them (46 boulders per world against 116). Harvestable plants: prickly pear, banana yucca (fiber), cholla, agave, desert chia and wolfberry, plus mesquite and pinyon trees. Each has a Foraging guide page.
+- **Plants.** Creosote fills the low flats at about 300 bushes per hectare, with sagebrush, bunchgrass and boulders around them (about 32 boulders of 1 m or more per world against 116). Harvestable plants: prickly pear, banana yucca (fiber), cholla, agave, desert chia and wolfberry, plus mesquite and pinyon trees. Each has a Foraging guide page.
+- **Stones.** About 1,500 gatherable stone piles per world, thickest on slickrock, in washes and on talus, thinner by the water and in the high country. There are no purely decorative small stones.
+- **Spines.** Walking into a prickly pear (3 damage), cholla (5) or the core of a yucca (2), or pressing right up against a saguaro (4), pricks you, at most once every 1.1 s, with a small knockback and a one-time warning per plant. The hitbox sits well inside picking reach, so gathering never hurts.
 - **Edibles.**
 
   | Food | Source | Raw effect |
@@ -219,7 +223,8 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
   - **Mountain lion:** stalks from cover like the wolf and warns you with a growl. One on day 1, two from day 4. Fire and a raised torch keep it off.
   - **Black bear:** one from day 3, and only in the juniper and pine high country.
   - **Rattlesnake:** doesn't flee. It rattles when you come close and strikes within 1.8 m for 9 damage (every 2.2 s).
-  - **Javelina:** poor eyesight, so they notice you late, then scatter. Each gives 3 meat and 2 hides.
+  - **Javelina:** territorial. Each holds about 14 m around its home. Come within 12 m of one inside that ground and it clacks its teeth, then charges at 6 m/s (faster than your 4.3 m/s walk, slower than your 6.8 m/s sprint) and butts for 8 damage every 1.5 s. Herd-mates within 16 m join in. It gives up once you are about 22 m from its home and walks back. Hit it and it charges you; badly hurt (a spear hit, or an axe hit and a punch) it bolts instead, at up to 6.4 m/s. It also charges other animals that wander in: prey bolts, and a mountain lion or bear slinks off home. Outside its ground it only watches you. Each gives 3 meat and 2 hides.
+  - **Scorpion:** hides under stones. Each stone you gather has an 18% chance to turn one up. It rears up for 0.8 s, then scuttles after you at 3.4 m/s and stings for 6 every 1.6 s. One axe, spear or arrow hit kills it (bare hands take two), and it leaves nothing to butcher. Walk away and it loses interest once you are 7 m clear for 3 s, then burrows and is gone. At most 4 are out at once, and sleeping clears them.
   - Jackrabbits stand in for hares on the onboarding track.
 
   On the Pacific Northwest map wolves go up to four (one more every two days) and bears appear from day 2, two from day 5.
@@ -256,7 +261,7 @@ Available on the dev server, or on any build with `?dev=1` in the URL.
   - jump to a time of day
   - give item kits
   - unlock all tools and gear
-  - spawn an animal nearby: a wolf, bear, deer or rabbit on the Pacific Northwest map, or any desert predator or prey on the desert
+  - spawn an animal nearby: a wolf, bear, deer or rabbit on the Pacific Northwest map, or any desert predator or prey (or a scorpion) on the desert
   - refill needs, take damage, or die
   - show an FPS counter
 - **T** cycles the time scale through 1×, 10×, 60× and 240×. At 60× a full day takes 24 seconds. A `DEV ×N` badge on the clock shows when time is sped up.
@@ -299,12 +304,13 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 486 tests covering:
+`npm test` runs 568 tests covering:
 
 - the Arizona Desert (`tests/desert.test.ts`): the biome config, water across 40 seeds (always a drinkable spring near the spawn, no big lakes, far less water than the Pacific Northwest map), the alkali pool (first taste, refusal, no canteen fill), evening and night warmth against the Pacific Northwest map, a fire holding warmth, small-tree against big-tree wood, big trees only in the high country, scrub and cactus instead of forest plants, day-1 spawns, the cougar and upland-only bear schedule, the cougar's stalk and the torch, the rattlesnake strike, and the small prey bolting
 - per-map saves (`tests/maps.test.ts`): an old save loading unchanged as a Pacific Northwest run, a desert run leaving the Pacific Northwest save untouched, **Continue** on both maps, per-map records, Start from scratch and Retry the day on the desert, and a desert multiplayer server carrying its map through the lobby to a joining guest
 - the title map picker (`tests/title.test.ts`): arrow order and clicks, the map copy and the dots
 - round 8: the canteen (`tests/canteen.test.ts`: filling, the fill bar, each Drink taking one serving until empty, boiling inside it, F, pack water migrating on both maps, save round-trip), benches (`tests/bench.test.ts`: seat position and facing from either side, clamping to the ends, standing up, the seated pose for other players, saves), repairs (`tests/repair.test.ts`: cost as a share of the crafting cost that rises with level and never reaches it, time rising with level, walking locked but looking free, full condition when done, refunds on hurt or a removed bench, saves), the storage bin (`tests/storage.test.ts`: 10/15/20 slots, moving stacks and single items in and out, full bin or pack, saves), the axe's blade direction (`tests/axe.test.ts`) and the tabbed menu (`tests/menus.test.ts`: tab order, icons, tooltips, the active tab, badges, the shared column and the CSS that keeps icons full size)
+- round 9: shallow pools (`tests/pools.test.ts`: basin shape across 40 seeds, no step too steep to walk out, banks no higher than the Pacific Northwest lake's, walking in and out, water area, and version-4 desert saves loading with trees, plants, structures, drops and carcasses reseated while Pacific Northwest saves load untouched), stones (`tests/stones.test.ts`: no bursage or small rocks, 1,300–1,900 gatherable piles on open dry ground, and seeded shape, size, rotation and colour variety on both maps), spines (`tests/spines.test.ts`: each spiny plant pricks with one warning, picking every charge unhurt, brushing past, the saguaro, the cooldown, death by spines, none on the Pacific Northwest map), scorpions (`tests/scorpions.test.ts`: an 18% reveal rate over 2,400 gathers, the reveal, chase and sting, one weapon hit or two punches to kill, walking away until it burrows, the chase time limit, the cap, blocked sleep, saves, never on the Pacific Northwest map, the model), javelinas (`tests/javelinas.test.ts`: never faster than a sprint, the warn-charge-butt cycle, sprinting clear from 2, 4 and 8 m, walking away, watching from outside its ground, fighting back and bolting, charging a jackrabbit and a mountain lion, herd-mates joining, blocked sleep, sprinting clear in a real desert world) and the crafting checklist (`tests/checklist.test.ts`: pinning and unpinning, live have/need counts, the three-pin limit, auto-unpin, saves)
 - the Pacific Northwest map unchanged (`tests/pnw-unchanged.test.ts`): a golden fingerprint of the terrain, world gen, starting state and early play on several seeds
 
 - inventory stacking and carry limits
@@ -348,8 +354,9 @@ Rendering is built for 60 fps:
   - tool upgrades and the Foraging guide staying personal, and guest spear kills counting for onboarding
   - a guest leaving, and the host closing the server
   - round 8: storing and taking from a shared bin across three players, simultaneous deposits, a guest's bin upgrade, and a guest repairing at the host's workbench (others see the working pose, and the mended tool survives a resync)
+  - round 9: a guest's checklist staying their own through a resync, spines pricking a guest in their own world, a guest's stone turning up a scorpion the host spawns (every player sees it, it stings the guest, and the guest's spear kills it), and a javelina charging a guest and turning on them when hit
 
-`npm run smoke` boots the real build in headless Chrome as an end-to-end check of the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair (the ring, locked walking, full condition after), a storage bin (moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
+`npm run smoke` boots the real build in headless Chrome as an end-to-end check of the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair from its icon grid (greyed tiles, the ring, locked walking, full condition after), a storage bin (the stacked layout with its upgrade panel on the right, moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
 It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. The multiplayer part runs on a desert server, and the guest's server list shows "Arizona Desert". Along the way it saves four screenshots: each map's title screen and each map in first person.
 
@@ -389,6 +396,17 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - **Tabbed crafting menu.** Six icon tabs run along the top of the grid: Tools, Build, Cooking, Upgrades, Gear and Materials (Jon's PNGs in `public/icons/crafting-tabs/`; there's no foraging-supplies category, so that icon isn't used, and the old All tab is gone). Hovering a tab names it, the active tab is highlighted, and a badge counts what you can make there now. The tabs and the grid share the left column, which never gets narrower than the tab row; when space is tight the detail panel on the right narrows instead. Everything from round 6 stays: square tiles, greyed tiles, hover names and the ingredient tracker.
 - **Saves.** Round 8 saves are version 4. Older saves on both maps still load, with pack water moved into the canteen and a pre-round-8 "sitting" player standing up.
 
+## Round 9
+
+- **Shallow desert pools.** The spring, alkali pool and tinaja sit in gentle basins with the bank just above the water, like the Pacific Northwest lakes, instead of crater pits. See the pool list under [Arizona Desert](#arizona-desert).
+- **Stones.** The grey bursage mounds that looked like stones are gone, and desert rocks under 1 m became gatherable stone piles: about 1,500 per world (was about 37). Boulders stay. Stone piles on both maps come in three low-poly shapes with seeded size (0.8–1.2×), rotation and colour shifts (greys in the forest; sandstone, tan and basalt in the desert). The Pacific Northwest layout is unchanged; only the look of its stones varies.
+- **Spines, scorpions and javelinas.** Cactus and yucca spines hurt, gathering a desert stone can turn up a scorpion, and javelinas defend their ground. See [Arizona Desert](#arizona-desert) for the numbers. All three work in multiplayer: each player is pricked in their own world, a guest's scorpion is spawned by the host and stings whoever it chases, and javelinas run on the host and charge guests too. New death texts cover each one.
+- **Crafting checklist.** Shift-click a recipe (or use its **Pin** button) to pin a checklist under the goals panel, in the same style. Each ingredient shows have/need and updates live as your pack changes; canteen water counts, and cooked recipes add a "lit campfire nearby" row. Up to three recipes can be pinned, and their shared materials are summed (pinning a fourth replaces the oldest). Shift-click again to unpin. Tools, gear and buildings come off the list once made; items stay pinned for the next batch. Pins are saved, and a guest keeps theirs through a resync.
+- **Workbench grid.** The workbench menu is a crafting-style icon grid, one tile per carried tool that wears, with a durability bar, greyed when you lack the repair materials. The selected tool's condition, have/need materials, repair time and **Repair** button sit on the right.
+- **Storage bin layout.** In storage sits over Your pack in the left column, with the tier's upgrade panel on the right. Slots stay 64 px; the upgrade panel narrows first.
+- **Upgrades tab.** Tier diamonds are centred along the bottom of each tile. There is one Shelter tile and one Storage tile, for the nearest built one, showing its tier as diamonds and the next tier's cost, gains and **Upgrade** button.
+- **Saves.** Round 9 saves are version 5. Desert saves from before round 9 load with fresh trees and plants (the reshaped pools and new stones renumber the world), and structures, drops and carcasses are set back on the new ground. Pacific Northwest saves load unchanged.
+
 ## Known gaps
 
 - Desktop only: it needs a mouse and keyboard with pointer lock. The layout adapts to small screens, but there are no touch controls yet.
@@ -396,13 +414,13 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - There is one world size (320 m square), and no weather yet.
 - The desert is tuned from real-world densities and the numbers only, not a playtest. Its animal models, plants and terrain colours haven't had a visual review.
 - The desert has three pools against the Pacific Northwest map's two bodies of water (a lake and a pond), so it has less water rather than fewer bodies: 8.5% of the area, none bigger than a 7.2 m radius. The spring and the alkali pool are needed for the drinkable/undrinkable rule; the tinaja is the third.
-- The desert has no insects, neither huntable nor ambient.
+- Apart from scorpions under stones, the desert has no bugs, huntable or ambient.
 - Desert ambience reuses the lake loop and forest birds; there are no cicadas, canyon wrens or coyotes yet.
 - Creosote grows at about 300 bushes per hectare, a little under measured Sonoran stands (about 440 per hectare), to keep the flats walkable.
 - One or two mountain lions and a bear on a 9-hectare map is far above real territory density. That's a deliberate game choice, as it is for the wolves.
 - Saguaros are scenery and can't be chopped or harvested.
 - The title cross-fade fades out a snapshot of the old map's canvas, so the menu itself doesn't fade.
-- Multiplayer protocol version 5 (round 8: storage contents and the working pose), so older clients can't join newer servers (and the other way round).
+- Multiplayer protocol version 6 (round 9: the desert's new pool, stone and plant layout, and scorpions), so older clients can't join newer servers (and the other way round).
 - Hunger, thirst, fire fuel and resource regrowth are still tuned per game hour, so with 24-minute days they tick 2.5× faster in real time than before. Cold and warmth are unchanged per game hour.
 - Trunk and boulder surfaces approximate the rendered meshes (a flat-topped slab and a half-ellipsoid dome).
 - Predators don't follow you into the water.
@@ -424,6 +442,14 @@ It also switches the title to the desert with the arrow (checking the cross-fade
 - Teas and other drinks still ride in the pack; only plain and boiled water go in the canteen.
 - Workbenches and storage don't wear out. Repairs don't need you to stay near the bench once started, since you can't walk away anyway.
 - Round 8 has had no visual review: the workbench and storage models, the seated pose, the axe angle and the tab layout are checked by tests and the headless smoke run only.
+- Round 9 has had no visual review either: the pool banks, stone shapes and colours, the scorpion model and burrowing, the javelina charge and the new menu layouts are checked by tests and the headless smoke run only.
+- Desert saves from before round 9 lose their felled trees and picked plants, which come back fresh. A structure built on an old pool bank may now stand in shallow water.
+- With about 1,500 stone piles, a desert building spot is sometimes blocked by a pile until you pick it up.
+- The tinaja was reshaped along with the spring and the alkali pool.
+- Javelinas spawn singly, so a "herd" charge only happens where two live within 16 m of each other. Charging animals only drives them off; javelinas never kill other wildlife.
+- A guest only gets the javelina tip once a charge lands, because the warning comes from the host's animals.
+- The pinned checklist is hidden on windows 560 px tall or less.
+- The Upgrades tab's Shelter and Storage tiles act on the nearest built one, however far away it is. The Build tab still lists the upgrade-only shelter tiers.
 - If two players upgrade the same shelter at the same moment, both spend their materials and it only goes up one tier.
 - Bow upgrades improve accuracy through faster, flatter arrows; there's no aim spread to tighten.
 - Saves from before round 5 load with every tool at level 0, lean-tos and hide tents as the first and last tiers, the Foraging guide unlocked for every plant already harvested, and onboarding replayed against the new track (a finished old track stays finished).

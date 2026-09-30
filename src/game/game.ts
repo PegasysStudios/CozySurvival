@@ -27,7 +27,7 @@ import { GameView, type CameraPose } from '../render/view';
 import type { ViewModelInput } from '../render/viewmodel';
 import { DevPanel, TIME_SCALES } from '../ui/dev';
 import { effectSummary, Hud } from '../ui/hud';
-import { itemIcon, prefabIcon, toolIcon } from '../ui/icons';
+import { itemIcon, MISC_ICONS, prefabIcon, toolIcon } from '../ui/icons';
 import { MpHud, MpMenu } from '../ui/multiplayer';
 import { Panels } from '../ui/panels';
 import { Screens } from '../ui/screens';
@@ -64,10 +64,11 @@ const COPY: Record<BiomeId, { start: string; dawn: string; dawnLater: string; ni
 
 const FUR: Partial<Record<SpeciesId, string>> = {
   bear: '#2a2420', wolf: '#8e8a83', fish: '#cfe6f2', cougar: '#b48d5f', javelina: '#4a4039', jackrabbit: '#a58d6c',
-  quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360',
+  quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360', scorpion: '#c9a45c',
 };
 
 const MAP_FADE_MS = 900;
+const JAVELINA_TIP = 'Javelinas guard their patch and charge anyone who comes in. Sprint away, or fight back with a weapon.';
 
 /** Wires the simulation to rendering, audio, UI, input and persistence. */
 export class Game {
@@ -799,6 +800,10 @@ export class Game {
         this.panels.refresh();
         break;
       }
+      case 'checklistDone':
+        this.hud.toast(`${RECIPE_BY_ID[e.recipe].name} made: it's off your checklist`, 'good', MISC_ICONS.pin);
+        this.panels.refresh();
+        break;
       case 'placed': {
         const st = sim.state.structures.find((s) => s.id === e.structure);
         this.sfx('place');
@@ -883,6 +888,8 @@ export class Game {
         const fwd = -Math.sin(this.yaw) * dx - Math.cos(this.yaw) * dz;
         const right = Math.cos(this.yaw) * dx - Math.sin(this.yaw) * dz;
         this.hud.flashHurt(e.amount, e.source === 'dev' ? null : Math.atan2(right, fwd));
+        // Guests never see the host's predatorAlert, so the first charge that lands teaches them too.
+        if (e.source === 'javelina') this.throttledToast('javelina', JAVELINA_TIP, 'warn', 25);
         break;
       }
       case 'death':
@@ -919,12 +926,16 @@ export class Game {
         const col = FUR[e.species] ?? '#8a6d52';
         if (e.species === 'fish') fx.splash(e.x, 0, e.z, 16);
         else fx.fur(e.x, e.y, e.z, col, e.killed ? 18 : 8);
-        if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
+        if (e.killed && e.species === 'scorpion') this.hud.toast('You squashed the scorpion.', 'good');
+        else if (e.killed && e.species !== 'fish') this.hud.toast(`You brought down a ${speciesName(e.species, sim.biome)}. Click it to butcher.`, 'good');
         break;
       }
+      case 'scorpion':
+        this.sfx('rattle', 0.35);
+        this.throttledToast('scorpion', 'A scorpion was under that stone! Hit it with a weapon, or walk away; it soon loses interest.', 'warn', 6);
+        break;
       case 'animalFlee':
         if (e.species === 'deer') this.throttledToast('deer', 'The deer bolted. They spook from far away; try a bow.', 'info', 60);
-        else if (e.species === 'javelina') this.throttledToast('javelina', 'The javelina scattered. They see poorly but smell you from far off; try a bow.', 'info', 60);
         break;
       case 'rattle': {
         const k = clamp(1 - Math.hypot(e.x - p.x, e.z - p.z) / 20, 0.3, 1);
@@ -941,6 +952,9 @@ export class Game {
         } else if (e.species === 'cougar') {
           this.sfx('growl', k * 0.6);
           this.throttledToast('cougar', 'A mountain lion is stalking you from cover. Face it, stand by your fire or raise a torch.', 'warn', 25);
+        } else if (e.species === 'javelina') {
+          this.sfx('growl', k * 0.5);
+          this.throttledToast('javelina', JAVELINA_TIP, 'warn', 25);
         } else {
           this.sfx('growl', k);
           this.throttledToast('bear', 'A black bear rears up! Back away slowly or keep a fire between you.', 'warn', 25);
@@ -948,7 +962,7 @@ export class Game {
         break;
       }
       case 'predatorAttack':
-        this.sfx('growl', 0.6);
+        if (e.species !== 'scorpion') this.sfx('growl', 0.6);
         break;
       case 'arrowFired':
         this.sfx('arrow', e.power);

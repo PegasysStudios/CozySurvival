@@ -2,6 +2,8 @@ import { BALANCE } from '../data/balance';
 import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
 import { FREEPLAY_OBJECTIVE, OBJECTIVES, objectiveText, type ObjectiveNeed } from '../data/objectives';
 import { PREFABS } from '../data/prefabs';
+import { RECIPE_BY_ID } from '../data/recipes';
+import { checklistNeeds, checklistReady, pinnedRecipes } from '../sim/checklist';
 import { toolWears, wearFraction } from '../sim/durability';
 import { toolLevel } from '../sim/upgrades';
 import { LEVEL_NUMERALS } from '../data/upgrades';
@@ -69,6 +71,11 @@ export class Hud {
   private readonly objNeedsKey: { last?: string } = {};
   private readonly objStep = el('div', 'obj-step');
   private readonly objective = el('div', 'hud-objective');
+  private readonly checklist = el('div', 'hud-checklist');
+  private readonly checkState = el('div', 'obj-step');
+  private readonly checkTitle = el('div', 'obj-title');
+  private readonly checkNeeds = el('div', 'obj-needs');
+  private readonly checkNeedsKey: { last?: string } = {};
   private readonly bars = new Map<NeedKey, { row: HTMLElement; fill: HTMLElement; value: HTMLElement; last: number }>();
   private readonly chips = el('div', 'status-chips');
   private readonly chipKey: { last?: string } = {};
@@ -107,6 +114,11 @@ export class Hud {
     const objLabel = el('div', 'obj-label', 'Next goal');
     objLabel.append(this.objStep);
     this.objective.append(objLabel, this.objTitle, this.objNeeds, this.objHint);
+    const checkLabel = el('div', 'obj-label', 'Crafting checklist');
+    checkLabel.append(this.checkState);
+    this.checklist.append(checkLabel, this.checkTitle, this.checkNeeds, el('div', 'obj-hint', 'Shift-click a pinned recipe in Crafting (C) to unpin it.'));
+    const left = el('div', 'hud-left');
+    left.append(this.objective, this.checklist);
 
     const needs = el('div', 'hud-needs');
     needs.append(this.chips);
@@ -136,7 +148,7 @@ export class Hud {
       <div><b>Left-click</b> gather, use and interact</div>
       <div><b>C</b> crafting · <b>Tab</b> pack · <b>1–6</b> tools · <b>F</b> quick eat</div>`;
 
-    this.root.append(this.hurt, this.cold, this.low, this.damageDir, clock, this.objective, needs, bottom, center, this.toasts, this.banner, this.hint, this.fps);
+    this.root.append(this.hurt, this.cold, this.low, this.damageDir, clock, left, needs, bottom, center, this.toasts, this.banner, this.hint, this.fps);
     parent.append(this.root);
   }
 
@@ -270,6 +282,17 @@ export class Hud {
     setText(this.objHint, text.hint);
     setHtml(this.objNeeds, o ? objectiveNeedsHtml(o.needs) : '', this.objNeedsKey);
     setText(this.objStep, o ? `${s.objective + 1}/${OBJECTIVES.length}` : '');
+
+    const pins = pinnedRecipes(s);
+    toggle(this.checklist, 'show', pins.length > 0);
+    if (pins.length) {
+      const rows = checklistNeeds(s, sim.isNearLitFire());
+      const ready = checklistReady(rows);
+      toggle(this.checklist, 'ready', ready);
+      setText(this.checkState, ready ? 'Ready to craft' : '');
+      setText(this.checkTitle, pins.map((id) => RECIPE_BY_ID[id].name).join(' + '));
+      setHtml(this.checkNeeds, objectiveNeedsHtml(rows), this.checkNeedsKey);
+    }
 
     setHtml(this.belt, toolBeltHtml(s), this.beltKey);
     const used = usedSlots(s.inventory);

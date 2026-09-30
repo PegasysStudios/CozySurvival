@@ -6,6 +6,7 @@ import { canteenFill, canteenServings } from '../src/sim/canteen';
 import { countItem } from '../src/sim/inventory';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
+import { STATE_VERSION } from '../src/sim/state';
 import { Panels } from '../src/ui/panels';
 import { drain, give, placeStructure, quietSim } from './helpers';
 
@@ -112,7 +113,7 @@ describe('saves from before the canteen change (round 8)', () => {
       sim.state.objective = 3;
       const s = deserializeState(oldSave(sim, [2, 1]))!;
       expect(s).not.toBeNull();
-      expect(s.version).toBe(4);
+      expect(s.version).toBe(STATE_VERSION);
       expect(s.canteen).toEqual({ lakeWater: 2, boiledWater: 1 });
       expect(s.inventory.slots[0]).toBeNull();
       expect(s.inventory.slots[1]).toEqual({ item: 'stone', count: 5 });

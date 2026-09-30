@@ -171,6 +171,17 @@ export const BALANCE = {
     playerHurtInvuln: 0.4,
   },
   gather: { cooldown: 0.4 },
+  /**
+   * Cactus and yucca spines. You are pricked when your body presses into a spiny plant's core: half your width into a
+   * prickly pear, cholla or yucca (see `ResourceDef.spines`), or right up against a saguaro, at most once per
+   * `cooldown` seconds.
+   */
+  spines: { cooldown: 1.1, touch: 0.5, saguaro: 4, saguaroGap: 0.06 },
+  /**
+   * Each gather from a desert stone pile has `chance` to turn up a scorpion (see `SPECIES.scorpion`), with at most
+   * `max` out in the world at once.
+   */
+  scorpion: { chance: 0.18, max: 4 },
   /** Thirst lost the one time you taste alkali water before you learn to recognise it. */
   water: { alkaliTasteThirst: 4 },
 } as const;
