@@ -1,7 +1,8 @@
-import { FORAGE_GUIDE, type ForageEntry } from '../data/forage';
+import { DEFAULT_BIOME } from '../data/biomes';
+import { forageGuideFor, type ForageEntry } from '../data/forage';
 import { ITEMS } from '../data/items';
-import { RECIPES } from '../data/recipes';
-import { RESOURCES, TREES } from '../data/resources';
+import { recipesFor } from '../data/recipes';
+import { RESOURCES, TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
 import { SHELTER_UPGRADES, TOOL_UPGRADES } from '../data/upgrades';
 import type { GameState } from '../sim/state';
 
@@ -19,11 +20,16 @@ export interface ForagePage {
 
 const EFFECT_LABELS = { hunger: 'hunger', thirst: 'thirst', warmth: 'warmth', health: 'health', energy: 'energy' } as const;
 
+function regrowHours(entry: ForageEntry): number {
+  if (entry.id in TREES) return TREES[entry.id as TreeSpecies].barkRespawnHours;
+  return RESOURCES[entry.id as ResourceKind]?.respawnHours ?? 0;
+}
+
 export function foragePage(s: GameState, entry: ForageEntry): ForagePage {
   const item = entry.item;
   const food = ITEMS[item].food;
   const effects = food ? (Object.keys(EFFECT_LABELS) as (keyof typeof EFFECT_LABELS)[]).filter((k) => food[k]).map((k) => `${food[k]! > 0 ? '+' : ''}${food[k]} ${EFFECT_LABELS[k]}`) : [];
-  const using = RECIPES.filter((r) => r.inputs.some((i) => i.item === item));
+  const using = recipesFor(s.biome ?? DEFAULT_BIOME).filter((r) => r.inputs.some((i) => i.item === item));
   const ups = [...Object.values(TOOL_UPGRADES).flat().map((u) => u.inputs), ...Object.values(SHELTER_UPGRADES)];
   return {
     entry,
@@ -31,12 +37,12 @@ export function foragePage(s: GameState, entry: ForageEntry): ForagePage {
     effects,
     recipes: using.map((r) => r.name),
     upgrades: ups.filter((inputs) => inputs!.some((i) => i.item === item)).length,
-    regrowHours: entry.id === 'birch' ? TREES.birch.barkRespawnHours : RESOURCES[entry.id].respawnHours,
+    regrowHours: regrowHours(entry),
   };
 }
 
-/** The whole guide in display order, with how many entries are unlocked. */
+/** The current map's guide in display order, with how many entries are unlocked. */
 export function forageGuide(s: GameState): { pages: ForagePage[]; unlocked: number; total: number } {
-  const pages = FORAGE_GUIDE.map((e) => foragePage(s, e));
+  const pages = forageGuideFor(s.biome ?? DEFAULT_BIOME).map((e) => foragePage(s, e));
   return { pages, unlocked: pages.filter((p) => p.unlocked).length, total: pages.length };
 }

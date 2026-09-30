@@ -1,8 +1,10 @@
 import { clampVolume, DEFAULT_MASTER_VOLUME, DEFAULT_MUSIC_VOLUME, DEFAULT_SFX_VOLUME } from '../audio/mix';
 import { randomSeed } from '../core/rng';
+import { BIOME_IDS, BIOMES, DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import type { SimEvent } from './events';
 import { deserializeState, serializeState } from './save';
 import { Simulation } from './simulation';
+import type { GameState } from './state';
 import { hoursSurvived } from './time';
 
 export interface KVStorage {
@@ -60,11 +62,18 @@ export function browserStorage(): KVStorage {
   }
 }
 
+/** The Pacific Northwest save keys (unchanged since before maps existed); other maps add their suffix. */
 export const STORAGE_KEYS = {
   save: 'cozysurvival.v1.save',
   snapshot: 'cozysurvival.v1.daySnapshot',
   meta: 'cozysurvival.v1.meta',
 } as const;
+
+/** Where a map keeps its autosave and start-of-day snapshot. The meta (settings and records) is shared. */
+export function storageKeys(biome: BiomeId): { save: string; snapshot: string } {
+  const sfx = BIOMES[biome].storageSuffix;
+  return { save: STORAGE_KEYS.save + sfx, snapshot: STORAGE_KEYS.snapshot + sfx };
+}
 
 export interface Settings {
   muted: boolean;
@@ -83,12 +92,29 @@ export interface BestRecord {
   day: number;
 }
 
-export interface MetaState {
-  version: 1;
+/** One map's world and records. */
+export interface MapRecord {
   worldSeed: number;
   best: BestRecord | null;
   deaths: number;
+}
+
+/**
+ * The top-level record is the Pacific Northwest's (as it always was); other maps keep theirs in `maps`.
+ * `map` is the map last picked on the title screen.
+ */
+export interface MetaState extends MapRecord {
+  version: 1;
   settings: Settings;
+  map?: BiomeId;
+  maps?: Partial<Record<BiomeId, MapRecord>>;
+}
+
+function parseRecord(v: unknown): MapRecord | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const r = v as Partial<MapRecord>;
+  if (typeof r.worldSeed !== 'number') return null;
+  return { worldSeed: r.worldSeed, best: r.best ?? null, deaths: typeof r.deaths === 'number' ? r.deaths : 0 };
 }
 
 export interface DeathSummary {
@@ -133,6 +159,8 @@ export function normalizeSettings(raw: unknown): Settings {
  */
 export class RunManager {
   meta: MetaState;
+  /** The map picked on the title screen; new runs, Continue and the death-screen options act on it. */
+  biome: BiomeId;
   private readonly storage: KVStorage;
   private readonly seedSource: () => number;
 
@@ -140,6 +168,7 @@ export class RunManager {
     this.storage = storage;
     this.seedSource = seedSource;
     this.meta = this.loadMeta();
+    this.biome = this.meta.map ?? DEFAULT_BIOME;
   }
 
   private loadMeta(): MetaState {
@@ -148,13 +177,21 @@ export class RunManager {
       if (raw) {
         const m = JSON.parse(raw) as Partial<MetaState>;
         if (m && m.version === 1 && typeof m.worldSeed === 'number') {
-          return {
+          const meta: MetaState = {
             version: 1,
             worldSeed: m.worldSeed,
             best: m.best ?? null,
             deaths: m.deaths ?? 0,
             settings: normalizeSettings(m.settings),
           };
+          if (isBiomeId(m.map)) meta.map = m.map;
+          if (m.maps && typeof m.maps === 'object') {
+            for (const id of BIOME_IDS) {
+              const rec = id === DEFAULT_BIOME ? null : parseRecord(m.maps[id]);
+              if (rec) (meta.maps ??= {})[id] = rec;
+            }
+          }
+          return meta;
         }
       }
     } catch {
@@ -169,14 +206,46 @@ export class RunManager {
     this.storage.setItem(STORAGE_KEYS.meta, JSON.stringify(this.meta));
   }
 
-  /** A resumable (living) run exists. */
-  hasContinue(): boolean {
-    const s = deserializeState(this.storage.getItem(STORAGE_KEYS.save));
+  /** Pick the map for the title screen, Continue and new runs (remembered for next time). */
+  selectBiome(biome: BiomeId): void {
+    if (this.biome === biome && this.meta.map === biome) return;
+    this.biome = biome;
+    this.meta.map = biome;
+    this.saveMeta();
+  }
+
+  /** The selected map's world seed and records. */
+  get record(): MapRecord {
+    return this.recordFor(this.biome);
+  }
+
+  /** A map's world seed and records; a map played for the first time gets its own world. */
+  recordFor(biome: BiomeId): MapRecord {
+    if (biome === DEFAULT_BIOME) return this.meta;
+    const maps = (this.meta.maps ??= {});
+    let rec = maps[biome];
+    if (!rec) {
+      rec = { worldSeed: this.seedSource(), best: null, deaths: 0 };
+      maps[biome] = rec;
+      this.saveMeta();
+    }
+    return rec;
+  }
+
+  /** A saved run of `biome` from its own slot (a slot holding another map's run counts as empty). */
+  private loadState(biome: BiomeId, which: 'save' | 'snapshot'): GameState | null {
+    const s = deserializeState(this.storage.getItem(storageKeys(biome)[which]));
+    return s && (s.biome ?? DEFAULT_BIOME) === biome ? s : null;
+  }
+
+  /** A resumable (living) run exists on the map. */
+  hasContinue(biome: BiomeId = this.biome): boolean {
+    const s = this.loadState(biome, 'save');
     return !!s && !s.dead;
   }
 
-  loadCurrent(): Simulation | null {
-    const s = deserializeState(this.storage.getItem(STORAGE_KEYS.save));
+  loadCurrent(biome: BiomeId = this.biome): Simulation | null {
+    const s = this.loadState(biome, 'save');
     return s ? new Simulation(s) : null;
   }
 
@@ -184,28 +253,29 @@ export class RunManager {
     return this.loadCurrent() ?? this.newRun();
   }
 
-  newRun(seed: number = this.meta.worldSeed): Simulation {
-    if (seed !== this.meta.worldSeed) {
-      this.meta.worldSeed = seed;
+  newRun(seed: number = this.record.worldSeed): Simulation {
+    const rec = this.record;
+    if (seed !== rec.worldSeed) {
+      rec.worldSeed = seed;
       this.saveMeta();
     }
-    const sim = Simulation.newGame(seed);
+    const sim = Simulation.newGame(seed, this.biome);
     this.writeSnapshot(sim);
     this.save(sim);
     return sim;
   }
 
   save(sim: Simulation): void {
-    this.storage.setItem(STORAGE_KEYS.save, serializeState(sim.state));
+    this.storage.setItem(storageKeys(sim.biome).save, serializeState(sim.state));
   }
 
   writeSnapshot(sim: Simulation): void {
     sim.state.snapshotDay = sim.day;
-    this.storage.setItem(STORAGE_KEYS.snapshot, serializeState(sim.state));
+    this.storage.setItem(storageKeys(sim.biome).snapshot, serializeState(sim.state));
   }
 
-  snapshotDay(): number | null {
-    const s = deserializeState(this.storage.getItem(STORAGE_KEYS.snapshot));
+  snapshotDay(biome: BiomeId = this.biome): number | null {
+    const s = this.loadState(biome, 'snapshot');
     return s ? s.snapshotDay : null;
   }
 
@@ -230,39 +300,44 @@ export class RunManager {
   }
 
   recordDeath(sim: Simulation): DeathSummary {
+    const rec = this.recordFor(sim.biome);
     const hours = hoursSurvived(sim.state.totalHours);
     const day = sim.day;
-    const prev = this.meta.best;
+    const prev = rec.best;
     const newBest = !prev || hours > prev.hours;
-    if (newBest) this.meta.best = { hours, day };
-    this.meta.deaths++;
+    if (newBest) rec.best = { hours, day };
+    rec.deaths++;
     this.saveMeta();
-    return { cause: sim.state.deathCause ?? 'unknown', hours, day, best: this.meta.best, newBest };
+    return { cause: sim.state.deathCause ?? 'unknown', hours, day, best: rec.best, newBest };
   }
 
   /** New run in the same world; best record kept. */
   restartFromDay1(): Simulation {
-    return this.newRun(this.meta.worldSeed);
+    return this.newRun(this.record.worldSeed);
   }
 
-  /** Wipe every save, snapshot and record, then start a brand-new world. Preferences are kept. */
+  /**
+   * Wipe the selected map's save, snapshot and records, then start it in a brand-new world. Preferences and the
+   * other maps are kept.
+   */
   startFromScratch(): Simulation {
-    const settings = { ...this.meta.settings };
-    this.storage.removeItem(STORAGE_KEYS.save);
-    this.storage.removeItem(STORAGE_KEYS.snapshot);
-    this.storage.removeItem(STORAGE_KEYS.meta);
+    const keys = storageKeys(this.biome);
+    this.storage.removeItem(keys.save);
+    this.storage.removeItem(keys.snapshot);
     let seed = this.seedSource();
-    if (seed === this.meta.worldSeed) seed = (seed + 1) >>> 0;
-    this.meta = { version: 1, worldSeed: seed, best: null, deaths: 0, settings };
+    if (seed === this.record.worldSeed) seed = (seed + 1) >>> 0;
+    const fresh: MapRecord = { worldSeed: seed, best: null, deaths: 0 };
+    if (this.biome === DEFAULT_BIOME) Object.assign(this.meta, fresh);
+    else (this.meta.maps ??= {})[this.biome] = fresh;
     this.saveMeta();
     return this.newRun(seed);
   }
 
   /** Reload the snapshot taken at the start of the current day and continue the same run. */
   retryDay(): Simulation {
-    const snap = deserializeState(this.storage.getItem(STORAGE_KEYS.snapshot));
-    const current = deserializeState(this.storage.getItem(STORAGE_KEYS.save));
-    if (!snap || (current && current.runId !== snap.runId) || snap.seed !== this.meta.worldSeed) {
+    const snap = this.loadState(this.biome, 'snapshot');
+    const current = this.loadState(this.biome, 'save');
+    if (!snap || (current && current.runId !== snap.runId) || snap.seed !== this.record.worldSeed) {
       return this.restartFromDay1();
     }
     snap.dead = false;

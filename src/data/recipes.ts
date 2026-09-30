@@ -1,3 +1,4 @@
+import type { BiomeId } from './biomes';
 import type { GearId, ItemId, ToolId } from './items';
 import type { PrefabId } from './prefabs';
 
@@ -17,7 +18,12 @@ export interface Recipe {
   output: RecipeOutput;
   station?: 'fire';
   description: string;
+  /** Only offered on this map (its ingredients only grow there); shared when absent. */
+  biome?: BiomeId;
 }
+
+const PNW = 'pnw' as const;
+const DESERT = 'desert' as const;
 
 /**
  * Gear, tool, structure and material costs are 5x their original counts, except where that would break
@@ -111,43 +117,43 @@ export const RECIPES: Recipe[] = [
     description: 'Flaky and smoky.',
   },
   {
-    id: 'skewer', name: 'Mushroom Skewer', category: 'cooking', station: 'fire',
+    id: 'skewer', biome: PNW, name: 'Mushroom Skewer', category: 'cooking', station: 'fire',
     inputs: [{ item: 'mushroom', count: 2 }, { item: 'onion', count: 1 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'skewer', count: 1 },
     description: 'A hearty fire-roasted skewer.',
   },
   {
-    id: 'forageSkewer', name: "Forager's Skewer", category: 'cooking', station: 'fire',
+    id: 'forageSkewer', biome: PNW, name: "Forager's Skewer", category: 'cooking', station: 'fire',
     inputs: [{ item: 'berries', count: 2 }, { item: 'onion', count: 1 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'forageSkewer', count: 1 },
     description: 'A simple forage-only meal.',
   },
   {
-    id: 'berryTea', name: 'Salmonberry Tea', category: 'cooking', station: 'fire',
+    id: 'berryTea', biome: PNW, name: 'Salmonberry Tea', category: 'cooking', station: 'fire',
     inputs: [{ item: 'boiledWater', count: 1 }, { item: 'berries', count: 2 }],
     output: { kind: 'item', item: 'berryTea', count: 1 },
     description: 'Warms you right through.',
   },
   {
-    id: 'stew', name: 'Forest Stew', category: 'cooking', station: 'fire',
+    id: 'stew', biome: PNW, name: 'Forest Stew', category: 'cooking', station: 'fire',
     inputs: [{ item: 'boiledWater', count: 1 }, { item: 'rawMeat', count: 1 }, { item: 'mushroom', count: 1 }, { item: 'onion', count: 1 }],
     output: { kind: 'item', item: 'stew', count: 1 },
     description: 'The coziest meal in the woods.',
   },
   {
-    id: 'cedarTrout', name: 'Bark-Baked Trout', category: 'cooking', station: 'fire',
+    id: 'cedarTrout', biome: PNW, name: 'Bark-Baked Trout', category: 'cooking', station: 'fire',
     inputs: [{ item: 'rawFish', count: 1 }, { item: 'onion', count: 1 }, { item: 'bark', count: 1 }],
     output: { kind: 'item', item: 'cedarTrout', count: 1 },
     description: 'Tender, aromatic trout.',
   },
   {
-    id: 'troutChowder', name: 'Trout Chowder', category: 'cooking', station: 'fire',
+    id: 'troutChowder', biome: PNW, name: 'Trout Chowder', category: 'cooking', station: 'fire',
     inputs: [{ item: 'boiledWater', count: 1 }, { item: 'rawFish', count: 1 }, { item: 'onion', count: 1 }, { item: 'mushroom', count: 1 }],
     output: { kind: 'item', item: 'troutChowder', count: 1 },
     description: 'Creamy, warming and very filling.',
   },
   {
-    id: 'troutSkewer', name: 'Trout & Berry Skewer', category: 'cooking', station: 'fire',
+    id: 'troutSkewer', biome: PNW, name: 'Trout & Berry Skewer', category: 'cooking', station: 'fire',
     inputs: [{ item: 'rawFish', count: 1 }, { item: 'berries', count: 2 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'troutSkewer', count: 1 },
     description: 'Smoky fish with a sweet, tart glaze.',
@@ -157,6 +163,61 @@ export const RECIPES: Recipe[] = [
     inputs: [{ item: 'rawFish', count: 2 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'smokedTrout', count: 2 },
     description: 'Two strips of smoked trout for the trail.',
+  },
+  // ---- desert cooking, from Sonoran and Colorado Plateau foodways
+  {
+    id: 'desertSkewer', biome: DESERT, name: 'Desert Skewer', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'pricklyPear', count: 2 }, { item: 'chollaBuds', count: 1 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'desertSkewer', count: 1 },
+    description: 'A simple forage-only meal.',
+  },
+  {
+    id: 'roastAgave', biome: DESERT, name: 'Roast Agave', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'agaveHeart', count: 1 }, { item: 'stick', count: 2 }],
+    output: { kind: 'item', item: 'roastAgave', count: 1 },
+    description: 'Bury the heart in the coals and let it turn sweet.',
+  },
+  {
+    id: 'mesquiteCakes', biome: DESERT, name: 'Mesquite Cakes ×2', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'mesquitePods', count: 3 }, { item: 'boiledWater', count: 1 }],
+    output: { kind: 'item', item: 'mesquiteCakes', count: 2 },
+    description: 'Pound the pods to flour, mix with water, bake on a hot stone.',
+  },
+  {
+    id: 'chiaFresca', biome: DESERT, name: 'Chia Fresca', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'boiledWater', count: 1 }, { item: 'chiaSeeds', count: 1 }, { item: 'pricklyPear', count: 1 }],
+    output: { kind: 'item', item: 'chiaFresca', count: 1 },
+    description: 'The most thirst-quenching drink in the desert.',
+  },
+  {
+    id: 'wolfberryTea', biome: DESERT, name: 'Wolfberry Tea', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'boiledWater', count: 1 }, { item: 'wolfberries', count: 2 }],
+    output: { kind: 'item', item: 'wolfberryTea', count: 1 },
+    description: 'Warms you right through on a cold desert night.',
+  },
+  {
+    id: 'roastPinon', biome: DESERT, name: 'Roasted Piñon Nuts', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'pinonNuts', count: 3 }],
+    output: { kind: 'item', item: 'roastPinon', count: 1 },
+    description: 'Toast the nuts in their shells.',
+  },
+  {
+    id: 'desertStew', biome: DESERT, name: 'Desert Stew', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'boiledWater', count: 1 }, { item: 'rawMeat', count: 1 }, { item: 'chollaBuds', count: 1 }, { item: 'mesquitePods', count: 1 }],
+    output: { kind: 'item', item: 'desertStew', count: 1 },
+    description: 'The coziest meal under the stars.',
+  },
+  {
+    id: 'pinonTrout', biome: DESERT, name: 'Piñon-Crusted Trout', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 1 }, { item: 'pinonNuts', count: 2 }],
+    output: { kind: 'item', item: 'pinonTrout', count: 1 },
+    description: 'Crisp, nutty, and filling.',
+  },
+  {
+    id: 'pearTroutSkewer', biome: DESERT, name: 'Trout & Prickly Pear Skewer', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawFish', count: 1 }, { item: 'pricklyPear', count: 2 }, { item: 'stick', count: 1 }],
+    output: { kind: 'item', item: 'pearTroutSkewer', count: 1 },
+    description: 'Smoky fish with a sweet, bright glaze.',
   },
   // ---- structures (placed in the world)
   {
@@ -180,6 +241,15 @@ export const RECIPES: Recipe[] = [
 ];
 
 export const RECIPE_BY_ID: Record<string, Recipe> = Object.fromEntries(RECIPES.map((r) => [r.id, r]));
+
+export function recipeOnMap(r: Recipe, biome: BiomeId): boolean {
+  return !r.biome || r.biome === biome;
+}
+
+/** Recipes offered on a map, in menu order. */
+export function recipesFor(biome: BiomeId): Recipe[] {
+  return RECIPES.filter((r) => recipeOnMap(r, biome));
+}
 
 export const CATEGORY_LABELS: Record<RecipeCategory, string> = {
   tools: 'Tools',

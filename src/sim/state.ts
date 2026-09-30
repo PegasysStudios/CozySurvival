@@ -1,3 +1,4 @@
+import type { BiomeId } from '../data/biomes';
 import type { ForageId } from '../data/forage';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
@@ -150,11 +151,13 @@ export interface AnimalState {
   lod: number;
 }
 
-export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'dev';
+export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'dev';
 
 export interface GameState {
   version: number;
   seed: number;
+  /** The map; absent means the Pacific Northwest (every save from before the desert). */
+  biome?: BiomeId;
   runId: string;
   /** Game hours since day 1 at 06:00. */
   totalHours: number;

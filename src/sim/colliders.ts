@@ -1,7 +1,7 @@
 import { boundingRadius, circleBox, type BoxShape, type Shape2D } from '../core/geom2d';
 import { SpatialGrid } from '../core/spatialGrid';
 
-export type ColliderKind = 'tree' | 'stump' | 'rock' | 'log' | 'trunk' | 'structure' | 'resource';
+export type ColliderKind = 'tree' | 'stump' | 'rock' | 'log' | 'trunk' | 'structure' | 'resource' | 'cactus';
 
 /**
  * A solid you can stand on. The player collides with its surface instead of an infinite-height wall:

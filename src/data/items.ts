@@ -1,3 +1,5 @@
+import type { BiomeId } from './biomes';
+
 export type ItemId =
   | 'stick'
   | 'stone'
@@ -24,7 +26,24 @@ export type ItemId =
   | 'troutSkewer'
   | 'smokedTrout'
   | 'charredMeal'
-  | 'arrow';
+  | 'arrow'
+  // desert forage and meals
+  | 'pricklyPear'
+  | 'chollaBuds'
+  | 'agaveHeart'
+  | 'chiaSeeds'
+  | 'wolfberries'
+  | 'mesquitePods'
+  | 'pinonNuts'
+  | 'desertSkewer'
+  | 'roastAgave'
+  | 'mesquiteCakes'
+  | 'chiaFresca'
+  | 'wolfberryTea'
+  | 'roastPinon'
+  | 'desertStew'
+  | 'pinonTrout'
+  | 'pearTroutSkewer';
 
 export interface FoodEffect {
   hunger?: number;
@@ -77,7 +96,54 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   smokedTrout: { id: 'smokedTrout', name: 'Smoked Trout', plural: 'Smoked Trout', stack: 8, color: '#b0643c', meal: true, description: 'A strip of smoky trout. Light, and good for a long day.', food: { hunger: 16, warmth: 3, health: 3, energy: 10 } },
   charredMeal: { id: 'charredMeal', name: 'Charred Meal', plural: 'Charred Meals', stack: 6, color: '#5a4032', description: 'A little burnt around the edges, but still filling. Practice makes perfect.', food: { hunger: 8, warmth: 2 } },
   arrow: { id: 'arrow', name: 'Arrow', plural: 'Arrows', stack: 16, color: '#b08a5a', description: 'Stone-tipped. Sometimes you can find them again.' },
+  pricklyPear: { id: 'pricklyPear', name: 'Prickly Pear Fruit', plural: 'Prickly Pear Fruit', stack: 12, color: '#c2285f', description: 'A magenta tuna, rolled in sand to knock off the glochids. Sweet and juicy.', food: { hunger: 5, thirst: 4, energy: 2 } },
+  chollaBuds: { id: 'chollaBuds', name: 'Cholla Buds', plural: 'Cholla Buds', stack: 10, color: '#9bb04a', description: 'Spiny flower buds. Rough raw; roasted they taste like artichoke.', food: { hunger: 3, health: -2 } },
+  agaveHeart: { id: 'agaveHeart', name: 'Agave Heart', plural: 'Agave Hearts', stack: 4, color: '#c9b06a', description: 'The heavy core of an agave. Harsh raw; a long roast turns it sweet.', food: { hunger: 4, health: -3 } },
+  chiaSeeds: { id: 'chiaSeeds', name: 'Chia Seeds', plural: 'Chia Seeds', stack: 12, color: '#7a6f86', description: 'Tiny seeds shaken from desert chia. A spoonful keeps you going.', food: { hunger: 3, energy: 4 } },
+  wolfberries: { id: 'wolfberries', name: 'Wolfberries', plural: 'Wolfberries', stack: 12, color: '#e0412b', description: 'Small red desert-thorn berries, a little bitter.', food: { hunger: 4, thirst: 2, energy: 2 } },
+  mesquitePods: { id: 'mesquitePods', name: 'Mesquite Pods', plural: 'Mesquite Pods', stack: 12, color: '#d8b56a', description: 'Sweet, chewy bean pods. Ground and baked they make a filling cake.', food: { hunger: 4, energy: 3 } },
+  pinonNuts: { id: 'pinonNuts', name: 'Piñon Nuts', plural: 'Piñon Nuts', stack: 12, color: '#8a5a3a', description: 'Rich little pine nuts shaken from pinyon cones.', food: { hunger: 5, energy: 3 } },
+  desertSkewer: { id: 'desertSkewer', name: 'Desert Skewer', plural: 'Desert Skewers', stack: 6, color: '#c8506a', meal: true, description: 'Prickly pear fruit and cholla buds roasted on a stick.', food: { hunger: 16, thirst: 5, warmth: 4, health: 2, energy: 6 } },
+  roastAgave: { id: 'roastAgave', name: 'Roast Agave', plural: 'Roast Agave', stack: 4, color: '#b98640', meal: true, description: 'Agave heart roasted in the coals until sweet and sticky.', food: { hunger: 30, warmth: 6, health: 6, energy: 14 } },
+  mesquiteCakes: { id: 'mesquiteCakes', name: 'Mesquite Cake', plural: 'Mesquite Cakes', stack: 8, color: '#c79a52', meal: true, description: 'Ground mesquite pods mixed with water and baked on a stone.', food: { hunger: 14, warmth: 3, health: 2, energy: 10 } },
+  chiaFresca: { id: 'chiaFresca', name: 'Chia Fresca', plural: 'Chia Fresca', stack: 4, color: '#d7728f', water: true, meal: true, description: 'Chia seeds and prickly pear stirred into warm water. Very thirst-quenching.', food: { hunger: 5, thirst: 34, warmth: 6, health: 2, energy: 14 } },
+  wolfberryTea: { id: 'wolfberryTea', name: 'Wolfberry Tea', plural: 'Wolfberry Tea', stack: 4, color: '#d9543b', water: true, meal: true, description: 'A warm, tart mug for a cold desert night.', food: { hunger: 4, thirst: 30, warmth: 16, health: 2, energy: 12 } },
+  roastPinon: { id: 'roastPinon', name: 'Roasted Piñon Nuts', plural: 'Roasted Piñon Nuts', stack: 8, color: '#7a4a2c', meal: true, description: 'Toasted in the shell over the fire. Rich and warming.', food: { hunger: 16, warmth: 3, health: 3, energy: 10 } },
+  desertStew: { id: 'desertStew', name: 'Desert Stew', plural: 'Desert Stew', stack: 4, color: '#a0663a', meal: true, description: 'Meat, cholla buds and mesquite pods simmered in boiled water.', food: { hunger: 42, thirst: 16, warmth: 20, health: 12, energy: 18 } },
+  pinonTrout: { id: 'pinonTrout', name: 'Piñon-Crusted Trout', plural: 'Piñon-Crusted Trout', stack: 4, color: '#b98356', meal: true, description: 'Trout rolled in crushed piñon nuts and grilled.', food: { hunger: 34, thirst: 4, warmth: 8, health: 8, energy: 12 } },
+  pearTroutSkewer: { id: 'pearTroutSkewer', name: 'Trout & Prickly Pear Skewer', plural: 'Trout & Prickly Pear Skewers', stack: 6, color: '#c9607a', meal: true, description: 'Roast trout glazed with prickly pear.', food: { hunger: 24, thirst: 5, warmth: 5, health: 5, energy: 10 } },
 };
+
+/**
+ * Items that exist on both maps but read differently in the desert. Names are resolved through the map on screen
+ * (`setDisplayBiome`), so shared recipes, saves and the network keep using the same ids.
+ */
+const DESERT_TEXT: Partial<Record<ItemId, Partial<Pick<ItemDef, 'name' | 'plural' | 'description'>>>> = {
+  stick: { description: 'A dry mesquite or creosote branch. Handles, kindling, and fuel.' },
+  stone: { description: 'A fist-sized chunk of sandstone.' },
+  fiber: { name: 'Yucca Fiber', plural: 'Yucca Fiber', description: 'Stripped from yucca leaves. Twist it into cordage.' },
+  bark: { name: 'Shredded Bark', plural: 'Shredded Bark', description: 'Stringy bark pulled from junipers and cottonwoods.' },
+  cordage: { description: 'Twisted yucca fiber. Strong enough to lash tools.' },
+  rawFish: { description: 'A golden Gila trout from the spring.' },
+  lakeWater: { name: 'Spring Water', plural: 'Spring Water', description: 'Clear, cold water from a spring or rock pool.' },
+};
+
+let displayBiome: BiomeId = 'pnw';
+
+/** Which map's names the UI and messages use. Set whenever a world is shown or simulated. */
+export function setDisplayBiome(b: BiomeId): void {
+  displayBiome = b;
+}
+
+export function getDisplayBiome(): BiomeId {
+  return displayBiome;
+}
+
+/** An item's definition with the displayed map's names applied. */
+export function itemDef(id: ItemId): ItemDef {
+  const o = displayBiome === 'desert' ? DESERT_TEXT[id] : undefined;
+  return o ? { ...ITEMS[id], ...o } : ITEMS[id];
+}
 
 export type ToolId = 'hands' | 'axe' | 'spear' | 'bow' | 'torch' | 'rod';
 
@@ -109,5 +175,6 @@ export const GEAR: Record<GearId, { id: GearId; name: string; description: strin
 };
 
 export function itemName(id: ItemId, count: number): string {
-  return count === 1 ? ITEMS[id].name : ITEMS[id].plural;
+  const d = itemDef(id);
+  return count === 1 ? d.name : d.plural;
 }

@@ -162,6 +162,8 @@ export const BALANCE = {
     playerHurtInvuln: 0.4,
   },
   gather: { cooldown: 0.4 },
+  /** Thirst lost the one time you taste alkali water before you learn to recognise it. */
+  water: { alkaliTasteThirst: 4 },
 } as const;
 
 export const GAME_HOURS_PER_REAL_SECOND = 24 / BALANCE.time.realSecondsPerDay;

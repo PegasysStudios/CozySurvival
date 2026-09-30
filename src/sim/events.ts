@@ -45,6 +45,8 @@ export type SimEvent =
   | { type: 'animalFlee'; id: number; species: SpeciesId }
   | { type: 'predatorAlert'; id: number; species: SpeciesId; x: number; z: number }
   | { type: 'predatorAttack'; id: number; species: SpeciesId }
+  /** A rattlesnake coiled and rattled at the player. */
+  | { type: 'rattle'; id: number; x: number; z: number }
   | { type: 'arrowFired'; power: number }
   | { type: 'arrowHit'; x: number; y: number; z: number; target: 'ground' | 'tree' | 'water' | 'animal' }
   | { type: 'cast'; power: number }

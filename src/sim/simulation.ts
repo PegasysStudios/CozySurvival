@@ -2,14 +2,15 @@ import { box, circle, overlaps, raySphere, rayCylinder } from '../core/geom2d';
 import { clamp, damp, lerp } from '../core/math';
 import { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
-import { ITEMS, TOOLS, TOOL_ORDER, itemName, type ItemId, type ToolId } from '../data/items';
-import { forageForResource, FORAGE_BY_ID, type ForageId } from '../data/forage';
-import { OBJECTIVES, advanceObjectives, killKey, type ObjectiveNeed } from '../data/objectives';
+import { biomeDef, DEFAULT_BIOME, speciesName, type BiomeDef, type BiomeId } from '../data/biomes';
+import { ITEMS, TOOLS, TOOL_ORDER, itemName, setDisplayBiome, type ItemId, type ToolId } from '../data/items';
+import { forageForResource, forageForTree, FORAGE_BY_ID, type ForageId } from '../data/forage';
+import { OBJECTIVES, advanceObjectives, killKey, objectiveText, type ObjectiveNeed } from '../data/objectives';
 import { PLACE_MAX_DIST, PREFABS, type PrefabId } from '../data/prefabs';
-import { RECIPE_BY_ID } from '../data/recipes';
+import { RECIPE_BY_ID, recipeOnMap } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
 import { LEVEL_NUMERALS, nextShelter, SHELTER_UPGRADES, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
-import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, predatorTargets, type SpeciesId } from '../data/species';
+import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type SpeciesId } from '../data/species';
 import { createAnimal, damageAnimal, findSpawnPoint, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, canteenRoom, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
@@ -22,7 +23,7 @@ import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type P
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
 import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
-import { getTerrain, WATER_LEVEL, type Terrain } from './terrain';
+import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
 import { freshTree, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
 import { getWorldGen, type WorldGen } from './worldgen';
@@ -124,6 +125,7 @@ export const COOK_RADIUS = 4;
 const ARROW_GRAVITY = 9.8;
 const START_HOURS = BALANCE.time.startHour - BALANCE.time.dayStartHour;
 const PREDATOR_ACTIVE = ['stalk', 'chase', 'attack', 'warn', 'reposition'];
+const CARCASS_HIT_RADIUS: Partial<Record<SpeciesId, number>> = { bear: 1.1, deer: 0.9, cougar: 0.85, javelina: 0.8 };
 
 let runCounter = 0;
 
@@ -137,8 +139,11 @@ function makeRunId(): string {
 export const SPAWN_SHORE_DIST = 14;
 const SPAWN_MAX_NUDGE = 12;
 
-/** The nearest lake or pond shore seen from (x, z): distance and direction, found by marching rays outward. */
-export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 120): { dist: number; dx: number; dz: number } | null {
+/**
+ * The nearest lake or pond shore seen from (x, z): distance and direction, found by marching rays outward.
+ * `drinkableOnly` skips water you can't drink (the desert's alkali pool).
+ */
+export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 120, drinkableOnly = false): { dist: number; dx: number; dz: number } | null {
   let best: { dist: number; dx: number; dz: number } | null = null;
   for (let a = 0; a < 180; a++) {
     const ang = (a / 180) * Math.PI * 2;
@@ -146,13 +151,34 @@ export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 1
     const dz = Math.sin(ang);
     const limit = best ? best.dist : maxDist;
     for (let r = 0.5; r < limit; r += 0.5) {
-      if (terrain.heightAt(x + dx * r, z + dz * r) < WATER_LEVEL) {
+      const wx = x + dx * r;
+      const wz = z + dz * r;
+      if (terrain.heightAt(wx, wz) < WATER_LEVEL && (!drinkableOnly || drinkableWater(terrain, wx, wz))) {
         best = { dist: r, dx, dz };
         break;
       }
     }
   }
   return best;
+}
+
+/** What the water under the crosshair is called; an alkali pool only earns its name once you've tasted one. */
+function waterName(lake: Lake | null, knowsAlkali: boolean): string {
+  switch (lake?.kind) {
+    case 'spring':
+      return 'Spring Pool';
+    case 'tinaja':
+      return 'Rock Pool';
+    case 'alkali':
+      return knowsAlkali ? 'Alkali Pool' : 'Milky Pool';
+    default:
+      return 'Lake';
+  }
+}
+
+function drinkableWater(terrain: Terrain, x: number, z: number): boolean {
+  const lake = terrain.lakeAt(x, z);
+  return !lake || isDrinkable(lake);
 }
 
 /**
@@ -162,7 +188,7 @@ export function nearestShore(terrain: Terrain, x: number, z: number, maxDist = 1
 export function spawnPlayer(terrain: Terrain): PlayerState {
   let sx = terrain.spawn.x;
   let sz = terrain.spawn.z;
-  const shore = nearestShore(terrain, sx, sz);
+  const shore = nearestShore(terrain, sx, sz, 120, terrain.biome !== 'pnw');
   if (!shore) {
     const lake = terrain.lakes[0];
     return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-(lake.x - sx), -(lake.z - sz)));
@@ -180,15 +206,16 @@ export function spawnPlayer(terrain: Terrain): PlayerState {
   return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-shore.dx, -shore.dz));
 }
 
-export function createNewState(seed: number): GameState {
-  const terrain = getTerrain(seed);
-  const gen = getWorldGen(seed);
+export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): GameState {
+  const terrain = getTerrain(seed, biome);
+  const gen = getWorldGen(seed, biome);
   const rng = new Rng(seed ^ 0x3c6ef372);
   const sx = terrain.spawn.x;
   const sz = terrain.spawn.z;
   const state: GameState = {
     version: STATE_VERSION,
     seed,
+    ...(biome === DEFAULT_BIOME ? {} : { biome }),
     runId: makeRunId(),
     totalHours: START_HOURS,
     player: spawnPlayer(terrain),
@@ -225,18 +252,18 @@ export function createNewState(seed: number): GameState {
       if (p) state.animals.push(createAnimal(state.nextId++, species, p.x, p.z, rng, terrain));
     }
   };
-  populate('rabbit', SPECIES.rabbit.kind === 'prey' ? SPECIES.rabbit.population : 0, 22);
-  populate('deer', SPECIES.deer.kind === 'prey' ? SPECIES.deer.population : 0, 45);
-  populate('fish', SPECIES.fish.kind === 'prey' ? SPECIES.fish.population : 0, 0);
-  const targets = predatorTargets(1);
-  populate('wolf', targets.wolf, 100);
-  populate('bear', targets.bear, 110);
+  const b = biomeDef(biome);
+  for (const p of b.prey) populate(p.species, p.count, p.minDist);
+  const targets = b.predatorTargets(1);
+  for (const p of b.predators) populate(p.species, targets[p.species] ?? 0, p.minDist);
   state.rng = rng.s;
   return state;
 }
 
 export class Simulation {
   readonly state: GameState;
+  readonly biome: BiomeId;
+  readonly biomeDef: BiomeDef;
   readonly terrain: Terrain;
   readonly gen: WorldGen;
   readonly colliders = new ColliderIndex();
@@ -286,8 +313,11 @@ export class Simulation {
 
   constructor(state: GameState) {
     this.state = state;
-    this.terrain = getTerrain(state.seed);
-    this.gen = getWorldGen(state.seed);
+    this.biome = state.biome ?? DEFAULT_BIOME;
+    this.biomeDef = biomeDef(this.biome);
+    setDisplayBiome(this.biome);
+    this.terrain = getTerrain(state.seed, this.biome);
+    this.gen = getWorldGen(state.seed, this.biome);
     this.rng = new Rng(state.rng);
     this.wasNight = isNight(this.hour);
     this.buildColliders();
@@ -314,8 +344,8 @@ export class Simulation {
     this.refreshLitFires();
   }
 
-  static newGame(seed: number): Simulation {
-    return new Simulation(createNewState(seed));
+  static newGame(seed: number, biome: BiomeId = DEFAULT_BIOME): Simulation {
+    return new Simulation(createNewState(seed, biome));
   }
 
   // ------------------------------------------------------------------ accessors
@@ -367,6 +397,9 @@ export class Simulation {
     });
     gen.logs.forEach((l, i) => {
       this.colliders.add(makeCollider('log', i, box(l.x, l.z, l.length / 2, l.r, l.rot), box(l.x, l.z, l.length / 2 + 0.1, l.r + 0.1, l.rot)));
+    });
+    gen.cacti.forEach((c, i) => {
+      this.colliders.add(makeCollider('cactus', i, circle(c.x, c.z, c.r), circle(c.x, c.z, c.r + 0.5)));
     });
     gen.resources.forEach((r, i) => {
       this.colliders.add(makeCollider('resource', i, null, circle(r.x, r.z, RESOURCES[r.kind].blockRadius)));
@@ -579,8 +612,9 @@ export class Simulation {
   warmthTarget(): { target: number; rate: number } {
     const w = BALANCE.needs.warmth;
     const N = BALANCE.needs;
-    let target = ambientWarmth(this.hour);
-    let rate: number = N.warmthRatePerHour;
+    const bw = this.biomeDef.warmth;
+    let target = ambientWarmth(this.hour, bw);
+    let rate: number = target < this.state.needs.warmth ? bw.coolRate : bw.rate;
     const p = this.state.player;
     const fire = this.warmingFire();
     if (fire) {
@@ -668,7 +702,7 @@ export class Simulation {
       }
     }
     for (const cc of s.carcasses) {
-      const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, cc.x, cc.y + 0.3, cc.z, cc.species === 'bear' ? 1.1 : cc.species === 'deer' ? 0.9 : 0.6);
+      const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, cc.x, cc.y + 0.3, cc.z, CARCASS_HIT_RADIUS[cc.species] ?? 0.6);
       if (hitT >= 0 && hitT < bestT) {
         bestT = hitT;
         best = { kind: 'carcass', id: cc.id, dist: hitT };
@@ -720,7 +754,9 @@ export class Simulation {
         }
         if (s.activeTool === 'axe') return { name: def.name, action: 'Chop down', enabled: true };
         if (def.bark > 0 && s.activeTool === 'hands') {
-          return dyn.bark > 0 ? { name: def.name, action: 'Peel bark', enabled: true } : { name: def.name, action: 'Bark regrowing', enabled: false };
+          return dyn.bark > 0
+            ? { name: def.name, action: def.peelVerb ?? 'Peel bark', enabled: true }
+            : { name: def.name, action: def.peelRegrowing ?? 'Bark regrowing', enabled: false };
         }
         return { name: def.name, action: s.tools.includes('axe') ? 'Equip axe [2] to chop' : 'Needs an axe', enabled: false };
       }
@@ -737,7 +773,7 @@ export class Simulation {
       }
       case 'carcass': {
         const c = s.carcasses.find((d) => d.id === t.id);
-        return c ? { name: SPECIES[c.species].name, action: 'Butcher', enabled: true } : null;
+        return c ? { name: speciesName(c.species, this.biome), action: 'Butcher', enabled: true } : null;
       }
       case 'structure': {
         const st = s.structures.find((d) => d.id === t.id);
@@ -752,14 +788,21 @@ export class Simulation {
       case 'animal': {
         const a = s.animals.find((d) => d.id === t.id);
         if (!a) return null;
-        if (s.activeTool === 'rod') return { name: SPECIES[a.species].name, action: '', enabled: false };
+        const name = speciesName(a.species, this.biome);
+        if (s.activeTool === 'rod') return { name, action: '', enabled: false };
         const armed = s.activeTool !== 'hands' && s.activeTool !== 'bow';
-        return { name: SPECIES[a.species].name, action: armed ? 'Attack' : s.activeTool === 'bow' ? 'Shoot' : 'Punch', enabled: true };
+        return { name, action: armed ? 'Attack' : s.activeTool === 'bow' ? 'Shoot' : 'Punch', enabled: true };
       }
       case 'water': {
-        if (s.activeTool === 'rod') return { name: 'Lake', action: 'Hold to wind up a cast', enabled: true };
-        if (this.canteenFillAmount() > 0) return { name: 'Lake', action: 'Fill canteen', enabled: true };
-        return { name: 'Lake', action: 'Drink', enabled: s.needs.thirst < 99.5 };
+        const lake = this.terrain.lakeAt(t.x, t.z);
+        const name = waterName(lake, this.knowsAlkali);
+        if (lake && !isDrinkable(lake)) {
+          if (s.activeTool === 'rod') return { name, action: 'Nothing lives in it', enabled: false };
+          return this.knowsAlkali ? { name, action: 'Too salty to drink', enabled: false } : { name, action: 'Taste the water', enabled: true };
+        }
+        if (s.activeTool === 'rod') return { name, action: 'Hold to wind up a cast', enabled: true };
+        if (this.canteenFillAmount() > 0) return { name, action: 'Fill canteen', enabled: true };
+        return { name, action: 'Drink', enabled: s.needs.thirst < 99.5 };
       }
     }
   }
@@ -878,9 +921,11 @@ export class Simulation {
     this.wearTool('rod', 1);
   }
 
-  /** Lakes and ponds deep enough under the lure to hold fish. */
+  /** Lakes and ponds deep enough under the lure to hold fish (desert rock pools and alkali water have none). */
   fishableAt(x: number, z: number): boolean {
-    return this.terrain.inPlayBounds(x, z) && this.terrain.heightAt(x, z) < WATER_LEVEL - BALANCE.fishing.minDepth;
+    if (!this.terrain.inPlayBounds(x, z) || this.terrain.heightAt(x, z) >= WATER_LEVEL - BALANCE.fishing.minDepth) return false;
+    const lake = this.terrain.lakeAt(x, z);
+    return !lake || holdsFish(lake);
   }
 
   private updateFishing(dt: number): void {
@@ -899,7 +944,8 @@ export class Simulation {
       const water = this.fishableAt(f.x, f.z);
       this.emit({ type: 'lureLanded', x: f.x, z: f.z, water });
       if (!water) {
-        this.message('The lure landed on dry ground. Cast out over open water.', 'warn');
+        const barren = this.terrain.heightAt(f.x, f.z) < WATER_LEVEL && this.biome !== DEFAULT_BIOME;
+        this.message(barren ? 'No fish live in this pool. Trout only live in the spring.' : 'The lure landed on dry ground. Cast out over open water.', 'warn');
         this.fishing = null;
         return;
       }
@@ -1030,9 +1076,10 @@ export class Simulation {
     if (def.bark > 0 && s.activeTool === 'hands') {
       this.actionCooldown = BALANCE.gather.cooldown;
       if (dyn.bark <= 0) return;
-      const added = this.give('bark', 1, g.x, gy + 1.1, g.z, 'bark');
+      const added = this.give(def.peelItem ?? 'bark', 1, g.x, gy + 1.1, g.z, 'bark');
       if (added > 0) {
-        this.discoverForage('birch');
+        const entry = forageForTree(g.species);
+        if (entry) this.discoverForage(entry);
         dyn.bark -= 1;
         if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
         spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
@@ -1311,8 +1358,27 @@ export class Simulation {
     return Math.min(canteenRoom(this.state), roomFor(this.state.inventory, 'lakeWater'));
   }
 
+  /** Whether this player has tasted alkali water and now recognises it. */
+  get knowsAlkali(): boolean {
+    return (this.state.stats.events.alkaliTasted ?? 0) > 0;
+  }
+
   private useWater(): void {
     const s = this.state;
+    const t0 = this.target;
+    const lake = t0 && t0.kind === 'water' ? this.terrain.lakeAt(t0.x, t0.z) : null;
+    if (lake && !isDrinkable(lake)) {
+      this.actionCooldown = BALANCE.needs.handDrink.cooldown;
+      if (this.knowsAlkali) {
+        this.message('Alkali water: too salty to drink. Find a spring or a rock pool.', 'warn');
+        return;
+      }
+      applyFood(s.needs, { thirst: -BALANCE.water.alkaliTasteThirst });
+      s.stats.events.alkaliTasted = 1;
+      this.emit({ type: 'drank', byHand: true });
+      this.message('Bitter and salty: alkali water. Drinking it would only make you thirstier. A white crust around a pool gives it away; clear water waits in springs where cottonwoods grow and in rock pools on the slickrock.', 'warn');
+      return;
+    }
     const n = this.canteenFillAmount();
     if (n > 0) {
       this.actionCooldown = 0.5;
@@ -1592,8 +1658,8 @@ export class Simulation {
 
   maintainPopulation(): void {
     const s = this.state;
-    const counts: Record<SpeciesId, number> = { rabbit: 0, deer: 0, fish: 0, wolf: 0, bear: 0 };
-    for (const a of s.animals) counts[a.species]++;
+    const counts: Partial<Record<SpeciesId, number>> = {};
+    for (const a of s.animals) counts[a.species] = (counts[a.species] ?? 0) + 1;
     const p = s.player;
     const avoidPrey: AvoidPoint[] = [{ x: p.x, z: p.z, minDist: PREY_MIN_SPAWN_DIST }];
     const avoidPred: AvoidPoint[] = [{ x: p.x, z: p.z, minDist: PREDATOR_MIN_SPAWN_DIST }];
@@ -1602,16 +1668,15 @@ export class Simulation {
       avoidPred.push({ x: r.x, z: r.z, minDist: PREDATOR_MIN_SPAWN_DIST });
     }
     for (const st of s.structures) avoidPred.push({ x: st.x, z: st.z, minDist: 35 });
-    for (const id of ['rabbit', 'deer', 'fish'] as const) {
-      const def = SPECIES[id];
-      if (def.kind === 'prey' && counts[id] < def.population) {
-        const pt = findSpawnPoint(this.terrain, this.rng, id, id === 'fish' ? [] : avoidPrey);
+    for (const { species: id, count } of this.biomeDef.prey) {
+      if ((counts[id] ?? 0) < count) {
+        const pt = findSpawnPoint(this.terrain, this.rng, id, SPECIES[id].habitat === 'water' ? [] : avoidPrey);
         if (pt) s.animals.push(createAnimal(s.nextId++, id, pt.x, pt.z, this.rng, this.terrain));
       }
     }
-    const targets = predatorTargets(this.day);
-    for (const id of ['wolf', 'bear'] as const) {
-      if (counts[id] < targets[id]) {
+    const targets = this.biomeDef.predatorTargets(this.day);
+    for (const { species: id } of this.biomeDef.predators) {
+      if ((counts[id] ?? 0) < (targets[id] ?? 0)) {
         const pt = findSpawnPoint(this.terrain, this.rng, id, avoidPred);
         if (pt) s.animals.push(createAnimal(s.nextId++, id, pt.x, pt.z, this.rng, this.terrain));
       }
@@ -1648,7 +1713,7 @@ export class Simulation {
 
   craft(recipeId: string): CraftCheck {
     const recipe = RECIPE_BY_ID[recipeId];
-    if (!recipe) return { ok: false, reason: 'unknown' };
+    if (!recipe || !recipeOnMap(recipe, this.biome)) return { ok: false, reason: 'unknown' };
     if (recipe.output.kind === 'place') {
       const check = this.canCraft(recipeId);
       if (check.ok) this.beginPlacement(recipeId);
@@ -2227,7 +2292,7 @@ export class Simulation {
   currentObjective(): { title: string; hint: string; needs: ObjectiveNeed[] } | null {
     const o = OBJECTIVES[this.state.objective];
     if (!o) return null;
-    return { title: o.title, hint: o.hint, needs: o.needs(this.state) };
+    return { ...objectiveText(o, this.biome), needs: o.needs(this.state) };
   }
 
   capacity(): number {
