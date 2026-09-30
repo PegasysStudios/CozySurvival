@@ -78,7 +78,6 @@ export class DevPanel {
         host.toast(a ? `Dev: spawned a ${sp}` : 'Dev: no spot found');
       })));
     };
-    renderSpawns();
     this.onOpen = renderSpawns;
     section('Player',
       button('Refill needs', 'dev-btn', () => {

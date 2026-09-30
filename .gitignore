@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 terminals/
 agent-tools/
+smoke-shots/

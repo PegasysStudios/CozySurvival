@@ -301,8 +301,11 @@ export class Game {
     img.alt = '';
     img.src = url;
     canvas.after(img);
-    requestAnimationFrame(() => requestAnimationFrame(() => img.classList.add('out')));
-    setTimeout(() => img.remove(), MAP_FADE_MS + 200);
+    // Building the next world blocks for a moment; the fade starts once it has drawn.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      img.classList.add('out');
+      setTimeout(() => img.remove(), MAP_FADE_MS + 200);
+    }));
   }
 
   private continueRun(): void {

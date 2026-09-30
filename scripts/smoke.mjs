@@ -1,16 +1,20 @@
 // Headless boot smoke check: builds the app, serves dist/, loads it in Chrome
 // (SwiftShader WebGL), starts a run, walks, opens crafting, plays a two-tab
 // multiplayer session over BroadcastChannel (?net=local), and fails on any
-// console error or uncaught exception.
+// console error or uncaught exception. It also switches the title screen to the
+// desert map, plays it, and saves title and first-person screenshots of both maps.
 //
 //   npm run smoke                 build + check
+//   SMOKE_SHOTS=/some/dir npm run smoke   where the screenshots go (default smoke-shots/)
 //   SMOKE_NO_BUILD=1 npm run smoke   reuse the existing dist/
 //   CHROME_PATH=/path/to/chrome npm run smoke
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { build, loadEnv, preview } from 'vite';
 import puppeteer from 'puppeteer-core';
 
 const PORT = Number(process.env.SMOKE_PORT ?? 5299);
+const SHOTS_DIR = resolve(process.env.SMOKE_SHOTS ?? 'smoke-shots');
 const CHROME_CANDIDATES = [
   process.env.CHROME_PATH,
   '/usr/local/bin/google-chrome',
@@ -28,6 +32,18 @@ const problems = [];
 function check(name, ok, detail = '') {
   checks.push({ name, ok, detail });
   if (!ok) problems.push(`${name}${detail ? `: ${detail}` : ''}`);
+}
+
+/** Title cards slide in with a CSS animation that only runs once frames render; clicks during it can miss. */
+const settleTitle = (page) =>
+  page.waitForFunction(() => document.getAnimations().every((a) => a.animationName !== 'rise' || a.playState === 'finished'), { timeout: 20_000, polling: 100 });
+
+const shots = [];
+async function shoot(page, name) {
+  mkdirSync(SHOTS_DIR, { recursive: true });
+  const path = join(SHOTS_DIR, `${name}.png`);
+  await page.screenshot({ path });
+  shots.push(path);
 }
 
 async function main() {
@@ -77,6 +93,14 @@ async function main() {
 
     await sleep(1200);
     check('title screen shown', await page.$eval('.title-screen', (e) => e.classList.contains('show')));
+    const picker = await page.evaluate(() => ({
+      arrows: document.querySelectorAll('.title-screen .title-row > .map-arrow').length,
+      name: document.querySelector('.title-screen .map-name')?.textContent ?? '',
+      biome: window.__cozy.game.sim.biome,
+    }));
+    check('title shows the map picker on the Pacific Northwest', picker.arrows === 2 && picker.name === 'Pacific Northwest' && picker.biome === 'pnw', JSON.stringify(picker));
+    await settleTitle(page);
+    await shoot(page, 'title-pnw');
     const env = loadEnv('production', process.cwd(), 'VITE_');
     const mpConfigured = !!(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_PUBLISHABLE_KEY);
     const mpTitle = await page.evaluate(() => {
@@ -116,6 +140,7 @@ async function main() {
     const moved = Math.hypot(after.x - before.x, after.z - before.z);
     check('player walks and sprints', moved > 1, `moved ${moved.toFixed(2)} m`);
     check('sprinting spends energy', after.energy < before.energy, `${before.energy.toFixed(2)} → ${after.energy.toFixed(2)}`);
+    await shoot(page, 'gameplay-pnw');
 
     await page.mouse.click(640, 360);
     await sleep(300);
@@ -389,6 +414,89 @@ async function main() {
       JSON.stringify({ confirmText, seed: [beforeScratch.seed, scratch.seed], best: scratch.best, deaths: scratch.deaths }),
     );
 
+    // Desert: pick the map on the title screen, play it, and come back to the Pacific Northwest run.
+    // Players reach the title through the pause menu, which has already released the pointer lock.
+    const quit = () => page.evaluate(() => {
+      const g = window.__cozy.game;
+      g.expectUnlock = true;
+      document.exitPointerLock();
+      g.input.locked = false;
+      g.quitToTitle();
+    });
+    const titleState = () => page.evaluate(() => {
+      const g = window.__cozy.game;
+      return {
+        mode: g.mode, run: g.run.biome, biome: g.sim.biome, seed: g.sim.state.seed, runId: g.sim.state.runId,
+        name: document.querySelector('.title-screen .map-name')?.textContent ?? '',
+        tagline: document.querySelector('.title-screen .tagline')?.textContent ?? '',
+        primary: document.querySelector('.title-screen .btn.primary')?.textContent ?? '',
+        fading: !!document.querySelector('.map-fade'),
+      };
+    });
+    await quit();
+    await settleTitle(page);
+    const pnwBefore = await titleState();
+    const pnwSave = await page.evaluate(() => localStorage.getItem('cozysurvival.v1.save'));
+    await page.evaluate(() => {
+      window.__fadeSeen = false;
+      new MutationObserver(() => {
+        if (document.querySelector('.map-fade')) window.__fadeSeen = true;
+      }).observe(document.getElementById('app') ?? document.body, { childList: true, subtree: true });
+    });
+    await page.click('.title-screen .map-arrow.next');
+    await page.waitForFunction(() => window.__cozy.game.run.biome === 'desert' && !document.querySelector('.map-fade'), { timeout: 20_000, polling: 100 }).catch(() => {});
+    await settleTitle(page);
+    const fadeStarted = await page.evaluate(() => window.__fadeSeen);
+    const desertTitle = await titleState();
+    check(
+      'the right arrow cross-fades the title to the desert map',
+      fadeStarted && !desertTitle.fading && desertTitle.mode === 'title' && desertTitle.run === 'desert' && desertTitle.biome === 'desert' && desertTitle.name === 'Arizona Desert' && /^Stranded in the Arizona desert/.test(desertTitle.tagline) && /Start surviving/.test(desertTitle.primary),
+      JSON.stringify({ fadeStarted, ...desertTitle }),
+    );
+    await shoot(page, 'title-desert');
+    await page.click('.title-screen .btn.primary');
+    await sleep(500);
+    await lock();
+    const desertRun = await page.evaluate(() => {
+      const g = window.__cozy.game;
+      return { mode: g.mode, biome: g.sim.biome, day: g.sim.day, lakes: g.sim.terrain.lakes.map((l) => l.kind), saved: !!localStorage.getItem('cozysurvival.v1.save.desert'), pnwSave: localStorage.getItem('cozysurvival.v1.save') };
+    });
+    check(
+      'a new desert run starts with its own save and leaves the forest save alone',
+      desertRun.mode === 'playing' && desertRun.biome === 'desert' && desertRun.day === 1 && desertRun.lakes.includes('spring') && desertRun.lakes.includes('alkali') && desertRun.saved && desertRun.pnwSave === pnwSave,
+      JSON.stringify({ ...desertRun, pnwSave: desertRun.pnwSave === pnwSave }),
+    );
+    await page.keyboard.down('KeyW');
+    await sleep(1200);
+    await page.keyboard.up('KeyW');
+    await waitFrames(4);
+    await shoot(page, 'gameplay-desert');
+    await lock();
+    await page.keyboard.press('KeyC');
+    await sleep(300);
+    const desertKeys = await page.evaluate(() => [...document.querySelectorAll('.tile.recipe')].map((t) => t.dataset.key));
+    check(
+      'desert crafting offers the desert dishes and none of the forest-only ones',
+      desertKeys.includes('r:desertSkewer') && desertKeys.includes('r:chiaFresca') && desertKeys.includes('r:campfire') && !desertKeys.includes('r:skewer') && !desertKeys.includes('r:stew'),
+      desertKeys.join(','),
+    );
+    await page.keyboard.press('Escape');
+    await sleep(200);
+    await quit();
+    await settleTitle(page);
+    await page.keyboard.press('ArrowLeft');
+    await page.waitForFunction(() => window.__cozy.game.sim.biome === 'pnw' && !document.querySelector('.map-fade'), { timeout: 20_000, polling: 100 }).catch(() => {});
+    const backToPnw = await titleState();
+    check(
+      'ArrowLeft goes back to the forest, whose run still continues',
+      backToPnw.biome === 'pnw' && backToPnw.name === 'Pacific Northwest' && backToPnw.seed === pnwBefore.seed && backToPnw.runId === pnwBefore.runId && /Continue/.test(backToPnw.primary),
+      JSON.stringify(backToPnw),
+    );
+    await page.keyboard.press('ArrowRight');
+    await page.waitForFunction(() => window.__cozy.game.sim.biome === 'desert' && !document.querySelector('.map-fade'), { timeout: 20_000, polling: 100 }).catch(() => {});
+    const desertAgain = await titleState();
+    check('the desert run can be continued too', desertAgain.biome === 'desert' && /Continue/.test(desertAgain.primary), JSON.stringify(desertAgain));
+
     await collectRuntimeErrors();
     await page.close();
 
@@ -422,22 +530,22 @@ async function main() {
     await hostTab.click('.mp-section .mp-create');
     await fillForm(hostTab, 'Ana', 'Smoke camp');
     await hostTab.waitForFunction(() => window.__cozy.game.mp?.role === 'host' && window.__cozy.game.mode === 'playing', { timeout: 20_000, polling: 250 });
-    const hostWorld = await hostTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, name: window.__cozy.game.mp.profile.name }));
-    check('host creates a server with a brand-new world from the menu', hostWorld.name === 'Ana', JSON.stringify(hostWorld));
+    const hostWorld = await hostTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, biome: window.__cozy.game.sim.biome, name: window.__cozy.game.mp.profile.name }));
+    check('host creates a server with a brand-new world on the selected map', hostWorld.name === 'Ana' && hostWorld.biome === 'desert', JSON.stringify(hostWorld));
 
     await guestTab.bringToFront();
     const listed = await guestTab
-      .waitForFunction(() => [...document.querySelectorAll('.mp-server')].some((r) => r.textContent.includes('Smoke camp')), { timeout: 20_000, polling: 250 })
+      .waitForFunction(() => [...document.querySelectorAll('.mp-server')].some((r) => r.textContent.includes('Smoke camp') && r.textContent.includes('Arizona Desert')), { timeout: 20_000, polling: 250 })
       .then(() => true, () => false);
-    check('the server shows up in the other tab\'s server list', listed);
+    check('the server shows up in the other tab\'s server list with its map', listed);
     if (listed) {
       await guestTab.evaluate(() => [...document.querySelectorAll('.mp-server')].find((r) => r.textContent.includes('Smoke camp')).querySelector('.mp-join').click());
       await fillForm(guestTab, 'Ben');
       const joined = await guestTab
         .waitForFunction(() => window.__cozy.game.mp?.role === 'guest' && window.__cozy.game.mode === 'playing', { timeout: 30_000, polling: 250 })
         .then(() => true, () => false);
-      const guestWorld = await guestTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, trees: window.__cozy.game.sim.state.trees.length }));
-      check('guest joins from the list and gets the host\'s world', joined && guestWorld.seed === hostWorld.seed, JSON.stringify({ joined, guestWorld, host: hostWorld.seed }));
+      const guestWorld = await guestTab.evaluate(() => ({ seed: window.__cozy.game.sim.state.seed, biome: window.__cozy.game.sim.biome, trees: window.__cozy.game.sim.state.trees.length }));
+      check('guest joins from the list and gets the host\'s world and map', joined && guestWorld.seed === hostWorld.seed && guestWorld.biome === hostWorld.biome, JSON.stringify({ joined, guestWorld, host: hostWorld }));
 
       const seeEach = async (p, other) => {
         await p.bringToFront();
@@ -496,6 +604,9 @@ async function main() {
     check('no runtime errors', runtimeErrors.length === 0, runtimeErrors.join(' | '));
   } finally {
     check('no console errors', consoleErrors.length === 0, consoleErrors.slice(0, 8).join(' | '));
+    const missing = ['title-pnw', 'title-desert', 'gameplay-pnw', 'gameplay-desert'].map((n) => join(SHOTS_DIR, `${n}.png`)).filter((f) => !shots.includes(f) || !existsSync(f) || statSync(f).size < 10_000);
+    check('screenshots saved', missing.length === 0, `missing ${missing.join(', ')}`);
+    for (const f of shots) console.log(`  screenshot: ${f}`);
     await browser.close();
     await new Promise((r) => server.httpServer.close(r));
   }
