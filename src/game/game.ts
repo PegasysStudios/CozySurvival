@@ -68,6 +68,7 @@ const FUR: Partial<Record<SpeciesId, string>> = {
 };
 
 const MAP_FADE_MS = 900;
+const JAVELINA_TIP = 'Javelinas guard their patch and charge anyone who comes in. Sprint away, or fight back with a weapon.';
 
 /** Wires the simulation to rendering, audio, UI, input and persistence. */
 export class Game {
@@ -887,6 +888,8 @@ export class Game {
         const fwd = -Math.sin(this.yaw) * dx - Math.cos(this.yaw) * dz;
         const right = Math.cos(this.yaw) * dx - Math.sin(this.yaw) * dz;
         this.hud.flashHurt(e.amount, e.source === 'dev' ? null : Math.atan2(right, fwd));
+        // Guests never see the host's predatorAlert, so the first charge that lands teaches them too.
+        if (e.source === 'javelina') this.throttledToast('javelina', JAVELINA_TIP, 'warn', 25);
         break;
       }
       case 'death':
@@ -933,7 +936,6 @@ export class Game {
         break;
       case 'animalFlee':
         if (e.species === 'deer') this.throttledToast('deer', 'The deer bolted. They spook from far away; try a bow.', 'info', 60);
-        else if (e.species === 'javelina') this.throttledToast('javelina', 'The javelina scattered. They see poorly but smell you from far off; try a bow.', 'info', 60);
         break;
       case 'rattle': {
         const k = clamp(1 - Math.hypot(e.x - p.x, e.z - p.z) / 20, 0.3, 1);
@@ -950,6 +952,9 @@ export class Game {
         } else if (e.species === 'cougar') {
           this.sfx('growl', k * 0.6);
           this.throttledToast('cougar', 'A mountain lion is stalking you from cover. Face it, stand by your fire or raise a torch.', 'warn', 25);
+        } else if (e.species === 'javelina') {
+          this.sfx('growl', k * 0.5);
+          this.throttledToast('javelina', JAVELINA_TIP, 'warn', 25);
         } else {
           this.sfx('growl', k);
           this.throttledToast('bear', 'A black bear rears up! Back away slowly or keep a fire between you.', 'warn', 25);

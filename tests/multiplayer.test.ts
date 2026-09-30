@@ -17,6 +17,9 @@ import { BIN_UPGRADES, SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgra
 import { F_WORK } from '../src/net/protocol';
 import type { Collider } from '../src/sim/colliders';
 import { RESOURCES } from '../src/data/resources';
+import { SPECIES, type PreySpecies } from '../src/data/species';
+import { createAnimal } from '../src/sim/animals';
+import { Rng } from '../src/core/rng';
 
 const DT = 1 / 20;
 
@@ -724,5 +727,44 @@ describe('multiplayer: round 9', () => {
     b.netOut.push({ k: 'scorpion', x: hp.x + 90, z: hp.z });
     w.pump(0.3);
     expect(host.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
+  });
+
+  it('a javelina charges a guest who walks into its ground, and turns on them when they fight back', async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    const host = w.host.sim;
+    mortal.add(b);
+    const hp = host.state.player;
+    const t = host.terrain;
+    let spot: { x: number; z: number } | null = null;
+    for (let k = 0; k < 64 && !spot; k++) {
+      const ang = (k / 64) * Math.PI * 2;
+      const x = hp.x + Math.cos(ang) * 40;
+      const z = hp.z + Math.sin(ang) * 40;
+      const ok = [0, 3, 6].every((dx) => t.heightAt(x + dx, z) > 0.5 && t.slopeAt(x + dx, z) < 0.3);
+      if (ok) spot = { x, z };
+    }
+    expect(spot).not.toBeNull();
+    const jav = createAnimal(host.state.nextId++, 'javelina', spot!.x, spot!.z, new Rng(9), t);
+    host.state.animals.push(jav);
+    teleport(b, spot!.x + 6, spot!.z);
+    w.pump(0.6);
+    expect(['warn', 'chase']).toContain(b.state.animals.find((a) => a.id === jav.id)?.mode);
+    w.pump(2.5);
+    expect(b.state.lastDamage).toBe('javelina');
+    expect(b.state.needs.health).toBeLessThan(100);
+    expect(host.state.lastDamage).toBeNull();
+
+    b.state.tools.push('axe');
+    b.state.activeTool = 'axe';
+    b.perform({ kind: 'animal', id: jav.id, dist: 1 });
+    w.pump(0.3);
+    expect(jav.health).toBeLessThan((SPECIES.javelina as PreySpecies).maxHealth);
+    expect(['chase', 'reposition']).toContain(jav.mode);
+    expect(jav.foe).toBeUndefined();
   });
 });

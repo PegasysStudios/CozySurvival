@@ -346,6 +346,9 @@ export class Simulation {
       playerDeterrent: false,
       litFires: this.litFires,
       night: false,
+      get animals() {
+        return self.state.animals;
+      },
       events: this.events,
       hurtPlayer(amount, source, fromX, fromZ) {
         if (self.aiTarget) self.remoteHits.push({ pid: self.aiTarget.pid, amount, source, fromX, fromZ });

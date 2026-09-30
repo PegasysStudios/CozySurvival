@@ -169,6 +169,8 @@ export interface AnimalState {
   hurt: number;
   /** Accumulated dt for low-frequency updates when far from the player. */
   lod: number;
+  /** Id of the animal this one is charging (a javelina) or running from; unset means the player. */
+  foe?: number;
 }
 
 export type DamageSource = 'starvation' | 'dehydration' | 'cold' | 'wolf' | 'bear' | 'cougar' | 'snake' | 'spines' | 'scorpion' | 'javelina' | 'dev';

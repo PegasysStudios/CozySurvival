@@ -265,6 +265,7 @@ export function animalEnv(terrain: Terrain, overrides: Partial<AnimalEnv> = {}):
     playerDeterrent: false,
     litFires: [],
     night: false,
+    animals: [],
     events: [],
     hurtPlayer(amount, source) {
       hurts.push({ amount, source });

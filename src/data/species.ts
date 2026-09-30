@@ -36,6 +36,29 @@ export interface PreySpecies extends BaseSpecies {
    * anyone closer than `radius`, at most every `cooldown` seconds. It only slithers off once hurt.
    */
   strike?: { radius: number; damage: number; cooldown: number };
+  /** Defends the ground around its home instead of bolting (javelinas); see `Territory`. */
+  territory?: Territory;
+}
+
+/**
+ * A territorial animal watches anyone (player or animal) who comes within `radius` of its home and within `sight` of
+ * it, clacks its teeth for `warnTime`, then charges at `chargeSpeed` and butts players for `damage` (driving animals
+ * off) at most every `cooldown` seconds. It gives up once the intruder is `leash` times `radius` from home, or after
+ * `maxCharge` seconds, and walks back. Nearby herd-mates within `rally` join a charge at a player. Hit down to
+ * `fleeFrac` of its health it bolts; before that, hitting it only makes it charge you.
+ */
+export interface Territory {
+  radius: number;
+  sight: number;
+  warnTime: number;
+  chargeSpeed: number;
+  range: number;
+  damage: number;
+  cooldown: number;
+  leash: number;
+  maxCharge: number;
+  rally: number;
+  fleeFrac: number;
 }
 
 export interface PredatorSpecies extends BaseSpecies {
@@ -105,9 +128,14 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
   javelina: {
     id: 'javelina', name: 'Javelina', kind: 'prey', habitat: 'land',
     maxHealth: 3, radius: 0.42, hitHeight: 0.42, hitRadius: 0.55,
-    walkSpeed: 1.0, runSpeed: 7.2, turnRate: 5, wanderRadius: 18,
-    // Poor eyesight: they notice you late, then scatter.
+    // Every javelina speed, even fleeing hurt (x1.1), stays under the player's sprint so you can always get away.
+    walkSpeed: 1.0, runSpeed: 5.8, turnRate: 5, wanderRadius: 10,
+    // Poor eyesight: they notice you late.
     alertRadius: 20, fearRadius: 12, calmRadius: 30, alertTime: [1.4, 2.8],
+    territory: {
+      radius: 14, sight: 12, warnTime: 0.9, chargeSpeed: 6.0, range: 1.25, damage: 8, cooldown: 1.5,
+      leash: 1.6, maxCharge: 14, rally: 16, fleeFrac: 0.4,
+    },
     drops: [{ item: 'rawMeat', count: 3 }, { item: 'hide', count: 2 }],
   },
   quail: {

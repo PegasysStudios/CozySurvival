@@ -294,6 +294,7 @@ export class EntityView {
     if (a.mode === 'attack') rearTarget = a.species === 'bear' ? 0.5 : 0.25;
     const pest = def.kind === 'pest';
     if (pest && a.mode === 'retreat') crouchTarget = BURROW_DEPTH / 0.1;
+    if (a.species === 'javelina' && a.mode === 'chase') headTarget = 0.35;
     v.headPitch = damp(v.headPitch, headTarget, 5, dt);
     v.rear = damp(v.rear, rearTarget, 6, dt);
     v.crouch = damp(v.crouch, crouchTarget, 4, dt);

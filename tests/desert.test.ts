@@ -327,7 +327,7 @@ describe('desert wildlife', () => {
   });
 
   it('lizards, quail and jackrabbits bolt like the hare', () => {
-    for (const sp of ['lizard', 'quail', 'jackrabbit', 'roadrunner', 'javelina'] as SpeciesId[]) {
+    for (const sp of ['lizard', 'quail', 'jackrabbit', 'roadrunner'] as SpeciesId[]) {
       const a = animal(sp, 30);
       const env = animalEnv(flat, { playerX: 0, playerZ: 0 });
       const modes = tick(a, env, 12, () => (env.playerX += 0.1));
