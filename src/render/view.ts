@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { smoothstep } from '../core/math';
+import type { TreeSpecies } from '../data/resources';
 import type { Simulation } from '../sim/simulation';
 import { AvatarLayer } from './avatars';
 import { EntityView } from './entities';
@@ -14,6 +15,9 @@ import { ViewModel, type ViewModelInput } from './viewmodel';
 import { WaterView } from './water';
 
 const SHADOW_EXTENT = 42;
+const LEAF_COLOR: Partial<Record<TreeSpecies, string>> = {
+  joshua: '#8a9a48', mesquite: '#7a9040', cottonwood: '#7aa844', juniper: '#6a8466', pinyon: '#4a6a3a', ponderosa: '#4f7a3c',
+};
 const SHADOW_MAP = 2048;
 
 export interface CameraPose {
@@ -42,6 +46,7 @@ export class GameView {
   private readonly fog = new THREE.Fog('#c6dae2', 35, 210);
   private readonly natureMats = makeNatureMaterials();
   private seed = -1;
+  private biome = '';
   private terrainMesh: THREE.Mesh | null = null;
   private water: WaterView | null = null;
   private sky: SkyView | null = null;
@@ -98,18 +103,20 @@ export class GameView {
 
   /** Build (or rebuild) the world for a simulation. Static terrain is reused when the seed is unchanged. */
   setWorld(sim: Simulation): void {
-    if (sim.state.seed !== this.seed) {
+    if (sim.state.seed !== this.seed || sim.biome !== this.biome) {
       this.disposeStatic();
       this.seed = sim.state.seed;
+      this.biome = sim.biome;
+      this.dayNight.setBiome(sim.biome);
       this.terrainMesh = buildTerrainMesh(sim.terrain);
       this.water = new WaterView(sim.terrain);
-      this.sky = new SkyView(sim.state.seed);
+      this.sky = new SkyView(sim.state.seed, sim.biome === 'desert' ? 5 : 16);
       this.scene.add(this.terrainMesh, this.water.group, this.sky.group);
     }
     this.disposeDynamic();
     this.nature = new NatureView(sim.terrain, sim.gen, this.natureMats);
-    this.nature.onImpact = (x, y, z, dx, dz) => {
-      this.effects.leaves(x, y + 1, z, '#4f7a3c', 26, 4);
+    this.nature.onImpact = (x, y, z, dx, dz, species) => {
+      this.effects.leaves(x, y + 1, z, LEAF_COLOR[species] ?? '#4f7a3c', 26, 4);
       this.effects.dust(x - dx * 2, y, z - dz * 2, 18, 4);
     };
     this.entities = new EntityView(sim.terrain);
@@ -208,7 +215,7 @@ export class GameView {
       }
     }
     this.fireflyT -= dt;
-    if (dn.night > 0.6 && this.fireflyT <= 0) {
+    if (dn.night > 0.6 && this.fireflyT <= 0 && this.biome !== 'desert') {
       this.fireflyT = 0.12;
       const a = Math.random() * Math.PI * 2;
       const r = 4 + Math.random() * 22;

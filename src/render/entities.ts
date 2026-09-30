@@ -29,8 +29,15 @@ interface StructureView {
   z: number;
 }
 
-const STRIDE: Record<SpeciesId, number> = { rabbit: 3.4, deer: 2.3, fish: 0, wolf: 2.7, bear: 2.1 };
-const PIVOT_Y: Record<SpeciesId, number> = { rabbit: 0.15, deer: 0.95, fish: 0, wolf: 0.6, bear: 0.62 };
+const STRIDE: Record<SpeciesId, number> = {
+  rabbit: 3.4, deer: 2.3, fish: 0, wolf: 2.7, bear: 2.1,
+  jackrabbit: 3.0, javelina: 3.6, quail: 7.5, roadrunner: 5.2, lizard: 9, snake: 3.2, cougar: 2.5,
+};
+const PIVOT_Y: Record<SpeciesId, number> = {
+  rabbit: 0.15, deer: 0.95, fish: 0, wolf: 0.6, bear: 0.62,
+  jackrabbit: 0.2, javelina: 0.3, quail: 0.07, roadrunner: 0.2, lizard: 0.05, snake: 0.045, cougar: 0.58,
+};
+const HOPPERS = new Set<SpeciesId>(['rabbit', 'jackrabbit']);
 const VIEW_DIST = 110;
 const FISH_VIEW = 45;
 const FIRE_LIGHTS = 2;
@@ -262,9 +269,13 @@ export class EntityView {
     v.phase += dt * speed * STRIDE[a.species];
     const moveK = Math.min(1, speed / Math.max(0.5, def.walkSpeed));
     const amp = Math.min(0.75, 0.25 + speed * 0.08) * moveK;
-    if (a.species === 'rabbit') {
+    if (v.rig.chain) {
+      this.poseSnake(v, a, dt, time);
+      return;
+    }
+    if (HOPPERS.has(a.species)) {
       const hop = Math.max(0, Math.sin(v.phase)) * Math.min(1, speed / 1.5);
-      v.rig.pivot.position.y = 0.15 + hop * (speed > 3 ? 0.22 : 0.08);
+      v.rig.pivot.position.y = PIVOT_Y[a.species] + hop * (speed > 3 ? 0.22 : 0.08);
       for (let i = 0; i < v.rig.legs.length; i++) v.rig.legs[i].mesh.rotation.x = (i < 2 ? -1 : 1) * Math.cos(v.phase) * 0.7 * moveK;
     } else {
       for (const l of v.rig.legs) l.mesh.rotation.x = Math.sin(v.phase + l.phase) * amp;
@@ -285,10 +296,41 @@ export class EntityView {
     v.rig.head.rotation.x = v.headPitch;
     const rearAngle = a.species === 'bear' ? -0.95 : -0.35;
     v.rig.pivot.rotation.x = v.rear * rearAngle;
-    if (a.species !== 'rabbit') v.rig.pivot.position.y = PIVOT_Y[a.species] - v.crouch * 0.1;
+    if (!HOPPERS.has(a.species)) v.rig.pivot.position.y = PIVOT_Y[a.species] - v.crouch * 0.1;
     if (v.rig.tail) v.rig.tail.rotation.x = 0.3 + Math.sin(time * 3 + a.id) * 0.08 + (a.mode === 'flee' ? -0.8 : 0);
     const hurt = a.hurt > 0 ? Math.sin((0.35 - a.hurt) * 30) * a.hurt * 0.4 : 0;
     root.scale.set(1 + hurt, 1 - hurt, 1 + hurt);
+  }
+
+  /**
+   * A snake's segments are chained head to tail: travelling S-waves while it moves, a tight coil with the head raised
+   * and the rattle buzzing while it is alert.
+   */
+  private poseSnake(v: AnimalView, a: AnimalState, dt: number, time: number): void {
+    const rig = v.rig;
+    const coiled = a.mode === 'alert' ? 1 : 0;
+    v.crouch = damp(v.crouch, coiled, 4, dt);
+    v.phase += dt * (1.2 + a.speed * 5);
+    const wave = 0.18 + Math.min(1, a.speed) * 0.32;
+    let x = 0;
+    let z = 0;
+    let heading = 0;
+    for (let i = 0; i < rig.legs.length; i++) {
+      const seg = rig.legs[i];
+      const slither = Math.sin(v.phase - seg.phase) * wave;
+      const turn = i === 0 ? slither : slither - Math.sin(v.phase - rig.legs[i - 1].phase) * wave;
+      heading += turn * (1 - v.crouch) + (i === 0 ? 0.6 : 0.95) * v.crouch;
+      seg.mesh.position.set(x, 0, z);
+      seg.mesh.rotation.set(0, heading, i === rig.legs.length - 1 ? Math.sin(time * 60) * 0.35 * v.crouch : 0);
+      x -= Math.sin(heading) * rig.chain;
+      z -= Math.cos(heading) * rig.chain;
+    }
+    rig.pivot.position.y = PIVOT_Y.snake;
+    rig.head.position.y = 0.005 + v.crouch * 0.16;
+    rig.head.rotation.x = -v.crouch * 0.3;
+    rig.head.rotation.y = Math.sin(v.phase) * 0.2 * (1 - v.crouch);
+    const hurt = a.hurt > 0 ? Math.sin((0.35 - a.hurt) * 30) * a.hurt * 0.4 : 0;
+    rig.root.scale.set(1 + hurt, 1 - hurt, 1 + hurt);
   }
 
   dispose(): void {

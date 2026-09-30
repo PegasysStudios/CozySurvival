@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
+import type { BiomeId } from '../data/biomes';
 import { cloudGeometry } from './models';
 
 interface Key {
@@ -30,9 +31,23 @@ const KEYS: Key[] = [
   { h: 24, top: '#070b1c', horizon: '#18203c', sun: '#8ea4d8', sunI: 0.38, hemiSky: '#34487a', hemiGround: '#141820', hemiI: 0.5, fog: '#131a2e' },
 ];
 
+/** Dry desert air: a deeper blue sky, a warm dusty horizon, red ground bounce light, and harsher midday sun. */
+const DESERT_KEYS: Key[] = KEYS.map((k) => {
+  const day: Partial<Record<number, Partial<Key>>> = {
+    6.4: { horizon: '#f5a36a', hemiGround: '#6a4530', fog: '#e0aa82' },
+    8: { top: '#4a8fd8', horizon: '#e6dccb', sunI: 2.5, hemiGround: '#8a5a3e', fog: '#d8cbb4' },
+    12: { top: '#3f85d6', horizon: '#e9dfcc', sun: '#fffaf0', sunI: 2.95, hemiSky: '#c4dcf2', hemiGround: '#8f5e42', fog: '#dccfb8' },
+    16: { top: '#4a8ad4', horizon: '#eedcc2', sunI: 2.65, hemiGround: '#8a5a3e', fog: '#e0cdb0' },
+    18.4: { horizon: '#ffb070', hemiGround: '#6a4530', fog: '#eab488' },
+    19.7: { horizon: '#ee7a58', fog: '#a86e62' },
+  };
+  return { ...k, ...day[k.h] };
+});
+
 type ColorKey = 'top' | 'horizon' | 'sun' | 'hemiSky' | 'hemiGround' | 'fog';
 const COLOR_KEYS: ColorKey[] = ['top', 'horizon', 'sun', 'hemiSky', 'hemiGround', 'fog'];
-const PARSED = KEYS.map((k) => Object.fromEntries(COLOR_KEYS.map((c) => [c, new THREE.Color(k[c])])) as Record<ColorKey, THREE.Color>);
+const parse = (keys: Key[]) => keys.map((k) => Object.fromEntries(COLOR_KEYS.map((c) => [c, new THREE.Color(k[c])])) as Record<ColorKey, THREE.Color>);
+const PALETTES = { pnw: { keys: KEYS, parsed: parse(KEYS) }, desert: { keys: DESERT_KEYS, parsed: parse(DESERT_KEYS) } };
 
 export class DayNight {
   readonly top = new THREE.Color();
@@ -49,8 +64,15 @@ export class DayNight {
   readonly moonDir = new THREE.Vector3();
   /** Direction toward whichever body lights the scene. */
   readonly lightDir = new THREE.Vector3();
+  private palette = PALETTES.pnw;
+
+  setBiome(biome: BiomeId): void {
+    this.palette = PALETTES[biome];
+  }
 
   evaluate(hour: number): void {
+    const KEYS = this.palette.keys;
+    const PARSED = this.palette.parsed;
     let i = 0;
     while (i < KEYS.length - 2 && hour >= KEYS[i + 1].h) i++;
     const a = KEYS[i];
@@ -145,7 +167,7 @@ export class SkyView {
   private readonly cloudMat: THREE.MeshLambertMaterial;
   private readonly cloudBase: { x: number; z: number; speed: number }[] = [];
 
-  constructor(seed: number) {
+  constructor(seed: number, clouds = 16) {
     this.skyMat = new THREE.ShaderMaterial({
       vertexShader: skyVertex,
       fragmentShader: skyFragment,
@@ -200,7 +222,7 @@ export class SkyView {
     this.group.add(stars);
 
     this.cloudMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true, fog: false, transparent: true, opacity: 0.92, emissive: new THREE.Color('#000000') });
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < clouds; i++) {
       const m = new THREE.Mesh(cloudGeometry(300 + i), this.cloudMat);
       const a = rng.range(0, Math.PI * 2);
       const r = rng.range(70, 250);
