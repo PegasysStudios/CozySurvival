@@ -10,14 +10,15 @@ import { LocalTransport, MemoryHub } from '../src/net/transport';
 import { IDLE_INPUT, Simulation, spawnPlayer } from '../src/sim/simulation';
 import { hourOf } from '../src/sim/time';
 import { countItem } from '../src/sim/inventory';
-import { give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
+import { drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
+import { dayOneLimit } from './setup';
 import type { ItemId } from '../src/data/items';
 import { killKey, OBJECTIVES } from '../src/data/objectives';
 import { BIN_UPGRADES, SHELTER_UPGRADES, TOOL_UPGRADES } from '../src/data/upgrades';
 import { F_WORK } from '../src/net/protocol';
 import type { Collider } from '../src/sim/colliders';
 import { RESOURCES } from '../src/data/resources';
-import { SPECIES, type PreySpecies } from '../src/data/species';
+import { SPECIES, type PreySpecies, type SpeciesId } from '../src/data/species';
 import { createAnimal } from '../src/sim/animals';
 import { Rng } from '../src/core/rng';
 
@@ -772,5 +773,221 @@ describe('multiplayer: round 9', () => {
     expect(jav.health).toBeLessThan((SPECIES.javelina as PreySpecies).maxHealth);
     expect(['chase', 'reposition']).toContain(jav.mode);
     expect(jav.foe).toBeUndefined();
+  });
+});
+
+describe('multiplayer: round 10', () => {
+  /** A host-side kill of `species` a few metres in front of the host, synced out; returns its carcass id. */
+  function hostKill(w: World, species: SpeciesId): number {
+    const host = w.host.sim;
+    const a = host.devSpawn(species, 4)!;
+    expect(a).toBeTruthy();
+    host.hitAnimal(a, 999, 'spear');
+    w.pump(0.5);
+    const c = host.state.carcasses.find((x) => x.species === species)!;
+    expect(c).toBeTruthy();
+    return c.id;
+  }
+
+  const carcassOn = (sim: Simulation, id: number) => sim.state.carcasses.find((c) => c.id === id);
+
+  it('a guest skins a kill, everyone sees it skinned, then the guest butchers it and it is gone for all', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const cleo = await w.join('Cleo');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    const c = guestSim(cleo);
+    const id = hostKill(w, 'deer');
+    for (const sim of [b, c]) expect(carcassOn(sim, id)).toMatchObject({ species: 'deer' });
+    expect(carcassOn(c, id)!.skinned).toBeFalsy();
+
+    // Cleo has no knife: she can't touch it, and nothing changes for anyone.
+    const cc = carcassOn(c, id)!;
+    teleport(c, cc.x + 1, cc.z);
+    drain(c);
+    c.perform({ kind: 'carcass', id, dist: 1 });
+    expect(drain(c).some((e) => e.type === 'needTool' && /Needs a knife/.test(e.message))).toBe(true);
+    w.pump(0.4);
+    expect(carcassOn(host, id)!.skinned).toBeFalsy();
+
+    b.state.tools.push('knife');
+    b.selectTool('knife');
+    const bc = carcassOn(b, id)!;
+    teleport(b, bc.x + 1, bc.z);
+    b.perform({ kind: 'carcass', id, dist: 1 });
+    expect(carcassOn(b, id)!.skinned).toBe(true);
+    w.pump(0.5);
+    for (const sim of [host, c]) {
+      const seen = carcassOn(sim, id)!;
+      expect(seen.skinned).toBe(true);
+      expect(seen.remaining.find((r) => r.item === 'hide')!.count).toBe(0);
+      expect(seen.remaining.find((r) => r.item === 'rawMeat')!.count).toBe(3);
+    }
+    expect(b.state.stats.events.skinned).toBe(1);
+
+    b.perform({ kind: 'carcass', id, dist: 1 });
+    expect(carcassOn(b, id)).toBeUndefined();
+    expect(countItem(b.state.inventory, 'rawMeat')).toBeGreaterThanOrEqual(3);
+    w.pump(0.5);
+    for (const sim of [host, b, c]) expect(carcassOn(sim, id)).toBeUndefined();
+    expect(b.state.stats.events.butchered).toBe(1);
+  });
+
+  it('a skinned carcass stays skinned for a player who joins later', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const id = hostKill(w, 'rabbit');
+    host.state.tools.push('knife');
+    host.selectTool('knife');
+    const hc = carcassOn(host, id)!;
+    teleport(host, hc.x + 1, hc.z);
+    host.perform({ kind: 'carcass', id, dist: 1 });
+    expect(carcassOn(host, id)!.skinned).toBe(true);
+    w.pump(0.5);
+    expect(carcassOn(guestSim(ben), id)!.skinned).toBe(true);
+    const cleo = await w.join('Cleo');
+    expect(carcassOn(guestSim(cleo), id)!.skinned).toBe(true);
+  });
+
+  it('a hideless kill (a desert quail) goes straight to butchering for a guest', async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    const id = hostKill(w, 'quail');
+    b.state.tools.push('knife');
+    b.selectTool('knife');
+    const bc = carcassOn(b, id)!;
+    teleport(b, bc.x + 1, bc.z);
+    b.perform({ kind: 'carcass', id, dist: 1 });
+    const ev = drain(b);
+    expect(ev.some((e) => e.type === 'skinned')).toBe(false);
+    expect(ev.some((e) => e.type === 'butchered' && e.species === 'quail')).toBe(true);
+    expect(countItem(b.state.inventory, 'rawMeat')).toBe(1);
+    w.pump(0.5);
+    expect(carcassOn(host, id)).toBeUndefined();
+  });
+
+  it('waiting in bed for the others, an empty meter still drains health slowly, and can kill; the dead leave the vote', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    mortal.add(b);
+    host.devSetHour(21);
+    host.timeScale = 60;
+    w.pump(0.5);
+    const tent = placeStructure(b, 'leanTo');
+    Object.assign(b.state.needs, { hunger: 0, thirst: 70, warmth: 90, health: 50 });
+    expect(b.trySleep(tent.id)).toBe(true);
+    w.pump(0.2);
+    expect(w.host.sleeping.has(ben.pid)).toBe(true);
+    const h0 = b.state.needs.health;
+    const t0 = b.state.totalHours;
+    w.pump(1);
+    const hours = b.state.totalHours - t0;
+    expect(hours).toBeGreaterThan(0.5);
+    expect(b.state.needs.thirst).toBe(70);
+    expect(b.state.needs.health).toBeCloseTo(h0 - BALANCE.needs.starvingDamagePerHour * BALANCE.needs.sleep.emptyDrainShare * hours, 0);
+    expect(b.state.dead).toBe(false);
+
+    b.state.needs.health = 1;
+    w.pump(0.5);
+    expect(b.state.dead).toBe(true);
+    expect(b.state.deathCause).toBe('starvation');
+    expect(b.state.needs.health).toBe(0);
+    expect(b.sleepingIn).toBeNull();
+    w.pump(0.3);
+    expect(w.host.sleeping.has(ben.pid)).toBe(false);
+  });
+
+  it("the night's skip costs a guest who went to bed starving health for the hours slept", async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim;
+    const b = guestSim(ben);
+    mortal.add(b);
+    host.devSetHour(21);
+    w.pump(0.5);
+    const hostTent = placeStructure(host, 'leanTo');
+    const benTent = placeStructure(b, 'leanTo');
+    Object.assign(b.state.needs, { hunger: 0, thirst: 90, warmth: 90, health: 90 });
+    expect(b.trySleep(benTent.id)).toBe(true);
+    w.pump(0.2);
+    const before = b.state.needs.health;
+    expect(host.trySleep(hostTent.id)).toBe(true);
+    w.pump(0.5);
+    const dawn = w.of(ben).find((e) => e.type === 'dawn' && e.elapsed > 5);
+    expect(dawn).toBeTruthy();
+    const elapsed = (dawn as { elapsed: number }).elapsed;
+    expect(b.sleepingIn).toBeNull();
+    expect(b.state.needs.health).toBeCloseTo(before - BALANCE.needs.starvingDamagePerHour * BALANCE.needs.sleep.emptyDrainShare * elapsed, 0);
+    expect(b.state.dead).toBe(false);
+  });
+
+  it("the day-1 crafting limit follows the host's day", async () => {
+    dayOneLimit(true);
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    giveRecipe(b, 'workbench');
+    expect(b.canCraft('workbench').reason).toBe('tomorrow');
+    expect(b.canCraft('campfire').reason).toBe('tomorrow');
+    b.state.objective = 1;
+    expect(b.canCraft('campfire').reason).not.toBe('tomorrow');
+    expect(b.canCraft('workbench').reason).toBe('tomorrow');
+
+    const later = quietSim();
+    later.state.totalHours = 2 * 24 + 3;
+    const w3 = await new World(later).open();
+    const cleo = await w3.join('Cleo');
+    const c = guestSim(cleo);
+    expect(c.day).toBe(3);
+    expect(c.state.objective).toBe(0);
+    giveRecipe(c, 'workbench');
+    expect(c.canCraft('workbench').reason).not.toBe('tomorrow');
+  });
+
+  it('a stone pile that has given up its scorpion never gives another, whoever gathers it or replays the request', async () => {
+    const desert = Simulation.newGame(42, 'desert');
+    desert.state.animals.length = 0;
+    desert.state.spawnCheckAt = Infinity;
+    const w = await new World(desert).open();
+    const ben = await w.join('Ben');
+    const b = guestSim(ben);
+    const host = w.host.sim;
+    const hp = host.state.player;
+    const piles = b.gen.resources.map((r, i) => ({ r, i })).filter(({ r }) => r.kind === 'stonePile' && Math.hypot(r.x - hp.x, r.z - hp.z) > 25);
+    const [spent, fresh] = piles;
+    host.state.resources[spent.i].scorpion = true;
+    w.pump(0.5);
+    expect(b.state.resources[spent.i].scorpion).toBe(true);
+
+    teleport(b, spent.r.x + 1.6, spent.r.z);
+    w.pump(0.3);
+    for (let k = 0; k < 150; k++) {
+      b.state.inventory.slots.fill(null);
+      b.state.resources[spent.i].charges = RESOURCES.stonePile.charges;
+      b.perform({ kind: 'resource', index: spent.i, dist: 1.6 });
+    }
+    expect(b.netOut.some((q) => q.k === 'scorpion')).toBe(false);
+    b.netOut.push({ k: 'scorpion', i: spent.i, x: spent.r.x + 1, z: spent.r.z });
+    w.pump(0.3);
+    expect(host.state.animals.some((a) => a.species === 'scorpion')).toBe(false);
+
+    // Two requests for one fresh pile in the same batch: one scorpion.
+    teleport(b, fresh.r.x + 1.6, fresh.r.z);
+    w.pump(0.3);
+    b.netOut.push({ k: 'scorpion', i: fresh.i, x: fresh.r.x + 1, z: fresh.r.z }, { k: 'scorpion', i: fresh.i, x: fresh.r.x + 1, z: fresh.r.z });
+    w.pump(0.3);
+    expect(host.state.animals.filter((a) => a.species === 'scorpion')).toHaveLength(1);
+    expect(host.state.resources[fresh.i].scorpion).toBe(true);
+    w.pump(0.5);
+    expect(b.state.resources[fresh.i].scorpion).toBe(true);
   });
 });
