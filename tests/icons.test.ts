@@ -1,13 +1,13 @@
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { ICON_DIR, ICON_FILES, iconFile, toolTier, type IconId } from '../src/data/icons';
+import { ADDITIONAL_ICON_DIR, ADDITIONAL_ICON_FILES, ICON_DIR, ICON_FILES, iconFile, toolTier, type IconId } from '../src/data/icons';
 import { GEAR, ITEMS, TOOLS } from '../src/data/items';
 import { PREFABS } from '../src/data/prefabs';
 import { anyIcon, gearIcon, itemIcon, prefabIcon, toolIcon } from '../src/ui/icons';
 
 const src = (html: string) => /<img class="icon-img" src="([^"]+)"/.exec(html)?.[1] ?? null;
 
-describe("Jon's icon mapping (round 6)", () => {
+describe('UI icon mapping', () => {
   it('maps real ids to files that exist, and item, tool, gear and prefab ids never collide', () => {
     const groups = [ITEMS, TOOLS, GEAR, PREFABS].map((g) => Object.keys(g));
     const all = groups.flat();
@@ -15,6 +15,11 @@ describe("Jon's icon mapping (round 6)", () => {
     for (const [id, tiers] of Object.entries(ICON_FILES)) {
       expect(all, id).toContain(id);
       for (const file of Object.values(tiers!)) expect(existsSync(`public/${ICON_DIR}${file}`), file).toBe(true);
+    }
+    for (const [id, file] of Object.entries(ADDITIONAL_ICON_FILES)) {
+      expect(all, id).toContain(id);
+      expect(existsSync(`public/${ADDITIONAL_ICON_DIR}${file}`), file).toBe(true);
+      expect(src(anyIcon(id as IconId)), id).toBe(`/${ADDITIONAL_ICON_DIR}${file}`);
     }
   });
 
@@ -38,18 +43,20 @@ describe("Jon's icon mapping (round 6)", () => {
     expect(src(toolIcon('axe', 3))).toBe(`/${ICON_DIR}06.png`);
   });
 
-  it("falls back to the built-in SVG for everything without one of Jon's icons", () => {
+  it('prefers named artwork, then existing artwork, then the built-in SVG', () => {
     for (const id of Object.keys(ITEMS) as (keyof typeof ITEMS)[]) {
       const html = itemIcon(id);
-      if (ICON_FILES[id]) expect(src(html), id).toBe(`/${ICON_DIR}${ICON_FILES[id]![1]}`);
+      if (ADDITIONAL_ICON_FILES[id]) expect(src(html), id).toBe(`/${ADDITIONAL_ICON_DIR}${ADDITIONAL_ICON_FILES[id]}`);
+      else if (ICON_FILES[id]) expect(src(html), id).toBe(`/${ICON_DIR}${ICON_FILES[id]![1]}`);
       else expect(html.startsWith('<svg'), id).toBe(true);
     }
-    expect(toolIcon('torch').startsWith('<svg')).toBe(true);
-    expect(toolIcon('hands', 2).startsWith('<svg')).toBe(true);
+    expect(src(toolIcon('torch', 3))).toBe(`/${ADDITIONAL_ICON_DIR}tool-torch.png`);
+    expect(src(toolIcon('hands', 2))).toBe(`/${ADDITIONAL_ICON_DIR}empty-hand.png`);
     expect(src(gearIcon('canteen'))).toBe(`/${ICON_DIR}09.png`);
-    expect(gearIcon('basket').startsWith('<svg')).toBe(true);
-    expect(prefabIcon('campfire').startsWith('<svg')).toBe(true);
+    expect(src(gearIcon('basket'))).toBe(`/${ADDITIONAL_ICON_DIR}item-grass-basket.png`);
+    expect(src(gearIcon('backpack'))).toBe(`/${ADDITIONAL_ICON_DIR}item-hide-backpack.png`);
+    expect(src(prefabIcon('campfire'))).toBe(`/${ADDITIONAL_ICON_DIR}item-campfire.png`);
     const ids: IconId[] = ['log', 'rod', 'backpack', 'campfire'];
-    expect(ids.map((id) => anyIcon(id).startsWith('<img'))).toEqual([true, true, true, false]);
+    expect(ids.map((id) => anyIcon(id).startsWith('<img'))).toEqual([true, true, true, true]);
   });
 });

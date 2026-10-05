@@ -598,7 +598,7 @@ export class Panels {
     const sim = this.host.sim();
     const fireId = this.targetId;
     const m = fireId !== null ? campfireMenu(sim, fireId) : null;
-    const head = this.head(`${MISC_ICONS.fire} Campfire`, m ? m.status : 'This fire is gone.');
+    const head = this.head(`${prefabIcon('campfire')} Campfire`, m ? m.status : 'This fire is gone.');
     if (!m || fireId === null) {
       this.card.append(head);
       return;

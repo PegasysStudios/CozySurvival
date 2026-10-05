@@ -1,4 +1,4 @@
-import { ICON_DIR, iconFile, toolTier, type IconId } from '../data/icons';
+import { ADDITIONAL_ICON_DIR, ADDITIONAL_ICON_FILES, ICON_DIR, iconFile, toolTier, type IconId } from '../data/icons';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { Weather } from '../sim/weather';
@@ -130,6 +130,8 @@ export function iconImg(file: string, dir = ICON_DIR): string {
 export const CRAFT_TAB_ICON_DIR = 'icons/crafting-tabs/';
 
 function pick(id: IconId, builtIn: string, tier = 1): string {
+  const additionalFile = ADDITIONAL_ICON_FILES[id];
+  if (additionalFile) return iconImg(additionalFile, ADDITIONAL_ICON_DIR);
   const file = iconFile(id, tier);
   return file ? iconImg(file) : builtIn;
 }

@@ -28,6 +28,50 @@ export const ICON_FILES: Partial<Record<IconId, Partial<Record<number, string>>>
   onion: { 1: '20.png' },
 };
 
+export const ADDITIONAL_ICON_DIR = 'icons/additional-icons/';
+
+/** Named artwork for existing items, tools, gear and structures, shared by their recipe and menu icons. */
+export const ADDITIONAL_ICON_FILES: Partial<Record<IconId, string>> = {
+  hands: 'empty-hand.png',
+  torch: 'tool-torch.png',
+  snowClump: 'item-snow-clump.png',
+  stick: 'item-sticks.png',
+  stone: 'item-rocks.png',
+  fiber: 'item-plant-fiber.png',
+  berries: 'item-salmonberries.png',
+  mushroom: 'item-mushrooms.png',
+  bark: 'item-birch-bark.png',
+  cordage: 'item-cordage.png',
+  rawMeat: 'item-raw-meat.png',
+  cookedMeat: 'item-cooked-meat.png',
+  hide: 'item-hide.png',
+  rawFish: 'fish-trout.png',
+  grilledTrout: 'food-fish-cooked.png',
+  skewer: 'food-skewer.png',
+  forageSkewer: 'food-skewer.png',
+  troutSkewer: 'food-skewer.png',
+  desertSkewer: 'food-skewer.png',
+  pearTroutSkewer: 'food-skewer.png',
+  beachSkewer: 'food-skewer.png',
+  fishSkewer: 'food-skewer.png',
+  boiledWater: 'mug-warm-beverage.png',
+  berryTea: 'mug-warm-beverage.png',
+  wolfberryTea: 'mug-warm-beverage.png',
+  seaGrapeTea: 'mug-warm-beverage.png',
+  basket: 'item-grass-basket.png',
+  backpack: 'item-hide-backpack.png',
+  campfire: 'item-campfire.png',
+  bench: 'item-wood-bench.png',
+  workbench: 'item-repair-workbench.png',
+  leanTo: 'shelter-lean-to.png',
+  aFrame: 'shelter-a-frame.png',
+  barkHut: 'shelter-bark-hut.png',
+  hideTent: 'shelter-hide-tent.png',
+  storageBin: 'item-woven-storage-bin.png',
+  storageCrate: 'item-wooden-crate-bin.png',
+  storageChest: 'item-hide-storage-bin.png',
+};
+
 export const toolTier = (level: number): number => level + 1;
 
 /**
