@@ -99,6 +99,21 @@ async function shoot(page, name) {
   shots.push(path);
 }
 
+async function startOrContinue(page) {
+  const hasSave = await page.$eval('.title-continue', (button) => !button.disabled);
+  if (hasSave) await page.click('.title-continue');
+  else {
+    await page.click('.title-new-run');
+    await page.click('.title-popup.show [data-action="confirm-new-run"]');
+  }
+}
+
+async function selectNextTitleMap(page) {
+  await page.click('.title-settings');
+  await page.click('.title-popup.show .map-arrow.next');
+  await page.click('.title-popup.show .menu-popup-actions .btn.primary');
+}
+
 async function main() {
   const chrome = CHROME_CANDIDATES.find((p) => existsSync(p));
   if (!chrome) throw new Error('No Chrome/Chromium found. Set CHROME_PATH.');
@@ -149,27 +164,29 @@ async function main() {
     await sleep(1200);
     check('title screen shown', await page.$eval('.title-screen', (e) => e.classList.contains('show')));
     const picker = await page.evaluate(() => ({
-      arrows: document.querySelectorAll('.title-screen .title-row > .map-arrow').length,
+      actions: document.querySelectorAll('.title-screen .title-actions > button').length,
       name: document.querySelector('.title-screen .map-name')?.textContent ?? '',
       biome: window.__cozy.game.sim.biome,
     }));
-    check('title shows the map picker on the Pacific Northwest', picker.arrows === 2 && picker.name === 'Pacific Northwest' && picker.biome === 'pnw', JSON.stringify(picker));
+    check('title shows three main actions on the Pacific Northwest', picker.actions === 3 && picker.name === 'Pacific Northwest' && picker.biome === 'pnw', JSON.stringify(picker));
     await settleTitle(page);
     await shoot(page, 'title-pnw');
     const env = loadEnv('production', process.cwd(), 'VITE_');
     const mpConfigured = !!(env.VITE_SUPABASE_URL && env.VITE_SUPABASE_PUBLISHABLE_KEY);
+    await page.click('.title-multiplayer');
     const mpTitle = await page.evaluate(() => {
-      const s = document.querySelector('.title-screen .mp-section');
+      const s = document.querySelector('.mp-screen.show .mp-section');
       return { found: !!s, off: !!s?.classList.contains('off'), createDisabled: !!s?.querySelector('.mp-create')?.disabled, text: s?.textContent ?? '' };
     });
-    if (mpConfigured) check('multiplayer section is live on the title screen', mpTitle.found && !mpTitle.off, JSON.stringify(mpTitle));
-    else check('without Supabase env vars multiplayer is greyed out with a "not set up" note', mpTitle.found && mpTitle.off && mpTitle.createDisabled && /not set up/i.test(mpTitle.text), JSON.stringify(mpTitle));
+    if (mpConfigured) check('multiplayer server browser is live in its pop-up', mpTitle.found && !mpTitle.off, JSON.stringify(mpTitle));
+    else check('without Supabase env vars the server browser explains multiplayer is unavailable', mpTitle.found && mpTitle.off && mpTitle.createDisabled && /unavailable/i.test(mpTitle.text), JSON.stringify(mpTitle));
+    await page.click('.mp-screen.show [aria-label="Close multiplayer"]');
     check('canvas rendering', await page.evaluate(() => {
       const c = document.querySelector('canvas.view');
       return !!c && c.width > 0 && c.height > 0;
     }));
 
-    await page.click('.title-screen .btn.primary');
+    await startOrContinue(page);
     await sleep(400);
     const started = await page.evaluate(() => {
       const g = window.__cozy.game;
@@ -368,6 +385,43 @@ async function main() {
         };
       });
     const lock = () => page.evaluate(() => (window.__cozy.game.input.locked = true));
+    const cameraRound = async (biome, targetPage = page) => {
+      await targetPage.bringToFront();
+      await targetPage.evaluate(() => {
+        const g = window.__cozy.game;
+        if (g.mode === 'paused') g.resume();
+        g.input.locked = true;
+      });
+      const snapshot = () => targetPage.evaluate(() => {
+        const g = window.__cozy.game;
+        const p = g.sim.state.player;
+        return { mode: g.playerCamera.mode, distance: g.playerCamera.distance, body: g.view.localAvatar.group.visible,
+          bodies: g.view.localAvatar.group.children.length, hands: g.view.showViewModel,
+          position: [p.x, p.y, p.z], look: [p.yaw, p.pitch],
+          camera: g.view.camera.position.toArray(), finite: g.view.camera.matrixWorld.elements.every(Number.isFinite) };
+      });
+      const before = await snapshot();
+      check(`${biome}: camera defaults to first person`, before.mode === 'firstPerson' && !before.body && before.hands, JSON.stringify(before));
+      for (const mode of ['thirdPersonClose', 'thirdPersonFar', 'firstPerson']) {
+        await targetPage.keyboard.press('KeyV');
+        await targetPage.waitForFunction((m) => {
+          const c = window.__cozy.game.playerCamera;
+          return c.mode === m && (m === 'firstPerson' ? !c.active : Math.abs(c.distance - (m === 'thirdPersonClose' ? 2.8 : 5.6)) < 0.01);
+        }, { timeout: 15_000, polling: 'raf' }, mode);
+        const s = await snapshot();
+        check(`${biome}: V selects ${mode} with a finite camera and the correct body/tools`, s.mode === mode && s.finite && (mode === 'firstPerson' ? !s.body && s.hands : s.bodies === 1 && !s.hands), JSON.stringify(s));
+        check(`${biome}: ${mode} preserves player position and look`, s.position.every((v, i) => Math.abs(v - before.position[i]) < 0.01) && s.look.every((v, i) => v === before.look[i]), JSON.stringify(s));
+        if (mode !== 'firstPerson') await shoot(targetPage, `camera-${biome}-${mode}`);
+        if (mode === 'thirdPersonClose') {
+          await targetPage.keyboard.press('Tab');
+          await targetPage.keyboard.press('KeyV');
+          check(`${biome}: menus ignore the camera shortcut`, (await snapshot()).mode === mode);
+          await targetPage.keyboard.press('Escape');
+          await sleep(150);
+          await targetPage.evaluate(() => (window.__cozy.game.input.locked = true));
+        }
+      }
+    };
     const COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
     /** Turn the player to `yaw` and read the Day card's compass back from the HUD. */
     const compassAt = async (yaw) => {
@@ -386,6 +440,7 @@ async function main() {
       });
     };
     /** Every heading reads right on the HUD, then the player faces the way they did before. */
+    await cameraRound('pnw');
     const compassRound = async (ks) => {
       const yaw0 = await page.evaluate(() => window.__cozy.game.yaw);
       const seen = [];
@@ -685,7 +740,7 @@ async function main() {
     await sleep(600);
     const continueText = await page.$eval('.title-screen .btn.primary', (e) => e.textContent ?? '');
     check('reload offers Continue', /Continue/.test(continueText), continueText);
-    await page.click('.title-screen .btn.primary');
+    await startOrContinue(page);
     await sleep(300);
     const resumed = await state();
     check(
@@ -772,7 +827,7 @@ async function main() {
         mode: g.mode, run: g.run.biome, biome: g.sim.biome, seed: g.sim.state.seed, runId: g.sim.state.runId,
         name: document.querySelector('.title-screen .map-name')?.textContent ?? '',
         tagline: document.querySelector('.title-screen .tagline')?.textContent ?? '',
-        primary: document.querySelector('.title-screen .btn.primary')?.textContent ?? '',
+        primary: (document.querySelector('.title-screen .title-continue:not(:disabled)') ?? document.querySelector('.title-screen .title-new-run'))?.textContent ?? '',
         fading: !!document.querySelector('.map-fade'),
       };
     });
@@ -786,18 +841,18 @@ async function main() {
         if (document.querySelector('.map-fade')) window.__fadeSeen = true;
       }).observe(document.getElementById('app') ?? document.body, { childList: true, subtree: true });
     });
-    await page.click('.title-screen .map-arrow.next');
+    await selectNextTitleMap(page);
     await page.waitForFunction(() => window.__cozy.game.run.biome === 'desert' && !document.querySelector('.map-fade'), { timeout: 20_000, polling: 100 }).catch(() => {});
     await settleTitle(page);
     const fadeStarted = await page.evaluate(() => window.__fadeSeen);
     const desertTitle = await titleState();
     check(
       'the right arrow cross-fades the title to the desert map',
-      fadeStarted && !desertTitle.fading && desertTitle.mode === 'title' && desertTitle.run === 'desert' && desertTitle.biome === 'desert' && desertTitle.name === 'Arizona Desert' && /^Stranded in the Arizona desert/.test(desertTitle.tagline) && /Start surviving/.test(desertTitle.primary),
+      fadeStarted && !desertTitle.fading && desertTitle.mode === 'title' && desertTitle.run === 'desert' && desertTitle.biome === 'desert' && desertTitle.name === 'Arizona Desert' && /^Stranded in the Arizona desert/.test(desertTitle.tagline) && /New Run/.test(desertTitle.primary),
       JSON.stringify({ fadeStarted, ...desertTitle }),
     );
     await shoot(page, 'title-desert');
-    await page.click('.title-screen .btn.primary');
+    await startOrContinue(page);
     await sleep(500);
     await lock();
     const desertRun = await page.evaluate(() => {
@@ -814,6 +869,7 @@ async function main() {
     await page.keyboard.up('KeyW');
     await waitFrames(4);
     await shoot(page, 'gameplay-desert');
+    await cameraRound('desert');
     await measure(page, 'Arizona Desert');
     const desertCompass = await compassRound([2, 5]);
     check('the desert HUD has the compass too', desertCompass.ok, JSON.stringify(desertCompass.seen.map((s) => `${s.want}:${s.point}`)));
@@ -855,7 +911,7 @@ async function main() {
     const pnwSaveNow = await page.evaluate(() => localStorage.getItem('cozysurvival.v1.save'));
     await page.evaluate(() => (window.__fadeSeen = false));
     const switchStart = Date.now();
-    await page.click('.title-screen .map-arrow.next');
+    await selectNextTitleMap(page);
     await page.waitForFunction(() => window.__cozy.game.run.biome === 'island' && !document.querySelector('.map-fade'), { timeout: 30_000, polling: 100 }).catch(() => {});
     const switchMs = Date.now() - switchStart;
     await settleTitle(page);
@@ -863,14 +919,16 @@ async function main() {
     const islandFade = await page.evaluate(() => window.__fadeSeen);
     check(
       'the right arrow cross-fades the title to the island, the third map',
-      islandFade && islandTitle.mode === 'title' && islandTitle.run === 'island' && islandTitle.biome === 'island' && islandTitle.name === 'Tropical Island' && /^Stranded on a tropical island/.test(islandTitle.tagline) && /Start surviving/.test(islandTitle.primary),
+      islandFade && islandTitle.mode === 'title' && islandTitle.run === 'island' && islandTitle.biome === 'island' && islandTitle.name === 'Tropical Island' && /^Stranded on a tropical island/.test(islandTitle.tagline) && /New Run/.test(islandTitle.primary),
       JSON.stringify({ islandFade, ...islandTitle }),
     );
-    const dots = await page.evaluate(() => ({ n: document.querySelectorAll('.title-screen .map-dots i').length, on: [...document.querySelectorAll('.title-screen .map-dots i')].findIndex((d) => d.classList.contains('on')) }));
-    check('the map dots show three maps with the island third', dots.n === 3 && dots.on === 2, JSON.stringify(dots));
+    await page.click('.title-settings');
+    const mapPicker = await page.evaluate(() => ({ arrows: document.querySelectorAll('.title-popup.show .map-arrow').length, name: document.querySelector('.title-popup.show .settings-map-name b')?.textContent }));
+    check('Settings offers map selection with the island selected', mapPicker.arrows === 2 && mapPicker.name === 'Tropical Island', JSON.stringify(mapPicker));
+    await page.click('.title-popup.show .menu-popup-actions .btn.primary');
     console.log(`  switching the title to the island (world generation, terrain, water and nature) took ${switchMs} ms`);
     await shoot(page, 'title-island');
-    await page.click('.title-screen .btn.primary');
+    await startOrContinue(page);
     await sleep(500);
     await lock();
     const islandRun = await page.evaluate(() => {
@@ -895,6 +953,7 @@ async function main() {
     await page.keyboard.up('KeyW');
     await waitFrames(4);
     await shoot(page, 'gameplay-island');
+    await cameraRound('island');
     const islandPerf = await measure(page, 'Tropical Island');
     check(
       'the island (four times the area) renders within twice the forest\'s frame time and draw calls',
@@ -1036,6 +1095,8 @@ async function main() {
     };
     const hostTab = await openTab();
     const guestTab = await openTab();
+    await hostTab.click('.title-multiplayer');
+    await guestTab.click('.title-multiplayer');
     const mpTitleLocal = await hostTab.evaluate(() => document.querySelector('.mp-section .mp-pill')?.textContent ?? '');
     check('?net=local enables multiplayer in local test mode', /local test mode/i.test(mpTitleLocal), mpTitleLocal);
 
@@ -1069,6 +1130,8 @@ async function main() {
         }, { timeout: 15_000, polling: 250 }, other).then(() => true, () => false);
       };
       check('host and guest see each other\'s avatars', (await seeEach(hostTab, 'Ben')) && (await seeEach(guestTab, 'Ana')));
+      await cameraRound('multiplayer-host', hostTab);
+      await cameraRound('multiplayer-guest', guestTab);
 
       // Switching tabs drops pointer lock, which opens the (non-pausing) settings overlay.
       await guestTab.evaluate(() => {

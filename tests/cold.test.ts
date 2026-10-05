@@ -154,6 +154,7 @@ describe('sleeping away from a burning campfire costs 30% warmth', () => {
 
   function sleeper(withFire: boolean) {
     const sim = coldNight(at(1, 21));
+    sim.devSetSeason('summer');
     const hut = placeStructure(sim, 'leanTo');
     teleport(sim, hut.x + 2, hut.z);
     let fire = null;

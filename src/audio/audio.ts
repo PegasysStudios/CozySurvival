@@ -20,6 +20,7 @@ export interface AmbienceInput {
   night: number;
   fireDist: number;
   waterDist: number;
+  frozen: boolean;
   indoors: boolean;
   paused: boolean;
 }
@@ -510,7 +511,13 @@ export class AudioSystem {
     const windLevel = (0.05 + 0.035 * Math.sin(this.t * 0.13) + 0.02 * Math.sin(this.t * 0.41)) * (a.indoors ? 0.5 : 1) * quiet;
     this.windGain.gain.setTargetAtTime(windLevel, now, 0.5);
     this.windFilter.frequency.setTargetAtTime(380 + 260 * (0.5 + 0.5 * Math.sin(this.t * 0.21)), now, 0.8);
-    if (this.lake) this.lakeGain.gain.setTargetAtTime(lakeAmbienceLevel(a.waterDist) * quiet, now, 0.6);
+    if (this.lake) {
+      const gain = this.lakeGain.gain;
+      if (a.frozen) {
+        gain.cancelScheduledValues(now);
+        gain.setValueAtTime(0, now);
+      } else gain.setTargetAtTime(lakeAmbienceLevel(a.waterDist) * quiet, now, 0.6);
+    }
     this.fireNear = Math.max(0, 1 - a.fireDist / 12);
     this.fireGain.gain.setTargetAtTime(this.fireNear * this.fireNear * 0.12 * quiet, now, 0.3);
     if (a.paused) return;

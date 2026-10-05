@@ -54,6 +54,7 @@ export class EntityView {
   readonly group = new THREE.Group();
   readonly fireLights: THREE.PointLight[] = [];
   private readonly terrain: Terrain;
+  private readonly frozen: boolean;
   private readonly animalMat: THREE.MeshLambertMaterial;
   private readonly propMat: THREE.MeshLambertMaterial;
   private readonly flameMat: THREE.MeshBasicMaterial;
@@ -71,8 +72,9 @@ export class EntityView {
   private readonly look = new THREE.Vector3();
   private readonly seen = new Set<number>();
 
-  constructor(terrain: Terrain) {
+  constructor(terrain: Terrain, frozen = false) {
     this.terrain = terrain;
+    this.frozen = terrain.biome === 'pnw' && frozen;
     this.animalMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.propMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
     this.flameMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
@@ -107,6 +109,7 @@ export class EntityView {
         const body = new THREE.Mesh(this.structureGeo(st.prefab), this.propMat);
         body.castShadow = true;
         body.receiveShadow = true;
+        body.userData.cameraObstacle = true;
         group.add(body);
         let flames: THREE.Mesh | null = null;
         if (PREFABS[st.prefab].fire) {
@@ -161,7 +164,7 @@ export class EntityView {
       if (old?.skinned === skinned) continue;
       // Skinning swaps the dead animal for its skinned model where it lies.
       if (old) this.group.remove(old.root);
-      const rig = buildRig(c.species, 0, this.animalMat, skinned);
+      const rig = buildRig(c.species, c.species === 'rabbit' && this.frozen ? 1 : 0, this.animalMat, skinned);
       const def = SPECIES[c.species];
       rig.pivot.rotation.z = Math.PI / 2 - 0.08;
       rig.pivot.position.y = def.radius * (skinned ? 0.68 : 0.8);
@@ -233,6 +236,7 @@ export class EntityView {
     const pr = sim.projectiles;
     while (this.arrows.length < pr.length) {
       const m = new THREE.Mesh(this.arrowGeo, this.propMat);
+      m.userData.cameraIgnore = true;
       this.arrows.push(m);
       this.group.add(m);
     }
@@ -253,7 +257,7 @@ export class EntityView {
   private updateAnimal(a: AnimalState, dt: number, time: number, camX: number, camZ: number): void {
     let v = this.animals.get(a.id);
     if (!v) {
-      const rig = buildRig(a.species, a.species === 'deer' ? a.id % 2 : 0, this.animalMat);
+      const rig = buildRig(a.species, a.species === 'deer' ? a.id % 2 : a.species === 'rabbit' && this.frozen ? 1 : 0, this.animalMat);
       v = { rig, species: a.species, phase: a.id, headPitch: 0, rear: 0, crouch: 0, stamp: 0 };
       this.animals.set(a.id, v);
       this.group.add(rig.root);

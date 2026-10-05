@@ -28,15 +28,15 @@ function leg(len: number, rTop: number, rBot: number, color: string, hoof: strin
   return b.build();
 }
 
-function rabbit(): RigParts {
+function rabbit(winter = false): RigParts {
   const body = new GeoBuilder(1);
-  const fur = (_x: number, _y: number, _z: number, n: THREE.Vector3) => (n.y < -0.3 ? col('#cdb89c') : mix('#7d5f45', '#9a7a5a', 0.5 + n.y * 0.5));
+  const fur = (_x: number, _y: number, _z: number, n: THREE.Vector3) => winter ? mix('#c7d5de', '#f5f5ef', 0.5 + n.y * 0.5) : (n.y < -0.3 ? col('#cdb89c') : mix('#7d5f45', '#9a7a5a', 0.5 + n.y * 0.5));
   body.add(new IcosahedronGeometry(0.2, 1), { matrix: tf(0, 0.24, -0.02, 0.15, 0, 0, 0.82, 0.8, 1.2), color: fur, jitter: 0.02 });
   body.add(new IcosahedronGeometry(0.055, 0), { matrix: tf(0, 0.3, -0.26), color: '#f3eee6' });
   const head = new GeoBuilder(2);
   head.add(new IcosahedronGeometry(0.105, 1), { matrix: tf(0, 0.02, 0.06, 0, 0, 0, 0.85, 0.9, 1.15), color: fur, jitter: 0.01 });
   for (const s of [-1, 1]) {
-    head.add(new BoxGeometry(0.045, 0.2, 0.018), { matrix: tf(s * 0.04, 0.16, -0.01, -0.25, 0, s * 0.12), color: (_x, _y, _z, n) => (n.z > 0.5 ? col('#c89a86') : col('#735840')) });
+    head.add(new BoxGeometry(0.045, 0.2, 0.018), { matrix: tf(s * 0.04, 0.16, -0.01, -0.25, 0, s * 0.12), color: (_x, _y, _z, n) => (n.z > 0.5 ? col('#c89a86') : col(winter ? '#ecf0ee' : '#735840')) });
     eye(head, s * 0.07, 0.04, 0.11, 0.016);
   }
   head.add(new OctahedronGeometry(0.014, 0), { matrix: tf(0, 0.0, 0.18), color: '#3a2a24' });
@@ -45,10 +45,10 @@ function rabbit(): RigParts {
     head: head.build(),
     headPivot: [0, 0.34, 0.18],
     legs: [
-      { geo: leg(0.16, 0.055, 0.04, '#6f553e', '#e8e0d4', 0.05), hip: [-0.08, 0.17, -0.12], phase: 0 },
-      { geo: leg(0.16, 0.055, 0.04, '#6f553e', '#e8e0d4', 0.05), hip: [0.08, 0.17, -0.12], phase: 0 },
-      { geo: leg(0.12, 0.03, 0.025, '#6f553e', '#e8e0d4', 0.04), hip: [-0.06, 0.13, 0.12], phase: Math.PI },
-      { geo: leg(0.12, 0.03, 0.025, '#6f553e', '#e8e0d4', 0.04), hip: [0.06, 0.13, 0.12], phase: Math.PI },
+      { geo: leg(0.16, 0.055, 0.04, winter ? '#e7eded' : '#6f553e', '#e8e0d4', 0.05), hip: [-0.08, 0.17, -0.12], phase: 0 },
+      { geo: leg(0.16, 0.055, 0.04, winter ? '#e7eded' : '#6f553e', '#e8e0d4', 0.05), hip: [0.08, 0.17, -0.12], phase: 0 },
+      { geo: leg(0.12, 0.03, 0.025, winter ? '#e7eded' : '#6f553e', '#e8e0d4', 0.04), hip: [-0.06, 0.13, 0.12], phase: Math.PI },
+      { geo: leg(0.12, 0.03, 0.025, winter ? '#e7eded' : '#6f553e', '#e8e0d4', 0.04), hip: [0.06, 0.13, 0.12], phase: Math.PI },
     ],
     pivot: [0, 0.15, -0.12],
   };
@@ -445,7 +445,7 @@ export function rigParts(species: SpeciesId, variant = 0, skinned = false): RigP
   const key = species + variant + (skinned ? 's' : '');
   let r = cache.get(key);
   if (!r) {
-    r = skinned ? skinParts(rigParts(species, variant)) : species === 'deer' ? deer(variant === 1) : (BUILDERS[species] ?? fish)();
+    r = skinned ? skinParts(rigParts(species, variant)) : species === 'deer' ? deer(variant === 1) : species === 'rabbit' ? rabbit(variant === 1) : (BUILDERS[species] ?? fish)();
     cache.set(key, r);
   }
   return r;

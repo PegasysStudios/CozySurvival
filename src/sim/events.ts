@@ -44,7 +44,7 @@ export type SimEvent =
   | { type: 'death'; cause: DamageSource }
   | { type: 'dayStart'; day: number }
   | { type: 'nightfall'; day: number }
-  | { type: 'slept'; day: number; byFire: boolean }
+  | { type: 'slept'; day: number; byFire: boolean; passedOut?: boolean }
   | { type: 'sleepDenied'; reason: string }
   /** Multiplayer: lay down to sleep and now waits for the other players. */
   | { type: 'sleepWait'; structure: number }

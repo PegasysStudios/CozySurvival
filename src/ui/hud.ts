@@ -12,9 +12,11 @@ import type { Simulation } from '../sim/simulation';
 import { countItem, usedSlots } from '../sim/inventory';
 import type { GameState } from '../sim/state';
 import { formatClock } from '../sim/time';
+import { WEATHER_NAMES } from '../sim/weather';
 import { COMPASS_NAMES, compassPoint, headingDegrees } from './compass';
 import { el, escapeHtml, setHtml, setText, toggle } from './dom';
-import { anyIcon, itemIcon, MISC_ICONS, NEED_ICONS, toolIcon } from './icons';
+import { anyIcon, itemIcon, MISC_ICONS, NEED_ICONS, toolIcon, WEATHER_ICONS } from './icons';
+import { SeasonDisplay } from './seasons';
 
 type NeedKey = 'health' | 'hunger' | 'thirst' | 'warmth' | 'energy';
 const NEEDS: { key: NeedKey; label: string }[] = [
@@ -30,20 +32,19 @@ export function toolAmmo(s: GameState, tool: ToolId): number | null {
   return tool === 'bow' ? countItem(s.inventory, 'arrow') : null;
 }
 
-/** The hotbar: one slot per tool with its key, icon, name, durability and (for the bow) arrow count. */
+/** The hotbar: owned tools with their fixed keys, icons, names, durability and arrow count. */
 export function toolBeltHtml(s: GameState): string {
-  return TOOL_ORDER.map((id) => {
-    const owned = s.tools.includes(id);
+  return TOOL_ORDER.filter((id) => s.tools.includes(id)).map((id) => {
     const active = s.activeTool === id;
-    const w = owned ? s.toolWear[id] : undefined;
+    const w = s.toolWear[id];
     const pct = w ? Math.round(wearFraction(w) * 100) : null;
-    const dur = pct === null && !(owned && toolWears(id)) ? '' : `<span class="dur ${pct !== null && pct <= BALANCE.durability.lowFraction * 100 ? 'low' : ''}"><i style="transform:scaleX(${(pct ?? 100) / 100})"></i></span>`;
-    const ammo = owned ? toolAmmo(s, id) : null;
+    const dur = pct === null && !toolWears(id) ? '' : `<span class="dur ${pct !== null && pct <= BALANCE.durability.lowFraction * 100 ? 'low' : ''}"><i style="transform:scaleX(${(pct ?? 100) / 100})"></i></span>`;
+    const ammo = toolAmmo(s, id);
     const ammoHtml = ammo === null ? '' : `<span class="ammo ${ammo === 0 ? 'empty' : ''}">${ammo}</span>`;
-    const lv = owned ? toolLevel(s, id) : 0;
+    const lv = toolLevel(s, id);
     const name = `${TOOLS[id].name}${lv ? ' ' + LEVEL_NUMERALS[lv] : ''}`;
-    const title = `${name}${owned && toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}${ammo === null ? '' : ` · ${ammo} ${itemName('arrow', ammo).toLowerCase()}`}`;
-    return `<div class="tool ${owned ? '' : 'locked'} ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${owned ? toolIcon(id, lv) : `<span class="lock">${MISC_ICONS.lock}</span>`}<span class="tool-name">${owned ? name : '???'}</span>${dur}</div>`;
+    const title = `${name}${toolWears(id) ? ` · ${pct ?? 100}% durability` : ''}${ammo === null ? '' : ` · ${ammo} ${itemName('arrow', ammo).toLowerCase()}`}`;
+    return `<div class="tool ${active ? 'active' : ''}" title="${title}"><span class="key">${TOOLS[id].slot}</span>${ammoHtml}${toolIcon(id, lv)}<span class="tool-name">${name}</span>${dur}</div>`;
   }).join('');
 }
 
@@ -62,6 +63,7 @@ interface Toast {
 export class Hud {
   readonly root = el('div', 'hud');
   private readonly clockDay = el('div', 'clock-day');
+  private readonly season = new SeasonDisplay();
   private readonly clockTime = el('div', 'clock-time');
   private readonly clockIcon = el('div', 'clock-icon');
   private readonly clockBar = el('div', 'clock-bar-fill');
@@ -86,6 +88,7 @@ export class Hud {
   private readonly chipKey: { last?: string } = {};
   private readonly belt = el('div', 'toolbelt');
   private readonly beltKey: { last?: string } = {};
+  private readonly packWrap = el('div', 'pack-wrap');
   private readonly pack = el('div', 'pack-count');
   private readonly crosshair = el('div', 'crosshair');
   private readonly charge = el('div', 'bow-charge');
@@ -110,14 +113,19 @@ export class Hud {
 
   constructor(parent: HTMLElement) {
     const clock = el('div', 'hud-clock');
+    const clockHeader = el('div', 'clock-header');
     const clockText = el('div', 'clock-text');
-    clockText.append(this.clockDay, this.clockTime);
+    const clockMeta = el('div', 'clock-meta');
+    clockMeta.append(this.clockTime, this.devBadge);
+    clockText.append(this.clockDay, clockMeta);
     const clockBar = el('div', 'clock-bar');
     clockBar.append(this.clockBar);
     const dial = el('div', 'compass-dial');
     dial.append(this.compassNeedle);
     this.compass.append(dial, this.compassPoint);
-    clock.append(this.clockIcon, clockText, this.compass, this.devBadge, clockBar);
+    clockHeader.append(this.clockIcon, clockText, this.compass, clockBar);
+    this.clockIcon.setAttribute('role', 'img');
+    clock.append(clockHeader, this.season.root);
 
     const objLabel = el('div', 'obj-label', 'Next goal');
     objLabel.append(this.objStep);
@@ -127,6 +135,8 @@ export class Hud {
     this.checklist.append(checkLabel, this.checkTitle, this.checkNeeds, el('div', 'obj-hint', 'Shift-click a pinned recipe in Crafting (C) to unpin it.'));
     const left = el('div', 'hud-left');
     left.append(this.objective, this.checklist);
+    const topLeft = el('div', 'hud-top-left');
+    topLeft.append(clock, left);
 
     const needs = el('div', 'hud-needs');
     needs.append(this.chips);
@@ -144,9 +154,13 @@ export class Hud {
     }
 
     const bottom = el('div', 'hud-bottom');
-    const packWrap = el('div', 'pack-wrap');
-    packWrap.append(this.pack);
-    bottom.append(this.belt, packWrap);
+    bottom.append(this.belt);
+    const packIcon = el('img', 'pack-icon');
+    packIcon.src = '/ui/pack-icon.png';
+    packIcon.alt = '';
+    packIcon.draggable = false;
+    this.packWrap.setAttribute('role', 'img');
+    this.packWrap.append(packIcon, this.pack);
 
     const center = el('div', 'hud-center');
     center.append(this.crosshair, this.charge, this.repairRing, this.prompt, this.placeHelp);
@@ -154,15 +168,20 @@ export class Hud {
     this.hint.innerHTML = `
       <div><b>WASD</b> move and swim · <b>Shift</b> run · <b>Space</b> jump</div>
       <div><b>Left-click</b> gather, use and interact</div>
-      <div><b>C</b> crafting · <b>Tab</b> pack · <b>1–6</b> tools · <b>F</b> quick eat</div>`;
+      <div><b>V</b> camera: first person · close · far</div>
+      <div><b>C</b> crafting · <b>Tab</b> pack · <b>K</b> goals · <b>1–6</b> tools · <b>F</b> quick eat</div>`;
 
-    this.root.append(this.hurt, this.cold, this.low, this.damageDir, clock, left, needs, bottom, center, this.toasts, this.banner, this.hint, this.fps);
+    this.root.append(this.hurt, this.cold, this.low, this.damageDir, topLeft, needs, bottom, this.packWrap, center, this.toasts, this.banner, this.hint, this.fps);
     parent.append(this.root);
   }
 
   showControlsHint(): void {
     this.hintT = 22;
     this.hint.classList.add('show');
+  }
+
+  setGoalsVisible(visible: boolean): void {
+    this.objective.hidden = !visible;
   }
 
   setFps(fps: number | null): void {
@@ -288,12 +307,18 @@ export class Hud {
     setHtml(this.chips, chips.join(''), this.chipKey);
 
     setText(this.clockDay, `Day ${sim.day}`);
+    this.season.update(sim);
     setText(this.clockTime, formatClock(sim.hour));
-    const icon = sim.night ? MISC_ICONS.moon : MISC_ICONS.sun;
-    if (this.clockIcon.dataset.k !== (sim.night ? 'm' : 's')) {
-      this.clockIcon.dataset.k = sim.night ? 'm' : 's';
+    const weather = sim.biome === 'pnw' ? sim.weather : null;
+    const key = weather && weather !== 'sunny' ? weather : sim.night ? 'moon' : 'sun';
+    const icon = weather && weather !== 'sunny' ? WEATHER_ICONS[weather] : sim.night ? MISC_ICONS.moon : MISC_ICONS.sun;
+    if (this.clockIcon.dataset.k !== key) {
+      this.clockIcon.dataset.k = key;
       this.clockIcon.innerHTML = icon;
     }
+    const label = weather ? weather === 'sunny' && sim.night ? 'Clear night' : `${WEATHER_NAMES[weather]} weather` : sim.night ? 'Night' : 'Daylight';
+    this.clockIcon.setAttribute('aria-label', label);
+    this.clockIcon.title = label;
     const dayFrac = (s.totalHours % 24) / 24;
     this.clockBar.style.transform = `scaleX(${dayFrac.toFixed(3)})`;
     toggle(this.devBadge, 'show', timeScale !== 1);
@@ -320,7 +345,9 @@ export class Hud {
     setHtml(this.belt, toolBeltHtml(s), this.beltKey);
     const used = usedSlots(s.inventory);
     const cap = s.inventory.slots.length;
-    setText(this.pack, `Pack ${used}/${cap} · Tab`);
+    setText(this.pack, `${used}/${cap}`);
+    this.packWrap.title = `Pack ${used}/${cap} · Tab`;
+    this.packWrap.setAttribute('aria-label', `Pack: ${used} of ${cap} slots used. Press Tab to open.`);
     toggle(this.pack, 'full', used >= cap);
   }
 
@@ -385,4 +412,3 @@ export function effectSummary(item: ItemId): string {
   if (f.energy) parts.push(`${f.energy > 0 ? '+' : ''}${f.energy} energy`);
   return parts.join(' · ');
 }
-

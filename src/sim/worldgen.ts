@@ -1,10 +1,12 @@
+import { circle, footprintSamples, type Shape2D } from '../core/geom2d';
 import { smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
 import { DEFAULT_BIOME, type BiomeId } from '../data/biomes';
 import { RESOURCES, TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
 import { generateIsland } from './islandgen';
 import { Occupancy } from './occupancy';
-import { getTerrain, isDrinkable, PLAY_HALF, type Terrain } from './terrain';
+import { generateSnow, type SnowPatch } from './snow';
+import { getTerrain, isDrinkable, PLAY_HALF, WATER_LEVEL, type Terrain } from './terrain';
 
 export interface TreeGen {
   x: number;
@@ -24,6 +26,9 @@ export interface ResourceGen {
   scale: number;
   /** Index among all candidate forage spots (grown or not); saves key resource state by it. */
   spot: number;
+  /** Snow can rest on scenery above the terrain; ordinary forage omits these fields. */
+  y?: number;
+  snow?: SnowPatch;
 }
 
 export interface RockGen {
@@ -69,6 +74,16 @@ export interface WorldGen {
 export const SPAWN_CLEAR_RADIUS = 12;
 /** Desert rocks smaller than this are gatherable stone piles, not boulders. */
 export const MIN_DESERT_BOULDER = 1;
+
+const groundSamples: number[] = [];
+/** Static scenery must sit on dry terrain, even when winter makes the water surface walkable. */
+export function dryFootprint(t: Pick<Terrain, 'heightAt'>, shape: Shape2D): boolean {
+  footprintSamples(shape, groundSamples);
+  for (let i = 0; i < groundSamples.length; i += 2) {
+    if (t.heightAt(groundSamples[i], groundSamples[i + 1]) < WATER_LEVEL + 0.15) return false;
+  }
+  return true;
+}
 
 function dryAndGentle(t: Terrain, x: number, z: number, minHeight: number, maxSlope: number): boolean {
   if (!t.inPlayBounds(x, z, 2)) return false;
@@ -208,7 +223,14 @@ export function generateWorld(seed: number): WorldGen {
     }
   }
 
-  return { seed, biome: 'pnw', trees, resources, resourceSpots: spots, rocks, logs, cacti: [] };
+  // Keep the original RNG draws and occupancy so saved tree/forage indices stay in place. Only remove unsafe
+  // scenery after generation. The conservative footprint covers the warped meshes, beyond the collision body.
+  const dryRocks = rocks.filter((r) => dryFootprint(t, circle(r.x, r.z, r.r * 1.6)));
+  const gen: WorldGen = { seed, biome: 'pnw', trees, resources, resourceSpots: spots, rocks: dryRocks, logs, cacti: [] };
+  const snow = generateSnow(t, gen);
+  gen.resources.push(...snow);
+  gen.resourceSpots += snow.length;
+  return gen;
 }
 
 /** Walkable desert ground: dry, gentle, and not up on a mesa, butte or the spire. */

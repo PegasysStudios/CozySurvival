@@ -19,6 +19,8 @@ import { STATE_VERSION, type CarcassState, type GameState, type RepairState, typ
 import { freshTree } from './trunks';
 import { getTerrain } from './terrain';
 import { dayOf } from './time';
+import { parseSeason } from './seasons';
+import { parseWeather } from './weather';
 import { getWorldGen, WORLD_REVISION } from './worldgen';
 
 export const SAVE_FORMAT = 'cozysurvival-save';
@@ -174,6 +176,13 @@ export function deserializeState(json: string | null): GameState | null {
   delete (state as { worldRev?: unknown }).worldRev;
   // Saves from before round 6 list learned recipes; every recipe is available now.
   delete state.known;
+  if (biome === 'pnw') {
+    state.season = parseSeason(raw.season, state.totalHours);
+    state.weather = parseWeather(raw.weather, state.seed, state.totalHours, state.season);
+  } else {
+    delete state.season;
+    delete state.weather;
+  }
   // Round 10: a save already past day 1 has survived its night, so the new night step never holds it back.
   if (version < 6 && dayOf(state.totalHours) > 1 && !num(state.stats.events?.[NIGHT_FROM], 0)) {
     state.stats.events = { ...(state.stats.events ?? {}), [NIGHT_FROM]: 1 };

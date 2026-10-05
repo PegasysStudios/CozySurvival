@@ -3,6 +3,8 @@ import type { SpeciesId } from '../data/species';
 import type { NetRequest } from '../sim/simulation';
 import type { AnimalMode, AnimalState, DamageSource } from '../sim/state';
 import type { Delta, WorldSnapshot } from './worldSync';
+import type { SeasonState } from '../sim/seasons';
+import type { WeatherState } from '../sim/weather';
 
 export type Avatar = 'm' | 'f';
 
@@ -153,6 +155,8 @@ export interface UpMsg {
 
 /** host → everyone (room), a few times a second. */
 export interface TickMsg {
+  season?: SeasonState;
+  weather?: WeatherState;
   rev: number;
   h: number;
   r: number;
@@ -171,6 +175,9 @@ export interface TickMsg {
 }
 
 export interface DawnMsg {
+  season?: SeasonState;
+  weather?: WeatherState;
+  forced?: boolean;
   h: number;
   e: number;
 }

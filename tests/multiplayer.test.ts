@@ -21,6 +21,7 @@ import { RESOURCES } from '../src/data/resources';
 import { SPECIES, type PreySpecies, type SpeciesId } from '../src/data/species';
 import { createAnimal } from '../src/sim/animals';
 import { Rng } from '../src/core/rng';
+import { snowAmount, snowScale } from '../src/sim/snow';
 
 const DT = 1 / 20;
 
@@ -94,6 +95,131 @@ function chopDown(sim: Simulation, index: number): void {
   for (let k = 0; k < 20 && !sim.state.trees[index].felled; k++) sim.perform({ kind: 'tree', index, dist: 1 });
   sim.takeEvents([]);
 }
+
+describe('multiplayer PNW seasons', () => {
+  it('shares snow harvests, spring melt progress and winter replenishment without guests resetting host harvests', async () => {
+    const w = await new World().open();
+    const guest = await w.join('Ben');
+    const h = w.host.sim, g = guestSim(guest);
+    const i = h.gen.resources.findIndex((r) => r.snow && snowScale(h.state.seed, r.spot, { id: 'spring', startDay: 1 }, 0) > 0);
+    const r = h.gen.resources[i];
+    h.devSetSeason('winter');
+    // Harvest before the guest sees the transition; its calendar update must preserve this host delta.
+    h.perform({ kind: 'resource', index: i, dist: 1 });
+    w.pump(0.5);
+    expect(h.state.resources[i].charges).toBe(2);
+    expect(g.state.resources[i].charges).toBe(2);
+    g.perform({ kind: 'resource', index: i, dist: 1 });
+    w.pump(0.5);
+    expect(h.state.resources[i].charges).toBe(1);
+    expect(g.state.resources[i].charges).toBe(1);
+    h.devSetSeason('spring');
+    w.pump(0.5);
+    expect(snowAmount(r, g.state, i)).toBeCloseTo(snowAmount(r, h.state, i), 3);
+    const early = snowAmount(r, h.state, i);
+    h.state.totalHours = 12 * 24;
+    w.pump(0.5);
+    expect(snowAmount(r, h.state, i)).toBeLessThan(early);
+    const late = guestSim(await w.join('Cleo'));
+    expect(snowAmount(r, late.state, i)).toBeCloseTo(snowAmount(r, h.state, i), 3);
+    h.state.totalHours = 24 * 24;
+    w.pump(0.5);
+    for (const sim of [h, g, late]) expect(sim.resourcePresent(i)).toBe(false);
+    h.devSetSeason('winter');
+    w.pump(0.5);
+    for (const sim of [h, g, late]) expect(sim.state.resources[i].charges).toBe(3);
+    w.host.leave();
+  });
+
+  it('shares instant weather overrides, late joins and the next dawn through actual messages', async () => {
+    const w = await new World().open();
+    const guest = await w.join('Ben');
+    const host = w.host.sim;
+    host.devSetSeason('winter');
+    host.devSetWeather('snowy');
+    w.pump(0.5);
+    expect(guestSim(guest).weather).toBe('snowy');
+    expect(guestSim(guest).devSetWeather('sunny')).toBe(false);
+    const late = await w.join('Cleo');
+    expect(guestSim(late).state.weather).toEqual(host.state.weather);
+    const fire = placeStructure(host, 'campfire');
+    host.devSetHour(21);
+    w.pump(0.5);
+    host.state.animals.length = 0;
+    for (const sim of [host, guestSim(guest), guestSim(late)]) {
+      sim.state.animals.length = 0;
+      expect(sim.trySleep(fire.id)).toBe(true);
+    }
+    const tomorrow = host.state.weather!.pattern[1];
+    w.pump(0.5);
+    expect(host.day).toBe(2);
+    expect(host.weather).toBe(tomorrow);
+    for (const g of [guest, late]) expect(guestSim(g).state.weather).toEqual(host.state.weather);
+    w.host.leave();
+  });
+
+  it('shares dev changes, winter wildlife and the calendar with guests and late joiners', async () => {
+    const w = await new World().open();
+    const guest = await w.join('Ben');
+    w.host.sim.devSetSeason('winter');
+    w.pump(0.5);
+    expect(guestSim(guest).season).toBe('winter');
+    expect(guestSim(guest).frozen).toBe(true);
+    expect(guestSim(guest).state.animals.some((a) => a.species === 'bear')).toBe(false);
+    expect(guestSim(guest).devSetSeason('summer')).toBe(false);
+    const late = await w.join('Cleo');
+    expect(guestSim(late).state.season?.id).toBe('winter');
+    expect(guestSim(late).seasonDay).toBe(w.host.sim.seasonDay);
+    w.host.leave();
+  });
+
+  it('at 2 AM wakes sleepers and passes out awake guests in place even if the host is dead', async () => {
+    for (const hostDead of [false, true]) {
+      const w = await new World().open();
+      const guest = await w.join('Ben');
+      const h = w.host.sim, g = guestSim(guest);
+      h.state.animals.length = g.state.animals.length = 0;
+      h.state.totalHours = 596;
+      h.state.dead = hostDead;
+      const hp = { x: h.state.player.x, z: h.state.player.z };
+      const gp = { x: g.state.player.x, z: g.state.player.z };
+      drain(h); drain(g);
+      w.host.update(0.1);
+      w.hub.flush();
+      guest.update(0.1);
+      expect(h.season).toBe('summer');
+      expect(g.season).toBe('summer');
+      expect(g.day).toBe(26);
+      expect(g.hour).toBe(6);
+      expect(g.state.player).toMatchObject(gp);
+      expect(h.state.player).toMatchObject(hp);
+      expect(drain(g)).toContainEqual({ type: 'slept', day: 26, byFire: false, passedOut: true });
+      expect(h.state.stats.events.slept ?? 0).toBe(hostDead ? 0 : 1);
+      expect(g.sleepingIn).toBeNull();
+      w.host.leave();
+    }
+  });
+
+  it('lets a group sleep into the next season before the 2 AM deadline', async () => {
+    const w = await new World().open();
+    const guest = await w.join('Ben');
+    const h = w.host.sim;
+    const fire = placeStructure(h, 'campfire');
+    h.state.totalHours = 24 * 24 + 15; // Spring 25, 9 PM.
+    w.pump(0.5);
+    const g = guestSim(guest);
+    h.state.animals.length = g.state.animals.length = 0;
+    expect(h.trySleep(fire.id)).toBe(true);
+    expect(g.trySleep(fire.id)).toBe(true);
+    w.pump(0.5);
+    expect(h.day).toBe(26);
+    expect(h.season).toBe('summer');
+    expect(g.season).toBe('summer');
+    expect(h.sleepingIn).toBeNull();
+    expect(g.sleepingIn).toBeNull();
+    w.host.leave();
+  });
+});
 
 describe('multiplayer: joining', () => {
   it('lists the server in the lobby, then guests join and see each other move', async () => {

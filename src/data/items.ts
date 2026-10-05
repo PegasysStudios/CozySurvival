@@ -1,6 +1,7 @@
 import type { BiomeId } from './biomes';
 
 export type ItemId =
+  | 'snowClump'
   | 'stick'
   | 'stone'
   | 'fiber'
@@ -88,6 +89,7 @@ export interface ItemDef {
 }
 
 export const ITEMS: Record<ItemId, ItemDef> = {
+  snowClump: { id: 'snowClump', name: 'Snow Clump', plural: 'Snow Clumps', stack: 12, color: '#e7f0f4', description: 'Packed snow. Melt and boil at a lit campfire for a serving of clean drinking water in your canteen.' },
   stick: { id: 'stick', name: 'Stick', plural: 'Sticks', stack: 12, color: '#a0703e', description: 'Dry fir branch. Handles, kindling, and fuel.', fuelHours: 1.5 },
   stone: { id: 'stone', name: 'Stone', plural: 'Stones', stack: 10, color: '#9aa0a6', description: 'A fist-sized river stone.' },
   fiber: { id: 'fiber', name: 'Plant Fiber', plural: 'Plant Fiber', stack: 30, color: '#7fae5a', description: 'Stripped from sword ferns. Twist it into cordage.' },

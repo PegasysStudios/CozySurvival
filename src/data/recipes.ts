@@ -115,6 +115,12 @@ export const RECIPES: Recipe[] = [
   },
   // ---- cooking (needs a lit campfire)
   {
+    id: 'meltSnow', biome: PNW, name: 'Melt & Boil Snow', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'snowClump', count: 1 }],
+    output: { kind: 'item', item: 'boiledWater', count: 1 },
+    description: 'Melt and boil one snow clump into clean drinking water. Needs room in your canteen; also works in teas and stews.',
+  },
+  {
     id: 'boilWater', name: 'Boiled Water', category: 'cooking', station: 'fire',
     inputs: [{ item: 'lakeWater', count: 1 }],
     output: { kind: 'item', item: 'boiledWater', count: 1 },

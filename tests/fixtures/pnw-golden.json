@@ -4,39 +4,39 @@
     "lakes": "1880ac24",
     "trees": "5ccf0ada",
     "resources": "7140b833",
-    "rocksLogs": "c07552fc",
+    "rocksLogs": "a95d6ed0",
     "start": "3422685d",
     "afterPlay": "a37ac910",
-    "counts": "1140/275/127/28/41"
+    "counts": "1140/275/123/28/41"
   },
   "42": {
     "heights": "7896f8e1",
     "lakes": "270e476b",
     "trees": "8fcb9033",
     "resources": "7f7c26a1",
-    "rocksLogs": "261bd91c",
+    "rocksLogs": "6c46f8da",
     "start": "451b1e7a",
     "afterPlay": "cda43d53",
-    "counts": "1018/267/142/28/41"
+    "counts": "1018/267/137/28/41"
   },
   "777": {
     "heights": "f5495ad8",
     "lakes": "8ca36dad",
     "trees": "640572e7",
     "resources": "5b218a5b",
-    "rocksLogs": "d7b95c98",
+    "rocksLogs": "7d827758",
     "start": "8ae94d98",
     "afterPlay": "d6bfb126",
-    "counts": "1104/280/112/28/41"
+    "counts": "1104/280/108/28/41"
   },
   "20260929": {
     "heights": "f841b349",
     "lakes": "7eed9d95",
     "trees": "805b8858",
     "resources": "d5e14301",
-    "rocksLogs": "0685f5d8",
-    "start": "c05bce4a",
-    "afterPlay": "f641d88f",
-    "counts": "1048/286/128/28/41"
+    "rocksLogs": "a9b91e6c",
+    "start": "8ddfcf14",
+    "afterPlay": "b2c62801",
+    "counts": "1048/286/122/28/41"
   }
 }

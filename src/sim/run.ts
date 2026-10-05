@@ -85,6 +85,8 @@ export interface Settings {
   sfxVolume: number;
   sensitivity: number;
   invertY: boolean;
+  /** Personal HUD preference, shared by the pause-menu checkbox and K shortcut. */
+  showGoals: boolean;
 }
 
 export interface BestRecord {
@@ -132,6 +134,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sfxVolume: DEFAULT_SFX_VOLUME,
   sensitivity: 1,
   invertY: false,
+  showGoals: true,
 };
 
 /**
@@ -150,6 +153,7 @@ export function normalizeSettings(raw: unknown): Settings {
     sfxVolume: clampVolume(s.sfxVolume, d.sfxVolume),
     sensitivity: typeof s.sensitivity === 'number' && Number.isFinite(s.sensitivity) ? s.sensitivity : d.sensitivity,
     invertY: typeof s.invertY === 'boolean' ? s.invertY : d.invertY,
+    showGoals: typeof s.showGoals === 'boolean' ? s.showGoals : d.showGoals,
   };
 }
 

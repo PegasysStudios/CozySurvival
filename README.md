@@ -1,8 +1,8 @@
 # CozySurvival
 
-A first-person, low-poly cozy survival game for the browser with three maps: a Pacific Northwest / Canadian forest, the Arizona high desert and a tropical island. You wake up stranded with nothing but your hands. Gather, craft, cook, hunt, build a camp and see how many days you can last. One in-game day lasts 24 real minutes.
+A low-poly cozy survival game for the browser with first-person and two third-person views, and three maps: a Pacific Northwest / Canadian forest, the Arizona high desert and a tropical island. You wake up stranded with nothing but your hands. Gather, craft, cook, hunt, build a camp and see how many days you can last. One in-game day lasts 24 real minutes.
 
-Pick the map with the arrows beside the title (or ← / → on the title screen). Each map keeps its own save and records. Everything below the **Maps** section describes the Pacific Northwest map, which plays exactly as it did before the desert was added.
+Pick the map in the title menu’s Settings (or with ← / → on the title screen). Each map keeps its own save and records. The Pacific Northwest now has seasons; the desert and island keep their existing climates.
 
 Built with Vite, TypeScript and Three.js. Models, terrain, sky and sound effects are generated procedurally. The only bundled asset is the background music track (`public/audio/forest-ambience.mp3`).
 
@@ -24,9 +24,39 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | `npm run preview` | Serve the production build on port **5288** |
 | `npm test` | Vitest suite for the simulation (no browser or WebGL needed) |
 | `npm run typecheck` | TypeScript only |
-| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, check the day-1 crafting lock, skip to the next morning, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then switch to the desert with the title arrow, start a desert run, check that each map continues its own run, and play a two-tab multiplayer session on a desert server over `?net=local`. Saves title and first-person screenshots of both maps. Fails on any console error |
+| `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, check the day-1 crafting lock, skip to the next morning, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then switch to the desert through Settings, start a desert run, check that each map continues its own run, and play a two-tab multiplayer session on a desert server over `?net=local`. Saves title and first-person screenshots of both maps. Fails on any console error |
 
 `npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one. Screenshots go to `smoke-shots/` (git-ignored); set `SMOKE_SHOTS` to save them elsewhere.
+
+## Pacific Northwest seasons
+
+Spring → Summer → Fall → Winter → Spring, **25 game days per season**. New runs start in Spring; older saves start a fresh Spring on their current day without resetting the landscape, inventory or camp. The top-left season card shows the day and progress toward the next season.
+
+The landscape changes while sleeping into the new season. Game days begin at 6 AM: on the final night, an awake player receives a warning at **1 AM** and passes out at **2 AM**, waking in the same place at dawn. Other nights still allow all-nighters. In multiplayer the host advances the shared season and everyone wakes together, including anyone who stayed awake.
+
+- **Spring:** fresh greens, more purple/pink/white wildflowers and abundant forage; cool weather.
+- **Summer:** the original green landscape and warmest daytime climate; fewer edible forage spots.
+- **Fall:** orange, red and gold deciduous foliage among green evergreens, brown ground cover and abundant forage; cooler weather.
+- **Winter:** snowy terrain and trees, no flowers, about 5% of edible forage spots, hibernating bears, white rabbits and very cold weather. Lakes become solid ice you can walk across; drinking, collecting lake water and fishing resume after thaw. Harvest snow clumps by hand on the ground, logs and some boulders. They hold three harvests and replenish after 24 game hours during winter. **Melt & Boil Snow** at a lit campfire turns one packed snow clump into one serving of boiled water in the canteen, usable for drinking, teas and stews.
+
+Spring immediately removes the winter blanket and leaves roughly a quarter of the seeded snow clumps. These remain at their original locations and steadily shrink, with different patches melting between days 5 and 25. All remnants are gone by day 25. Spring clumps can still be gathered, but do not replenish; the next winter restores them. Collected snow stacks in the pack like other crafting ingredients. Melting follows the season clock through sleep, saves, reloads and multiplayer.
+
+Seasons preserve harvested charges, felled trees, structures and map geometry. Their calendar is saved with the run and shared with multiplayer guests. In the developer menu (**~ / backquote**, dev builds or `?dev=1`), the PNW season buttons switch immediately to day 1 of the chosen season; only the host controls this in multiplayer.
+
+### Pacific Northwest weather
+
+Each day gets one weather state at **6 AM**, which stays through the day and following night: sunny, cloudy, rainy, foggy, or snowy in winter. Overcast days soften the light and fill out the clouds; fog adds gentle mist, rain falls in light streaks, and snow drifts slowly. Weather is atmospheric and adds no needs, damage, fire or harvest penalties. The day card's icon shows today's weather (a moon on clear nights); the season progress remains below it without extra text rows.
+
+Weather uses a shuffled seasonal mix with exact totals and a maximum of two consecutive days of any state, including across season boundaries. Each world seed has its own order; the weather RNG never consumes gameplay randomness. Rain becomes snow in winter.
+
+| Season (25 days) | Sunny | Cloudy | Rainy | Foggy | Snowy |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Spring | 8 | 7 | 7 | 3 | 0 |
+| Summer | 13 | 6 | 4 | 2 | 0 |
+| Fall | 6 | 8 | 7 | 4 | 0 |
+| Winter | 6 | 8 | 0 | 4 | 7 |
+
+Today's weather and its remaining seasonal schedule survive saving, reloading and retrying the day. The multiplayer host shares them with guests and late joiners. In the developer menu, **PNW weather** switches instantly until the next dawn; **Use today's weather** restores the scheduled choice. Choose Winter in the season controls to test Snowy. Guests cannot override the shared weather. Desert and island weather remain unchanged.
 
 ## Controls
 
@@ -37,6 +67,8 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | Jump | Space (also climbs onto boulders and fallen trunks) |
 | Swim | W A S D in deep water (no running or jumping while swimming) |
 | Look | Mouse |
+| Cycle camera: first person (default), close third person, far third person | V |
+| Show / hide Goals (also available in the pause menu; remembered between sessions) | K |
 | Gather, use tool, interact (fires, benches, shelters, workbenches, storage) | Left-click (hold to repeat) |
 | Skin, then butcher a carcass | Equip the Stone Knife (7) and left-click it: the first cut skins, the second butchers |
 | Sit on a bench / stand up | Left-click the bench / click it again or press a move key |
@@ -65,7 +97,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   - Cold can't kill you during the first two nights, awake or asleep: freezing still hurts, but stops at 1 health. From night 3 on it can take health to zero. Empty hunger and thirst can wear health to zero at any time.
   - Within range of a burning campfire (5.5 m) the cold never lowers your warmth, even at the edge of the firelight or while wading.
   - Sleeping through the night with no burning campfire in range costs 30 of your 100 warmth (`sleep.coldWarmthCost` in `balance.ts`). Beside a burning fire you wake at least as warm as you lay down, and a shelter can still warm you up. Energy is a real resource: walking drains a little (0.1/s), running drains 0.8/s (about two minutes from full), and every task and tool action costs energy: swinging an axe, spear or torch or loosing an arrow 1, gathering 0.5, casting a line 1.2, striking a fish 0.4, crafting 3, building 6, swimming 0.2/s. Standing still or sitting on a bench restores it, food and drink speed up recovery, and sleep refills it.
-- **Skills.** Gathering, hunting, cooking, crafting, fishing and skinning each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Pack panel (Tab). The effects are gentle:
+- **Skills.** Gathering, hunting, cooking, crafting, fishing and skinning each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Skills tab at the top of Crafting (C). The effects are gentle:
   - gathering: a growing chance of a bonus find (up to 40%), and up to +0.5 chop power with the axe
   - hunting: up to 40% more damage to animals and a chance of extra meat when you butcher
   - cooking: a novice sometimes chars a meal (20% at level 1, never at level 10). The first time you cook a dish it always comes out right, drinks never burn, and a Charred Meal is still edible.
@@ -130,7 +162,7 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
   - fishing pole: landing chance = 35% + Fishing (up to +35%) + pole (+7 / +14 / +20%), capped at 95%.
   - torch: no skill. Upgrades cut its burn rate (by 20 / 40 / 60%) and add warmth while held (+3 / +6 / +9).
   - Stone Knife: skinning chance = 35% + Skinning (up to +35%) + knife (+7 / +14 / +20%), capped at 95%, and slash damage × (1 + Hunting + knife (+0.15 / +0.3 / +0.45)).
-- **Foraging guide.** The Pack (Tab) has a **Foraging** tab: a numbered guide of every harvestable plant (salmonberry, sword fern, chanterelle, nodding onion, paper birch). Each page unlocks the first time you harvest that plant and shows its effects and hunger when eaten, the recipes that use it, where it grows, how fast it regrows, and field notes. Locked pages hint at where to look. Unlocks are saved with your run.
+- **Foraging guide.** Crafting (C) has a **Foraging** tab at the top: a numbered guide of every harvestable plant (salmonberry, sword fern, chanterelle, nodding onion, paper birch). Each page unlocks the first time you harvest that plant and shows its effects and hunger when eaten, the recipes that use it, where it grows, how fast it regrows, and field notes. Locked pages hint at where to look. Unlocks are saved with your run.
 - **Wildlife.**
   - Rabbits, deer and fish each have their own fear radius and flee behaviour. Deer spook from far away, so a bow helps.
   - Predators are rare early. Day 1 has a single distant grey wolf, black bears appear from day 2, and numbers grow slowly after that. Wolves spot you from farther away at night.
@@ -320,7 +352,7 @@ Round 11. The numbers below are averages over the eight seeds in `tests/island.t
 
 ### Map select and saves
 
-- The title screen has ◀ and ▶ arrows either side of the title. They (or ← / →) cycle the maps; the name, tagline, record and **Continue** button update, and the background cross-fades to that map.
+- The title screen shows **Continue**, **New Run**, **Multiplayer**, and **Settings**. Continue resumes the saved run; New Run requires Yes/No confirmation before replacing it. Settings contains map selection and controls. Its ◀ / ▶ arrows (or ← / → on the title screen) cycle maps; the name, tagline and Continue button update, and the background cross-fades to that map.
 - Each map has its own save and dawn snapshot. The Pacific Northwest map keeps the original storage keys (`cozysurvival.v1.save` and `cozysurvival.v1.daySnapshot`), so every existing save loads unchanged as a Pacific Northwest run. The desert uses the same keys with a `.desert` suffix, and the island with `.island`.
 - Best days and deaths are kept per map. **Start from scratch** on one map wipes only that map's save and record.
 - The last map you picked is remembered.
@@ -329,7 +361,7 @@ Round 11. The numbers below are averages over the eight seeds in `tests/island.t
 
 Up to 4 players share one world over Supabase Realtime. The host's browser runs the world, including the clock, the animals and the sleep vote, so there's no game server to deploy.
 
-- **Set up.** Copy `.env.example` to `.env.local`, fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, and restart `npm run dev`. [docs/multiplayer-setup.md](docs/multiplayer-setup.md) walks through the free Supabase project and its one SQL snippet. Without these variables the game is single-player only: the Multiplayer block on the title screen is greyed out with a "not set up" note, and the Supabase library is never downloaded.
+- **Set up.** Copy `.env.example` to `.env.local`, fill in `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, and restart `npm run dev`. [docs/multiplayer-setup.md](docs/multiplayer-setup.md) walks through the free Supabase project and its one SQL snippet. Without these variables the game is single-player only: the Multiplayer pop-up explains that multiplayer is unavailable and disables server creation, and the Supabase library is never downloaded.
 - **Try it without Supabase.** Open `http://localhost:5287/?net=local` in two tabs of the same browser. The tabs talk over a BroadcastChannel ("Local test mode").
 - **Play.**
   - **Create multiplayer server** starts a brand-new world on the map picked on the title screen. Other players see it in the server list, with its map, and click **Join**; guests get the host's map whatever their own title screen shows. Everyone picks a name and a male or female character.
@@ -402,7 +434,7 @@ Rendering is built for 60 fps:
 
 - the Arizona Desert (`tests/desert.test.ts`): the biome config, water across 40 seeds (always a drinkable spring near the spawn, no big lakes, far less water than the Pacific Northwest map), the alkali pool (first taste, refusal, no canteen fill), evening and night warmth against the Pacific Northwest map, a fire holding warmth, small-tree against big-tree wood, big trees only in the high country, scrub and cactus instead of forest plants, day-1 spawns, the cougar and upland-only bear schedule, the cougar's stalk and the torch, the rattlesnake strike, and the small prey bolting
 - per-map saves (`tests/maps.test.ts`): an old save loading unchanged as a Pacific Northwest run, a desert run leaving the Pacific Northwest save untouched, **Continue** on both maps, per-map records, Start from scratch and Retry the day on the desert, and a desert multiplayer server carrying its map through the lobby to a joining guest
-- the title map picker (`tests/title.test.ts`): arrow order and clicks, the map copy and the dots
+- the title menu (`tests/title.test.ts`): Continue, confirmation and cancellation before replacing a save, Settings and map selection; multiplayer pop-ups (`tests/multiplayer-menu.test.ts`): live server lists, create/join forms, disabled servers and cancellation
 - round 8: the canteen (`tests/canteen.test.ts`: filling, the fill bar, each Drink taking one serving until empty, boiling inside it, F, pack water migrating on both maps, save round-trip), benches (`tests/bench.test.ts`: seat position and facing from either side, clamping to the ends, standing up, the seated pose for other players, saves), repairs (`tests/repair.test.ts`: cost as a share of the crafting cost that rises with level and never reaches it, time rising with level, walking locked but looking free, full condition when done, refunds on hurt or a removed bench, saves), the storage bin (`tests/storage.test.ts`: 10/15/20 slots, moving stacks and single items in and out, full bin or pack, saves), the axe's blade direction (`tests/axe.test.ts`) and the tabbed menu (`tests/menus.test.ts`: tab order, icons, tooltips, the active tab, badges, the shared column and the CSS that keeps icons full size)
 - round 9: shallow pools (`tests/pools.test.ts`: basin shape across 40 seeds, no step too steep to walk out, banks no higher than the Pacific Northwest lake's, walking in and out, water area, and version-4 desert saves loading with trees, plants, structures, drops and carcasses reseated while Pacific Northwest saves load untouched), stones (`tests/stones.test.ts`: no bursage or small rocks, 1,300–1,900 gatherable piles on open dry ground, and seeded shape, size, rotation and colour variety on both maps), spines (`tests/spines.test.ts`: each spiny plant pricks with one warning, picking every charge unhurt, brushing past, the saguaro, the cooldown, death by spines, none on the Pacific Northwest map), scorpions (`tests/scorpions.test.ts`: the reveal rate (9% since round 10), the reveal, chase and sting, one weapon hit or two punches to kill, walking away until it burrows, the chase time limit, the cap, blocked sleep, saves, never on the Pacific Northwest map, the model), javelinas (`tests/javelinas.test.ts`: never faster than a sprint, the warn-charge-butt cycle, sprinting clear from 2, 4 and 8 m, walking away, watching from outside its ground, fighting back and bolting, charging a jackrabbit and a mountain lion, herd-mates joining, blocked sleep, sprinting clear in a real desert world) and the crafting checklist (`tests/checklist.test.ts`: pinning and unpinning, live have/need counts, the three-pin limit, auto-unpin, saves)
 - the Pacific Northwest map unchanged (`tests/pnw-unchanged.test.ts`): a golden fingerprint of the terrain, world gen, starting state and early play on several seeds
@@ -452,11 +484,11 @@ Rendering is built for 60 fps:
 
 `npm run smoke` boots the real build in headless Chrome as an end-to-end check of the day-1 crafting lock (every Tools tile locked at the first step, with the Day 1 header), then skips to the next morning with the dev hook and checks the crafting tabs (every recipe across them, tab icons loading, the tab row staying clear of the detail panel at 1280 and 800 px wide, the hover name), placement, the campfire menu and Esc, the canteen's Drink button, a workbench repair from its icon grid (greyed tiles, the ring, locked walking, full condition after), a storage bin (the stacked layout with its upgrade panel on the right, moving a stack in, upgrading to 15 slots), save/reload, and the death screen. It also checks that multiplayer shows as "not set up" without env vars. Then two tabs on `?net=local` play together: the host creates a server through the menu, and the guest joins from the list. They see each other, chat, and a guest's gathering reaches the host. Finally the host closes the server.
 
-It also switches the title to the desert with the arrow (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. Then it moves on to the island, the third map: the cross-fade and three map dots, a new island run with its own save (the forest and desert saves untouched), the fresh-water first step, salt water refused, the island crafting menu, and **Continue** on both the desert and the island. The multiplayer part runs on an island server, and the guest's server list shows "Tropical Island". On every map it turns the player and reads the Day card's compass back (all eight headings on the forest map, two each on the desert and island). On the island it also checks, in the browser, the less see-through water setting, 300+ purslane, and no trees or plants on the sand. Along the way it saves seven screenshots (each map's title screen, each map in first person, and the island's jungle facing the waterfall) and measures each map's frame time, draw calls, triangles and heap into `perf.json` next to them. The island has to stay within twice the forest's frame time and draw calls, and its heaviest view (the jungle facing the waterfall) within twice the forest's frame time.
+It also switches the title to the desert through Settings (checking the cross-fade), starts a desert run with its own save, checks the spring, the alkali pool and the desert crafting menu, then goes back to the Pacific Northwest map with ← and forward again with →, each showing **Continue** for its own run. Then it moves on to the island, the third map: the cross-fade and Settings map selection, a new island run with its own save (the forest and desert saves untouched), the fresh-water first step, salt water refused, the island crafting menu, and **Continue** on both the desert and the island. The multiplayer part runs on an island server, and the guest's server list shows "Tropical Island". On every map it turns the player and reads the Day card's compass back (all eight headings on the forest map, two each on the desert and island). On the island it also checks, in the browser, the less see-through water setting, 300+ purslane, and no trees or plants on the sand. Along the way it saves seven screenshots (each map's title screen, each map in first person, and the island's jungle facing the waterfall) and measures each map's frame time, draw calls, triangles and heap into `perf.json` next to them. The island has to stay within twice the forest's frame time and draw calls, and its heaviest view (the jungle facing the waterfall) within twice the forest's frame time.
 
 ## Menus and icons (round 6)
 
-- **Grid menus.** Crafting, the campfire, Upgrades and the Pack (tool belt, gear, Foraging guide) are square icon tiles like the pack slots. Hovering a tile fades in its name; selecting one shows its materials and the Craft, Cook or Upgrade button. Greyed tiles need more materials.
+- **Grid menus.** Crafting, the campfire, Upgrades and the Pack (owned tools and gear) are square icon tiles like the pack slots. Foraging and Skills have their own tabs at the top of Crafting. Hovering a tile fades in its name; selecting one shows its materials and the Craft, Cook or Upgrade button. Greyed tiles need more materials.
 - **Upgrade-only tiers.** The A-frame, bark hut and hide tent appear in the Build and Upgrades tabs with how to reach them (upgrade the tier below in place). Every tool's three upgrade levels are listed with their costs, even before the tool is made.
 - **Jon's icons.** Hand-made 64×64 PNGs live in `public/icons/jon/`. `src/data/icons.ts` holds the only mapping from item id and tier to file (tool tier = upgrade level + 1); anything unmapped keeps its built-in SVG. The first upload lost its filenames, so the mapping is a best guess until named files arrive.
 - **Ferns.** Sword ferns grow on 48% of their map-wide spots (was 40%), so fiber is a little easier to find.

@@ -4,6 +4,8 @@ import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
 import type { SpeciesId } from '../data/species';
 import type { WearingTool } from './durability';
+import type { SeasonState } from './seasons';
+import type { WeatherState } from './weather';
 
 export const STATE_VERSION = 6;
 
@@ -194,6 +196,10 @@ export interface GameState {
   runId: string;
   /** Game hours since day 1 at 06:00. */
   totalHours: number;
+  /** Present only on the Pacific Northwest map. */
+  season?: SeasonState;
+  /** Daily atmosphere, present only on the Pacific Northwest map. */
+  weather?: WeatherState;
   player: PlayerState;
   needs: NeedsState;
   inventory: InventoryState;

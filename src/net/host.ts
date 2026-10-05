@@ -1,5 +1,6 @@
 import { TOOL_ORDER } from '../data/items';
 import { canSleepAt } from '../sim/time';
+import { cloneWeather } from '../sim/weather';
 import type { Simulation, RemotePlayer } from '../sim/simulation';
 import { MAX_PLAYERS, PROTOCOL_VERSION, randomId, roomChannel, uplinkChannel } from './config';
 import { LobbyAdvert } from './lobby';
@@ -223,6 +224,8 @@ export class HostSession extends Session {
     const tick: TickMsg = {
       rev: this.rev,
       h: sim.state.totalHours,
+      ...(sim.state.season ? { season: { id: sim.state.season.id, startDay: sim.state.season.startDay } } : {}),
+      ...(sim.state.weather ? { weather: cloneWeather(sim.state.weather) } : {}),
       r: sim.timeScale,
       p,
       a,
@@ -237,8 +240,9 @@ export class HostSession extends Session {
 
   /** Everyone alive and in the world is asleep: skip to dawn for all. Also wakes sleepers if morning comes first. */
   private checkSleep(): void {
-    if (!this.sleeping.size) return;
     const sim = this.sim;
+    const forced = sim.seasonSleepDue;
+    if (!this.sleeping.size && !forced) return;
     const eligible: string[] = [];
     if (!sim.state.dead) eligible.push(this.pid);
     for (const g of this.guests.values()) {
@@ -247,16 +251,22 @@ export class HostSession extends Session {
     }
     const all = eligible.length > 0 && eligible.every((pid) => this.sleeping.has(pid));
     const morning = !canSleepAt(sim.hour);
-    if (!all && !morning) return;
+    if (!all && !morning && !forced) return;
     const sleepers: { x: number; z: number }[] = [sim.state.player];
     for (const peer of this.peers.values()) sleepers.push(peer);
-    const elapsed = all ? sim.skipNight(sleepers) : 0;
+    if (forced) sim.passOut();
+    const elapsed = all || forced ? sim.skipNight(sleepers) : 0;
     this.sleeping.clear();
-    const msg: DawnMsg = { h: sim.state.totalHours, e: elapsed };
+    const msg: DawnMsg = {
+      h: sim.state.totalHours, e: elapsed, forced,
+      ...(sim.state.season ? { season: { id: sim.state.season.id, startDay: sim.state.season.startDay } } : {}),
+      ...(sim.state.weather ? { weather: cloneWeather(sim.state.weather) } : {}),
+    };
     this.room.send('dawn', msg);
     sim.wakeUp(elapsed);
     this.events.push({ type: 'dawn', elapsed });
-    if (all) this.system('Everyone is asleep. The night passes…');
+    if (forced) this.system('It is 2 AM. Everyone rests as the new season arrives.');
+    else if (all) this.system('Everyone is asleep. The night passes…');
     this.advert.update({ day: sim.day });
   }
 

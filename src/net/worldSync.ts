@@ -7,6 +7,8 @@ import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, T
 import { addToStore, cloneStore, ensureStore, removeFromStore, sameStore, storeTotals } from '../sim/storage';
 import { freshTree } from '../sim/trunks';
 import { getWorldGen } from '../sim/worldgen';
+import { parseSeason, type SeasonState } from '../sim/seasons';
+import { cloneWeather, parseWeather, type WeatherState } from '../sim/weather';
 
 /**
  * One change to the shared world. Values are full state, so applying one twice is harmless.
@@ -365,6 +367,8 @@ function mergeTree(sim: Simulation, i: number, v: TreeDyn, p: TreeDyn, from: { x
 
 /** The world as a sparse diff from the seed's fresh world: terrain and placement regenerate from the seed. */
 export interface WorldSnapshot {
+  season?: SeasonState;
+  weather?: WeatherState;
   seed: number;
   /** The map; absent for the Pacific Northwest. */
   b?: BiomeId;
@@ -392,6 +396,8 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
     seed: s.seed,
     ...(sim.biome !== DEFAULT_BIOME ? { b: sim.biome } : {}),
     h: s.totalHours,
+    ...(s.season ? { season: { id: s.season.id, startDay: s.season.startDay } } : {}),
+    ...(s.weather ? { weather: cloneWeather(s.weather) } : {}),
     r: sim.timeScale,
     t,
     rs,
@@ -413,6 +419,10 @@ export function stateFromSnapshot(snap: WorldSnapshot): GameState {
   state.carcasses = snap.ca.map(cloneCarcass);
   state.animals = [];
   state.totalHours = snap.h;
+  if (biome === 'pnw') {
+    state.season = parseSeason(snap.season, snap.h);
+    state.weather = parseWeather(snap.weather, snap.seed, snap.h, state.season);
+  }
   state.spawnCheckAt = Infinity;
   return state;
 }

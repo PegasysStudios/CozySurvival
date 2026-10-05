@@ -7,6 +7,9 @@ import type { GameState } from '../sim/state';
 import { PLAY_HALF, type Terrain } from '../sim/terrain';
 import { barkStripped, TRUNK_AXIS_LIFT, trunkSpan } from '../sim/trunks';
 import type { WorldGen } from '../sim/worldgen';
+import { seasonalForage, type Season } from '../sim/seasons';
+import { seasonColors } from './seasons';
+import { SnowView } from './snow';
 import { tf, withWind } from './geo';
 import { ChunkedInstances, type InstanceSpec } from './instances';
 import { creosoteGeometry, desertFlowerGeometry, desertGrassGeometry, SAGUARO_HEIGHT, saguaroGeometry, sagebrushGeometry } from './desertModels';
@@ -63,6 +66,7 @@ export class NatureView {
 
   private readonly terrain: Terrain;
   private readonly gen: WorldGen;
+  private readonly season: Season | null;
   private readonly mats: NatureMaterials;
   /** Tree species on this map, in a fixed order. */
   private readonly species: TreeSpecies[];
@@ -94,6 +98,7 @@ export class NatureView {
   /** Ground cover a structure hides when built over it. */
   private readonly grassPos: { inst: ChunkedInstances; local: number; x: number; z: number }[] = [];
   private readonly others: ChunkedInstances[] = [];
+  private readonly snow: SnowView | null;
   private readonly ownedGeos: THREE.BufferGeometry[] = [];
   private readonly falling: Falling[] = [];
   private readonly trunkGeos = {} as Record<TreeSpecies, THREE.BufferGeometry>;
@@ -106,9 +111,10 @@ export class NatureView {
   private readonly tmpQ = new THREE.Quaternion();
   private readonly tmpQ2 = new THREE.Quaternion();
 
-  constructor(terrain: Terrain, gen: WorldGen, mats: NatureMaterials) {
+  constructor(terrain: Terrain, gen: WorldGen, mats: NatureMaterials, season: Season | null = null) {
     this.terrain = terrain;
     this.gen = gen;
+    this.season = gen.biome === 'pnw' ? season : null;
     this.mats = mats;
     const present = new Set(gen.trees.map((tr) => tr.species));
     this.species = gen.biome === 'pnw' ? ['fir', 'cedar', 'birch', 'maple'] : ALL_SPECIES.filter((s) => present.has(s));
@@ -122,6 +128,8 @@ export class NatureView {
     this.buildTrees();
     this.buildRocksAndLogs();
     this.buildResources();
+    this.snow = gen.biome === 'pnw' ? new SnowView(terrain, gen) : null;
+    if (this.snow) this.group.add(this.snow.group);
     if (gen.biome === 'desert') {
       this.buildCacti();
       this.buildDesertGround();
@@ -132,7 +140,8 @@ export class NatureView {
     }
   }
 
-  private own<T extends THREE.BufferGeometry>(g: T): T {
+  private own<T extends THREE.BufferGeometry>(g: T, surface: Parameters<typeof seasonColors>[2] = 'solid'): T {
+    seasonColors(g, this.season, surface);
     this.ownedGeos.push(g);
     return g;
   }
@@ -153,8 +162,9 @@ export class NatureView {
       list.push({ matrix: tf(tr.x, y, tr.z, 0, tr.rot, 0, tr.scale), color });
     });
     for (const s of this.species) {
-      this.treeGeos[s] = this.own(treeGeometry(s));
-      const lod = this.own(treeGeometry(s, 1));
+      const surface = s === 'fir' || s === 'cedar' ? 'evergreen' : 'deciduous';
+      this.treeGeos[s] = this.own(treeGeometry(s), surface);
+      const lod = this.own(treeGeometry(s, 1), surface);
       this.trees[s] = new ChunkedInstances(this.treeGeos[s], this.mats.foliage, specs[s], { chunkSize: 48, castShadow: true, name: 'trees-' + s, lod });
       this.group.add(this.trees[s].group);
       const stumpGeo = this.own(stumpGeometry(s));
@@ -172,10 +182,10 @@ export class NatureView {
         continue;
       }
       if (TREES[s].bark <= 0 || !specs[s].length) continue;
-      const geo = this.own(treeGeometry(s, 0, true));
+      const geo = this.own(treeGeometry(s, 0, true), surface);
       const strippedSpecs = specs[s].map((sp) => ({ matrix: sp.matrix.clone(), color: sp.color?.clone() }));
       const inst = new ChunkedInstances(geo, this.mats.foliage, strippedSpecs, {
-        chunkSize: 48, castShadow: true, name: `trees-${s}-stripped`, lod: this.own(treeGeometry(s, 1, true)),
+        chunkSize: 48, castShadow: true, name: `trees-${s}-stripped`, lod: this.own(treeGeometry(s, 1, true), surface),
       });
       for (let i = 0; i < strippedSpecs.length; i++) inst.setHidden(i, true);
       this.strippedGeos[s] = geo;
@@ -204,6 +214,7 @@ export class NatureView {
       mesh = new THREE.Mesh(this.trunkGeos[tr.species], this.mats.solid);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      mesh.userData.cameraObstacle = true;
       this.group.add(mesh);
     }
     const lift = span.r * TRUNK_AXIS_LIFT;
@@ -237,7 +248,7 @@ export class NatureView {
     const bleached = (l: { x: number; z: number }) => desert || (island && t.island!.land(l.x, l.z) < 30);
     for (const weathered of [false, true]) {
       const logSpecs = this.gen.logs.filter((l) => bleached(l) === weathered).map((l) => {
-        const y = t.heightAt(l.x, l.z) + l.r * 0.7;
+        const y = t.heightAt(l.x, l.z) + l.r * TRUNK_AXIS_LIFT;
         return { matrix: tf(l.x, y, l.z, 0, l.rot, 0, l.length, l.r, l.r) };
       });
       if (!logSpecs.length) continue;
@@ -265,6 +276,7 @@ export class NatureView {
     for (const k of RESOURCE_KINDS) specs[k] = [];
     const stoneSpecs: InstanceSpec[][] = Array.from({ length: STONE_VARIANTS }, () => []);
     this.gen.resources.forEach((r, i) => {
+      if (r.snow) return;
       if (r.kind === 'stonePile') {
         const look = stoneLook(this.gen.seed, r.spot);
         this.stoneVariant[i] = look.variant;
@@ -283,7 +295,7 @@ export class NatureView {
     for (const k of RESOURCE_KINDS) {
       if (!specs[k].length || k === 'stonePile') continue;
       const model = resourceGeometry(k);
-      this.own(model.main);
+      this.own(model.main, 'plant');
       const mat = model.doubleSided ? this.mats.plant : SWAYING.has(k) ? this.mats.foliage : this.mats.solid;
       const shadow = k === 'berryBush' || k === 'pricklyPear' || k === 'cholla' || k === 'wolfberry' || k === 'agave' || k === 'seaGrape' || k === 'pandanus' || k === 'banana';
       this.resources[k] = new ChunkedInstances(model.main, mat, specs[k], { chunkSize: 48, castShadow: shadow, name: 'res-' + k });
@@ -443,7 +455,9 @@ export class NatureView {
       grassIdx.push({ set: v, local: grassSpecs[v].length, x, z });
       grassSpecs[v].push({ matrix: tf(x, h - 0.03, z, 0, rng.range(0, 6.28), 0, s, s * rng.range(0.8, 1.2), s) });
     }
-    for (let i = 0; i < 5000 && flowerSpecs.reduce((a, b) => a + b.length, 0) < 1700; i++) {
+    const flowerCount = this.season === 'winter' ? 0 : this.season === 'spring' ? 6800 : this.season === 'fall' ? 450 : 1700;
+    const flowerAttempts = this.season === 'spring' ? 20000 : 10000;
+    for (let i = 0; i < flowerAttempts && flowerSpecs.reduce((a, b) => a + b.length, 0) < flowerCount; i++) {
       const x = rng.range(-PLAY_HALF, PLAY_HALF);
       const z = rng.range(-PLAY_HALF, PLAY_HALF);
       const h = t.heightAt(x, z);
@@ -454,7 +468,8 @@ export class NatureView {
       flowerSpecs[v].push({ matrix: tf(x, h - 0.02, z, 0, rng.range(0, 6.28), 0, s) });
     }
     grassSpecs.forEach((specs, v) => {
-      const inst = new ChunkedInstances(this.own(grassGeometry(v)), this.mats.plant, specs, { chunkSize: 40, name: 'grass' });
+      const inst = new ChunkedInstances(this.own(grassGeometry(v), 'plant'), this.mats.plant, specs, { chunkSize: 40, name: 'grass' });
+      inst.group.visible = this.season !== 'winter';
       this.grass.push(inst);
       this.group.add(inst.group);
     });
@@ -469,6 +484,7 @@ export class NatureView {
 
   /** Bring instance visibility in line with the simulation state. */
   sync(state: GameState, animate: boolean): void {
+    this.snow?.update(state, true);
     for (let i = 0; i < this.gen.trees.length; i++) {
       const sp = this.gen.trees[i].species;
       const crown = !!TREES[sp].crown;
@@ -503,13 +519,21 @@ export class NatureView {
       if (felled || this.trunks.has(i)) this.syncTrunk(i, state);
     }
     for (let i = 0; i < this.gen.resources.length; i++) {
-      const up = state.resources[i].charges > 0 ? 1 : 0;
+      const g = this.gen.resources[i];
+      if (g.snow) continue;
+      const available = seasonalForage(this.season, this.gen.seed, g.spot, g.kind);
+      const up = available ? state.resources[i].charges > 0 ? 1 : 0 : -2;
       if (up === this.resourceUp[i]) continue;
       this.resourceUp[i] = up;
       const kind = this.gen.resources[i].kind;
       const inst = this.resourceSet(i);
       const local = this.resLocal[i];
       const extra = this.extras[kind];
+      if (!available) {
+        inst.setHidden(local, true);
+        extra?.setHidden(local, true);
+        continue;
+      }
       if (SHRINK_WHEN_PICKED.has(kind)) inst.setMatrix(local, this.resourceMatrix(i, !up));
       else if (extra) extra.setHidden(local, !up);
       else inst.setHidden(local, !up);
@@ -547,7 +571,8 @@ export class NatureView {
   }
 
   /** `viewDist` is where fog fully hides the world; nothing past it needs drawing. */
-  update(dt: number, px: number, pz: number, viewDist: number): void {
+  update(dt: number, px: number, pz: number, viewDist: number, state?: GameState): void {
+    if (state) this.snow?.update(state);
     for (const g of this.grass) g.cullByDistance(px, pz, GRASS_VIEW);
     for (const f of this.flowers) f.cullByDistance(px, pz, FLOWER_VIEW);
     for (const s of this.scrub) s.cullByDistance(px, pz, Math.min(SCRUB_VIEW, viewDist), SCRUB_LOD_DIST);
@@ -596,6 +621,7 @@ export class NatureView {
   }
 
   dispose(): void {
+    this.snow?.dispose();
     for (const s of this.species) {
       this.trees[s].dispose();
       this.stumps[s].dispose();
@@ -609,4 +635,3 @@ export class NatureView {
     for (const g of this.ownedGeos) g.dispose();
   }
 }
-

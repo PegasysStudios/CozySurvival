@@ -1,10 +1,12 @@
 import { ICON_DIR, iconFile, toolTier, type IconId } from '../data/icons';
 import type { GearId, ItemId, ToolId } from '../data/items';
 import type { PrefabId } from '../data/prefabs';
+import type { Weather } from '../sim/weather';
 
 const svg = (body: string) => `<svg viewBox="0 0 32 32" aria-hidden="true">${body}</svg>`;
 
 const ITEM_ICONS: Record<ItemId, string> = {
+  snowClump: svg('<path d="M4 24c-1-4 2-7 6-7-1-5 3-9 8-8 4 0 6 4 6 7 4 0 6 4 4 8-5 3-19 3-24 0z" fill="#e7f0f4"/><path d="M6 24c6 2 15 2 21-1" stroke="#a6c7d7" stroke-width="2" fill="none"/><path d="M17 5v6m-3-4 6 2m-6 0 6-2" stroke="#b8d8e7" stroke-width="1.3" stroke-linecap="round"/>'),
   stick: svg('<path d="M6 26 26 6" stroke="#8a5a2b" stroke-width="4" stroke-linecap="round"/><path d="M15 17l6 2" stroke="#8a5a2b" stroke-width="2.5" stroke-linecap="round"/><path d="M20 12l-1-5" stroke="#6f4722" stroke-width="2" stroke-linecap="round"/>'),
   stone: svg('<path d="M6 21c0-6 5-11 11-11 6 0 9 4 9 9 0 4-4 7-10 7S6 25 6 21z" fill="#9aa0a6"/><path d="M10 17c2-3 5-4 8-4" stroke="#c4c9cd" stroke-width="2" fill="none" stroke-linecap="round"/>'),
   fiber: svg('<path d="M9 27C9 17 12 10 16 5M16 27c0-9 1-15 5-21M23 27c-1-8-4-14-10-19" stroke="#7fae5a" stroke-width="2.5" fill="none" stroke-linecap="round"/>'),
@@ -107,6 +109,18 @@ export const MISC_ICONS = {
   storageBin: svg('<path d="M6 11h20l-2 16H8z" fill="#c9a86a"/><path d="M7 16h18M8 21h16M11 11l1.5 16M16 11v16M21 11l-1.5 16" stroke="#9a7a44" stroke-width="1.4"/><rect x="5" y="8" width="22" height="4" rx="2" fill="#a88650"/>'),
   storageCrate: svg('<rect x="4" y="10" width="24" height="17" rx="1.5" fill="#9a7048"/><path d="M4 16h24M4 22h24" stroke="#6e4a30" stroke-width="1.6"/><rect x="3" y="7" width="26" height="4" rx="1" fill="#b58b5c"/><path d="M7 7v20M25 7v20" stroke="#5e4330" stroke-width="2.4"/>'),
   storageChest: svg('<path d="M4 15a12 7 0 0 1 24 0z" fill="#b58b5c"/><rect x="4" y="15" width="24" height="12" rx="1.5" fill="#8a5a33"/><path d="M10 8v19M22 8v19" stroke="#c9a06a" stroke-width="2.6"/><rect x="14" y="14" width="4" height="5" rx="1" fill="#8e9398"/>'),
+};
+
+const weatherCloud = '<path d="M8 20a6 6 0 0 1-1-12 8 8 0 0 1 15-1 6.5 6.5 0 0 1 2 13z" fill="#c9d9e2"/><path d="M9 10a7 7 0 0 1 12-1" fill="none" stroke="#edf3f5" stroke-width="1.8" stroke-linecap="round"/>';
+const snowflake = '<path d="M0-5v10M-4.3-2.5l8.6 5M-4.3 2.5l8.6-5M-2-4l2 2 2-2M-2 4l2-2 2 2"/>';
+
+/** Compact weather silhouettes for the day card's existing 30px icon slot. */
+export const WEATHER_ICONS: Record<Weather, string> = {
+  sunny: MISC_ICONS.sun,
+  cloudy: svg(`<path d="M5 25a4.5 4.5 0 0 1 0-9h16a4.5 4.5 0 0 1 0 9z" fill="#8ea9b9"/>${weatherCloud}`),
+  rainy: svg(`${weatherCloud}<g fill="none" stroke="#83c4e6" stroke-width="2.4" stroke-linecap="round"><path d="m9 24-2 4m10-4-2 4m10-4-2 4"/></g>`),
+  foggy: svg(`<g transform="translate(3 0) scale(.82)">${weatherCloud}</g><g fill="none" stroke="#b3cbd6" stroke-width="2.2" stroke-linecap="round"><path d="M4 21h18M9 25h19M3 29h20"/></g>`),
+  snowy: svg(`<g fill="none" stroke="#c4e6f2" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><g transform="translate(10 10)">${snowflake}</g><g transform="translate(24 13) scale(.85)">${snowflake}</g><g transform="translate(15 25)">${snowflake}</g></g>`),
 };
 
 export function iconImg(file: string, dir = ICON_DIR): string {

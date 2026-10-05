@@ -6,11 +6,12 @@ const vertex = /* glsl */ `
   #include <common>
   #include <fog_pars_vertex>
   uniform float uTime;
+  uniform float uFrozen;
   varying vec3 vWorld;
   void main() {
     vec3 p = position;
     vec4 wp = modelMatrix * vec4(p, 1.0);
-    wp.y += sin(wp.x * 0.35 + uTime * 0.9) * 0.025 + cos(wp.z * 0.28 + uTime * 0.7) * 0.025;
+    wp.y += (1.0 - uFrozen) * (sin(wp.x * 0.35 + uTime * 0.9) * 0.025 + cos(wp.z * 0.28 + uTime * 0.7) * 0.025);
     vWorld = wp.xyz;
     vec4 mvPosition = viewMatrix * wp;
     gl_Position = projectionMatrix * mvPosition;
@@ -22,6 +23,8 @@ const fragment = /* glsl */ `
   #include <common>
   #include <fog_pars_fragment>
   uniform float uTime;
+  uniform float uFrozen;
+  uniform float uNight;
   uniform sampler2D uDepth;
   uniform vec3 uDeep;
   uniform vec3 uShallow;
@@ -57,6 +60,15 @@ const fragment = /* glsl */ `
     float ripple = 0.5 + 0.5 * sin(depth * 24.0 - uTime * 2.2 + vWorld.x * 0.4);
     col = mix(col, vec3(0.93, 0.95, 0.94), foamLine * (0.35 + 0.4 * ripple));
     float alpha = mix(0.55, 0.9, shallow) + fres * 0.08;
+    if (uFrozen > 0.5) {
+      float frost = 0.5 + 0.5 * sin(p.x * 0.23 + sin(p.y * 0.38)) * cos(p.y * 0.31);
+      float seam = 1.0 - smoothstep(0.015, 0.065, abs(sin(p.x * 0.14 + p.y * 0.17 + sin(p.y * 0.2) * 0.4)));
+      col = mix(vec3(0.30, 0.52, 0.64), vec3(0.75, 0.85, 0.89), frost * 0.7 + foamLine * 0.3);
+      col = mix(col, vec3(0.15, 0.35, 0.48), seam * 0.35);
+      col *= 1.0 - uNight * 0.88;
+      col += uSunColor * spec * 0.25;
+      alpha = 1.0;
+    }
     gl_FragColor = vec4(col, clamp(alpha, 0.0, 1.0));
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -89,6 +101,8 @@ export class WaterView {
         THREE.UniformsLib.fog,
         {
           uTime: { value: 0 },
+          uFrozen: { value: 0 },
+          uNight: { value: 0 },
           uDepth: { value: null },
           uDeep: { value: new THREE.Color('#1f4f5e') },
           uShallow: { value: new THREE.Color('#5d9a8f') },
@@ -122,9 +136,17 @@ export class WaterView {
     if (this.alkali) this.updateMaterial(this.alkali, time, sky, sunDir, sunColor, sunStrength, night, 'alkali');
   }
 
+  setFrozen(frozen: boolean): void {
+    this.material.uniforms.uFrozen.value = frozen ? 1 : 0;
+    this.material.transparent = !frozen;
+    this.material.depthWrite = frozen;
+    this.material.needsUpdate = true;
+  }
+
   private updateMaterial(m: THREE.ShaderMaterial, time: number, sky: THREE.Color, sunDir: THREE.Vector3, sunColor: THREE.Color, sunStrength: number, night: number, kind: keyof typeof PALETTE): void {
     const u = m.uniforms;
     u.uTime.value = time;
+    u.uNight.value = night;
     (u.uSky.value as THREE.Color).copy(sky);
     (u.uSunDir.value as THREE.Vector3).copy(sunDir);
     (u.uSunColor.value as THREE.Color).copy(sunColor);

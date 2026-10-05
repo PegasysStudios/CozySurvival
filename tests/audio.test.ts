@@ -118,7 +118,7 @@ describe('volume settings persistence', () => {
     expect(normalizeSettings(undefined)).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings('nope')).toEqual(DEFAULT_SETTINGS);
     expect(normalizeSettings({ masterVolume: 0.3, musicVolume: 0.6, sfxVolume: 0.8, muted: true, sensitivity: 1.4, invertY: true }))
-      .toEqual({ masterVolume: 0.3, musicVolume: 0.6, sfxVolume: 0.8, muted: true, sensitivity: 1.4, invertY: true });
+      .toEqual({ masterVolume: 0.3, musicVolume: 0.6, sfxVolume: 0.8, muted: true, sensitivity: 1.4, invertY: true, showGoals: true });
     expect(normalizeSettings({ masterVolume: 'loud', muted: 'yes' })).toMatchObject({ masterVolume: 0.5, muted: false });
     expect(normalizeSettings({ masterVolume: 7 }).masterVolume).toBe(1);
     // the pre-music `volume` (80% default) is dropped for the new 50% master volume
@@ -156,7 +156,7 @@ describe('volume settings persistence', () => {
     const rm = new RunManager(store);
     expect(rm.meta.worldSeed).toBe(9);
     expect(rm.meta.deaths).toBe(2);
-    expect(rm.meta.settings).toEqual({ muted: false, masterVolume: 0.5, musicVolume: 0.1, sfxVolume: 1, sensitivity: 1.2, invertY: false });
+    expect(rm.meta.settings).toEqual({ muted: false, masterVolume: 0.5, musicVolume: 0.1, sfxVolume: 1, sensitivity: 1.2, invertY: false, showGoals: true });
   });
 });
 
@@ -206,7 +206,7 @@ describe('separate music and effects volume', () => {
     const store = new MemoryStorage();
     store.setItem(STORAGE_KEYS.meta, JSON.stringify({ version: 1, worldSeed: 3, best: null, deaths: 0, settings: { muted: true, masterVolume: 0.8, sensitivity: 1, invertY: false } }));
     const rm = new RunManager(store);
-    expect(rm.meta.settings).toEqual({ muted: true, masterVolume: 0.8, musicVolume: 0.1, sfxVolume: 1, sensitivity: 1, invertY: false });
+    expect(rm.meta.settings).toEqual({ muted: true, masterVolume: 0.8, musicVolume: 0.1, sfxVolume: 1, sensitivity: 1, invertY: false, showGoals: true });
     rm.meta.settings.musicVolume = 0.35;
     rm.meta.settings.sfxVolume = 0.6;
     rm.saveMeta();

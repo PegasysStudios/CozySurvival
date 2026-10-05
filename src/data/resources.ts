@@ -1,7 +1,7 @@
 import type { ItemId } from './items';
 
 export type ResourceKind =
-  | 'stickPile' | 'stonePile' | 'berryBush' | 'fern' | 'mushroom' | 'onion'
+  | 'stickPile' | 'stonePile' | 'berryBush' | 'fern' | 'mushroom' | 'onion' | 'snowClump'
   | 'yucca' | 'pricklyPear' | 'cholla' | 'agave' | 'chia' | 'wolfberry'
   | 'seaGrape' | 'pandanus' | 'taro' | 'banana' | 'purslane' | 'coconut';
 
@@ -42,6 +42,7 @@ export interface ResourceDef {
  * little leaf fiber (a 30% chance of 1, against the yucca's sure 2 per harvest).
  */
 export const RESOURCES: Record<ResourceKind, ResourceDef> = {
+  snowClump: { kind: 'snowClump', name: 'Snow Clump', verb: 'Gather snow', item: 'snowClump', yield: 1, charges: 3, respawnHours: 24, hitRadius: 0.75, hitHeight: 0.18, blockRadius: 0, starter: 0, scatter: 0 },
   stickPile: { kind: 'stickPile', name: 'Fallen Branches', verb: 'Gather sticks', item: 'stick', yield: 1, charges: 3, respawnHours: 12, hitRadius: 0.6, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
   stonePile: { kind: 'stonePile', name: 'Loose Stones', verb: 'Pick up stones', item: 'stone', yield: 1, charges: 3, respawnHours: 30, hitRadius: 0.55, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
   berryBush: { kind: 'berryBush', name: 'Salmonberry Bush', verb: 'Pick berries', item: 'berries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.6, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
@@ -66,7 +67,7 @@ export const RESOURCES: Record<ResourceKind, ResourceDef> = {
 
 export const RESOURCE_KINDS: ResourceKind[] = [
   'stickPile', 'stonePile', 'berryBush', 'fern', 'mushroom', 'onion', 'yucca', 'pricklyPear', 'cholla', 'agave', 'chia', 'wolfberry',
-  'seaGrape', 'pandanus', 'taro', 'banana', 'purslane', 'coconut',
+  'seaGrape', 'pandanus', 'taro', 'banana', 'purslane', 'coconut', 'snowClump',
 ];
 
 export type TreeSpecies =

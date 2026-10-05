@@ -97,9 +97,9 @@ export const OBJECTIVES: Objective[] = [
   },
   {
     id: 'forage', title: 'Food keeps you alive: forage',
-    hint: 'Pick salmonberries, wild onions or chanterelles. Each new plant gets a page in your Foraging guide (Tab).',
-    desert: { hint: 'Pick prickly pear fruit, cholla buds or wolfberries. Each new plant gets a page in your Foraging guide (Tab).' },
-    island: { hint: 'Pick sea grapes and purslane on the beach, or find a coconut fallen under a palm. Each new plant gets a page in your Foraging guide (Tab).' },
+    hint: 'Pick salmonberries, wild onions or chanterelles. Find each new plant in Crafting (C) → Foraging.',
+    desert: { hint: 'Pick prickly pear fruit, cholla buds or wolfberries. Find each new plant in Crafting (C) → Foraging.' },
+    island: { hint: 'Pick sea grapes and purslane on the beach, or find a coconut fallen under a palm. Find each new plant in Crafting (C) → Foraging.' },
     done: (s) => foraged(s) >= FORAGE_FOOD,
     needs: (s) => [
       island(s)

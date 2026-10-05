@@ -30,8 +30,11 @@ import { carcassStep, hidesOn } from './carcass';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
 import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
-import { crownPosition, freshTree, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
+import { crownPosition, freshTree, logTop, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
 import { getWorldGen, type WorldGen } from './worldgen';
+import { parseSeason, seasonAtDawn, seasonDay, seasonDeadline, seasonalForage, SEASON_NAMES, SEASON_SLEEP_COLD, SEASON_WARMTH, type Season, type SeasonState } from './seasons';
+import { parseWeather, weatherForSeason, WEATHER_NAMES, type Weather, type WeatherState } from './weather';
+import { snowAmount, snowCovered, snowScale } from './snow';
 
 export interface SimInput {
   moveX: number;
@@ -43,6 +46,8 @@ export interface SimInput {
   primary: boolean;
   primaryPressed: boolean;
   primaryReleased: boolean;
+  /** Optional presentation-camera aim, resolved after movement; absent keeps the original first-person ray. */
+  resolveAim?: (eye: { x: number; y: number; z: number }, out: { x: number; y: number; z: number }) => void;
 }
 
 export const IDLE_INPUT: Readonly<SimInput> = {
@@ -241,6 +246,7 @@ export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): Ga
     ...(biome === DEFAULT_BIOME ? {} : { biome }),
     runId: makeRunId(),
     totalHours: START_HOURS,
+    ...(biome === 'pnw' ? { season: parseSeason(null, START_HOURS) } : {}),
     player: spawnPlayer(terrain),
     needs: createNeeds(),
     inventory: createInventory(BALANCE.carry.baseSlots),
@@ -269,6 +275,7 @@ export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): Ga
     snapshotDay: 0,
   };
   const spawnAvoid: AvoidPoint[] = [{ x: sx, z: sz, minDist: 0 }];
+  if (state.season) state.weather = parseWeather(undefined, seed, state.totalHours, state.season);
   const populate = (species: SpeciesId, count: number, minDist: number) => {
     spawnAvoid[0].minDist = minDist;
     for (let i = 0; i < count; i++) {
@@ -338,6 +345,9 @@ export class Simulation {
   /** Spiny plants that have already pricked this player this session, so the warning shows once each. */
   private readonly prickedBy = new Set<string>();
   private readonly look = { x: 0, y: 0, z: 1 };
+  private readonly cameraAim = { x: 0, y: 0, z: -1 };
+  private readonly aimEye = { x: 0, y: 0, z: 0 };
+  private hasCameraAim = false;
   private readonly hit = { x: 0, y: 0, z: 0, water: false };
   private readonly moveEnv: MoveEnv;
   private readonly locked: MoveInput = { moveX: 0, moveZ: 0, jumpPressed: false, sprint: false, yaw: 0 };
@@ -347,6 +357,13 @@ export class Simulation {
     this.state = state;
     this.biome = state.biome ?? DEFAULT_BIOME;
     this.biomeDef = biomeDef(this.biome);
+    if (this.biome === 'pnw') {
+      state.season = parseSeason(state.season, state.totalHours);
+      state.weather = parseWeather(state.weather, state.seed, state.totalHours, state.season);
+    } else {
+      delete state.season;
+      delete state.weather;
+    }
     setDisplayBiome(this.biome);
     this.terrain = getTerrain(state.seed, this.biome);
     this.gen = getWorldGen(state.seed, this.biome);
@@ -354,8 +371,8 @@ export class Simulation {
     this.wasNight = isNight(this.hour);
     this.buildColliders();
     const query = (x: number, z: number, r: number, out: Collider[]) => this.colliders.query(x, z, r, out);
-    this.moveEnv = { terrain: this.terrain, query };
     const self = this;
+    this.moveEnv = { terrain: this.terrain, query, get frozen() { return self.frozen; } };
     this.animalEnv = {
       terrain: this.terrain,
       rng: this.rng,
@@ -388,6 +405,7 @@ export class Simulation {
       },
     };
     this.refreshLitFires();
+    this.applySeasonEnvironment();
   }
 
   static newGame(seed: number, biome: BiomeId = DEFAULT_BIOME): Simulation {
@@ -406,6 +424,79 @@ export class Simulation {
 
   get night(): boolean {
     return isNight(this.hour);
+  }
+
+  get season(): Season | null { return this.state.season?.id ?? null; }
+  get weather(): Weather | null { return this.state.weather?.id ?? null; }
+  get seasonDay(): number { return this.state.season ? seasonDay(this.state.season, this.state.totalHours) : 0; }
+  get frozen(): boolean { return this.season === 'winter'; }
+  get seasonSleepDue(): boolean {
+    return !!this.state.season && this.state.totalHours >= seasonDeadline(this.state.season);
+  }
+
+  forageAvailable(index: number): boolean {
+    const g = this.gen.resources[index];
+    if (g.kind === 'snowClump') return snowScale(this.state.seed, g.spot, this.state.season, this.state.totalHours) > 0;
+    return seasonalForage(this.season, this.state.seed, g.spot, g.kind);
+  }
+
+  /** Keep seasonal effects local to this world, including loading a winter save while standing on ice. */
+  private applySeasonEnvironment(): void {
+    if (!this.frozen) return;
+    this.state.animals = this.state.animals.filter((a) => a.species !== 'bear');
+    this.endFishing('reeled');
+    const p = this.state.player;
+    if (this.terrain.heightAt(p.x, p.z) < WATER_LEVEL) {
+      p.y = Math.max(p.y, WATER_LEVEL);
+      p.swimming = p.wading = false;
+      p.vy = 0;
+      p.grounded = p.y === WATER_LEVEL;
+    }
+  }
+
+  /** Host state is shared on ticks, dawn messages and late-join snapshots. */
+  followSeason(value: SeasonState | undefined): void {
+    if (this.biome !== 'pnw') return;
+    const next = parseSeason(value, this.state.totalHours);
+    const wasWinter = this.frozen;
+    const changed = next.id !== this.season || next.startDay !== this.state.season?.startDay;
+    if (!changed && this.state.season?.warned) next.warned = true;
+    this.state.season = next;
+    if (changed) {
+      // Guests receive resource deltas before the calendar tick; only the host/solo run replenishes patches.
+      if (next.id === 'winter' && !wasWinter && this.authority !== 'guest') {
+        this.gen.resources.forEach((r, i) => {
+          if (r.kind === 'snowClump') Object.assign(this.state.resources[i], { charges: RESOURCES.snowClump.charges, respawnAt: 0 });
+        });
+      }
+      this.applySeasonEnvironment();
+      this.worldVersion++;
+    }
+  }
+
+  /** Guests receive the host's choice; they never draw weather from their predicted clock. */
+  followWeather(value: WeatherState | undefined): void {
+    if (this.state.season) this.state.weather = parseWeather(value, this.state.seed, this.state.totalHours, this.state.season);
+  }
+
+  private advanceCalendarAtDawn(): void {
+    if (this.state.season) this.followSeason(seasonAtDawn(this.state.season, this.state.totalHours));
+    this.followWeather(this.state.weather);
+  }
+
+  /** The host calls this for an awake player when the season's 2 AM deadline arrives. */
+  passOut(): void {
+    if (this.state.dead || this.sleepingIn !== null) return;
+    this.cancelRepair();
+    this.placement = null;
+    this.bowDraw = -1;
+    this.endFishing('reeled');
+    // Keep the same position, including a bench or a lake; seasonal ice may lift feet to its surface.
+    delete this.state.player.seat;
+    this.state.player.sitting = false;
+    this.state.player.vx = this.state.player.vy = this.state.player.vz = 0;
+    this.sleepByFire = this.warmingFire() !== null;
+    this.sleepingIn = -1;
   }
 
   /** Move pending events into `out` (cleared first) and reset the queue. */
@@ -442,7 +533,8 @@ export class Simulation {
       this.colliders.add(makeCollider('rock', i, circle(r.x, r.z, r.r * 0.85), circle(r.x, r.z, r.r * 0.9), top));
     });
     gen.logs.forEach((l, i) => {
-      this.colliders.add(makeCollider('log', i, box(l.x, l.z, l.length / 2, l.r, l.rot), box(l.x, l.z, l.length / 2 + 0.1, l.r + 0.1, l.rot)));
+      const top = logTop(l, this.terrain.heightAt(l.x, l.z));
+      this.colliders.add(makeCollider('log', i, box(l.x, l.z, l.length / 2, l.r, l.rot), box(l.x, l.z, l.length / 2 + 0.1, l.r + 0.1, l.rot), top));
     });
     gen.cacti.forEach((c, i) => {
       this.colliders.add(makeCollider('cactus', i, circle(c.x, c.z, c.r), circle(c.x, c.z, c.r + 0.5)));
@@ -511,7 +603,10 @@ export class Simulation {
     const prevHours = s.totalHours;
     s.totalHours = advanceHours(s.totalHours, dt, this.timeScale);
     const gameHours = s.totalHours - prevHours;
-    if (this.day !== prevDay) this.emit({ type: 'dayStart', day: this.day });
+    if (this.day !== prevDay) {
+      if (this.authority !== 'guest') this.advanceCalendarAtDawn();
+      this.emit({ type: 'dayStart', day: this.day });
+    }
     const night = this.night;
     if (night && !this.wasNight && this.hour > 12) {
       s.stats.events.nightfall = (s.stats.events.nightfall ?? 0) + 1;
@@ -519,6 +614,18 @@ export class Simulation {
     }
     this.wasNight = night;
     const world = this.authority !== 'guest';
+
+    const season = s.season;
+    if (season && !season.warned && !s.dead && this.sleepingIn === null && s.totalHours >= seasonDeadline(season) - 1) {
+      season.warned = true;
+      this.message('You are getting tired and need to sleep soon. Find a place to rest before 2 AM; a new season arrives at dawn.', 'warn');
+    }
+    if (this.authority === 'solo' && !s.dead && this.seasonSleepDue) {
+      this.passOut();
+      const elapsed = this.skipNight([p]);
+      this.wakeUp(elapsed);
+      return;
+    }
 
     // Multiplayer only: the world keeps running while this player is dead or asleep.
     if (s.dead || this.sleepingIn !== null) {
@@ -565,6 +672,13 @@ export class Simulation {
     this.noise = damp(this.noise, targetNoise, 4, dt);
 
     // interaction
+    this.hasCameraAim = !!input.resolveAim;
+    if (input.resolveAim) {
+      this.aimEye.x = p.x;
+      this.aimEye.y = p.y + (p.sitting ? BALANCE.player.seatedEyeHeight : BALANCE.player.eyeHeight);
+      this.aimEye.z = p.z;
+      input.resolveAim(this.aimEye, this.cameraAim);
+    }
     this.updateTarget();
     this.actionCooldown = Math.max(0, this.actionCooldown - dt);
     if (s.repair) {
@@ -768,7 +882,7 @@ export class Simulation {
 
   /** How this map's climate changes a night's sleep (the island's thirst and warm nights). */
   private get sleepClimate(): SleepClimate {
-    return { thirstMul: this.biomeDef.thirstMultiplier, coldWarmthCost: this.biomeDef.sleepWarmthCost };
+    return { thirstMul: this.biomeDef.thirstMultiplier, coldWarmthCost: this.season ? SEASON_SLEEP_COLD[this.season] : this.biomeDef.sleepWarmthCost };
   }
 
   /** Cold can kill only after the first `coldGraceNights` nights (each night belongs to the day it starts on). */
@@ -784,7 +898,7 @@ export class Simulation {
   warmthTarget(): { target: number; rate: number } {
     const w = BALANCE.needs.warmth;
     const N = BALANCE.needs;
-    const bw = this.biomeDef.warmth;
+    const bw = this.season ? SEASON_WARMTH[this.season] : this.biomeDef.warmth;
     let target = ambientWarmth(this.hour, bw);
     let rate: number = target < this.state.needs.warmth ? bw.coolRate : bw.rate;
     const p = this.state.player;
@@ -809,13 +923,18 @@ export class Simulation {
 
   // ------------------------------------------------------------------ targeting
 
+  private aimDirection(): { x: number; y: number; z: number } {
+    const p = this.state.player;
+    return this.hasCameraAim ? this.cameraAim : lookDir(p.yaw, p.pitch, this.look);
+  }
+
   private updateTarget(): void {
     const s = this.state;
     const p = s.player;
     const ex = p.x;
     const ey = p.y + (p.sitting ? BALANCE.player.seatedEyeHeight : BALANCE.player.eyeHeight);
     const ez = p.z;
-    const d = lookDir(p.yaw, p.pitch, this.look);
+    const d = this.aimDirection();
     const reach = Math.max(BALANCE.player.reach, this.toolReach());
     let best: Target | null = null;
     let bestT = reach;
@@ -849,8 +968,10 @@ export class Simulation {
         if (!this.resourcePresent(c.ref)) continue;
         const r = this.gen.resources[c.ref];
         const def = RESOURCES[r.kind];
-        const gy = this.terrain.heightAt(r.x, r.z);
-        const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, r.x, gy + def.hitHeight * r.scale, r.z, def.hitRadius * r.scale);
+        const gy = r.y ?? this.terrain.heightAt(r.x, r.z);
+        const scale = r.snow ? snowAmount(r, s, c.ref) : r.scale;
+        const radius = r.snow ? Math.max(r.snow.ax, r.snow.az, def.hitRadius) : def.hitRadius;
+        const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, r.x, gy + def.hitHeight * scale, r.z, radius * scale);
         if (hitT >= 0 && hitT < bestT) {
           bestT = hitT;
           best = { kind: 'resource', index: c.ref, dist: hitT };
@@ -881,6 +1002,7 @@ export class Simulation {
       }
     }
     for (const a of s.animals) {
+      if (this.frozen && a.species === 'fish') continue;
       if (Math.abs(a.x - ex) > reach + 2 || Math.abs(a.z - ez) > reach + 2) continue;
       const def = SPECIES[a.species];
       const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, a.x, a.y + def.hitHeight, a.z, def.hitRadius);
@@ -942,6 +1064,7 @@ export class Simulation {
         const g = this.gen.resources[t.index];
         const def = RESOURCES[g.kind];
         const dyn = s.resources[t.index];
+        if (g.snow && (!this.forageAvailable(t.index) || snowCovered(g, s))) return { name: def.name, action: 'Snow has melted', enabled: false };
         if (dyn.charges <= 0) return { name: def.name, action: 'Regrowing', enabled: false };
         return { name: def.name, action: def.verb, enabled: true };
       }
@@ -978,6 +1101,7 @@ export class Simulation {
         return { name, action: armed ? 'Attack' : s.activeTool === 'bow' ? 'Shoot' : 'Punch', enabled: true };
       }
       case 'water': {
+        if (this.frozen) return { name: 'Frozen Lake', action: s.activeTool === 'rod' ? 'The lake is frozen over' : 'Water is sealed beneath the ice', enabled: false };
         const lake = this.terrain.lakeAt(t.x, t.z);
         const name = waterName(lake, this.knowsAlkali, this.terrain, t.x, t.z);
         if (lake?.kind === 'sea') {
@@ -1057,6 +1181,10 @@ export class Simulation {
 
   /** Hold to wind up, release to cast; with a line out, a click strikes a biting fish or reels in. */
   private handleRod(input: SimInput, dt: number, t: Target | null): void {
+    if (this.frozen) {
+      if (input.primaryPressed) this.message('The lakes are frozen over. Fishing returns when the ice thaws.', 'warn');
+      return;
+    }
     const s = this.state;
     const F = BALANCE.fishing;
     const f = this.fishing;
@@ -1095,7 +1223,7 @@ export class Simulation {
     const s = this.state;
     const p = s.player;
     const F = BALANCE.fishing;
-    const d = lookDir(p.yaw, 0, this.look);
+    const d = this.hasCameraAim ? this.cameraAim : lookDir(p.yaw, 0, this.look);
     const len = Math.hypot(d.x, d.z) || 1;
     const dist = lerp(F.minCast, F.maxCast, f.power);
     f.phase = 'flying';
@@ -1113,6 +1241,7 @@ export class Simulation {
 
   /** Lakes and ponds deep enough under the lure to hold fish (desert rock pools and alkali water have none). */
   fishableAt(x: number, z: number): boolean {
+    if (this.frozen) return false;
     if (!this.terrain.inPlayBounds(x, z) || this.terrain.heightAt(x, z) >= WATER_LEVEL - BALANCE.fishing.minDepth) return false;
     const lake = this.terrain.lakeAt(x, z);
     return !lake || holdsFish(lake);
@@ -1367,8 +1496,8 @@ export class Simulation {
     const def = RESOURCES[g.kind];
     const dyn = s.resources[index];
     this.actionCooldown = BALANCE.gather.cooldown;
-    if (dyn.charges <= 0) return;
-    const gy = this.terrain.heightAt(g.x, g.z);
+    if (dyn.charges <= 0 || !this.forageAvailable(index) || (g.snow && snowCovered(g, s))) return;
+    const gy = g.y ?? this.terrain.heightAt(g.x, g.z);
     const added = this.give(def.item, def.yield, g.x, gy + def.hitHeight, g.z, g.kind);
     if (added === 0) {
       this.message('Your pack is full.', 'warn');
@@ -1429,7 +1558,7 @@ export class Simulation {
     if (s.forage.includes(id)) return;
     s.forage.push(id);
     this.emit({ type: 'forageUnlocked', id });
-    this.message(`New Foraging guide entry: ${FORAGE_BY_ID[id].name}. Open it from your pack (Tab).`, 'good');
+    this.message(`New Foraging guide entry: ${FORAGE_BY_ID[id].name}. Open Crafting (C) and select Foraging.`, 'good');
   }
 
   /** Chance roll that leaves the RNG untouched when the chance is zero, so level-1 play stays on the same random sequence. */
@@ -1666,6 +1795,11 @@ export class Simulation {
   }
 
   private useWater(): void {
+    if (this.frozen) {
+      this.actionCooldown = BALANCE.needs.handDrink.cooldown;
+      this.message('The lake is frozen over. Water is sealed beneath the ice.', 'warn');
+      return;
+    }
     const s = this.state;
     const t0 = this.target;
     const lake = t0 && t0.kind === 'water' ? this.terrain.lakeAt(t0.x, t0.z) : null;
@@ -1791,9 +1925,9 @@ export class Simulation {
     if (!removeItem(s.inventory, 'arrow', 1)) return;
     const b = BALANCE.combat.bow;
     const p = s.player;
-    const d = lookDir(p.yaw, p.pitch, this.look);
+    const d = this.aimDirection();
     const speed = lerp(b.minSpeed, b.maxSpeed, power) * arrowSpeedMultiplier(s);
-    const ey = p.y + BALANCE.player.eyeHeight - 0.08;
+    const ey = (this.hasCameraAim ? this.aimEye.y : p.y + BALANCE.player.eyeHeight) - 0.08;
     this.projectiles.push({
       x: p.x + d.x * 0.4, y: ey + d.y * 0.4, z: p.z + d.z * 0.4,
       vx: d.x * speed, vy: d.y * speed, vz: d.z * speed,
@@ -1820,6 +1954,7 @@ export class Simulation {
         const dy = pr.vy / sp;
         const dz = pr.vz / sp;
         for (const a of this.state.animals) {
+          if (this.frozen && a.species === 'fish') continue;
           if (Math.abs(a.x - pr.x) > len + 2 || Math.abs(a.z - pr.z) > len + 2) continue;
           const def = SPECIES[a.species];
           const t = raySphere(pr.x, pr.y, pr.z, dx, dy, dz, a.x, a.y + def.hitHeight, a.z, def.hitRadius);
@@ -1857,7 +1992,7 @@ export class Simulation {
         pr.life -= sub;
         const ground = this.terrain.heightAt(pr.x, pr.z);
         if (pr.y <= Math.max(ground, WATER_LEVEL)) {
-          const water = ground < WATER_LEVEL;
+          const water = ground < WATER_LEVEL && !this.frozen;
           this.emit({ type: 'arrowHit', x: pr.x, y: Math.max(ground, WATER_LEVEL), z: pr.z, target: water ? 'water' : 'ground' });
           if (!water && this.rng.chance(BALANCE.combat.arrowRecoverChance)) this.dropAt('arrow', 1, pr.x, pr.z);
           done = true;
@@ -2009,6 +2144,7 @@ export class Simulation {
     const now = s.totalHours;
     let changed = false;
     s.resources.forEach((r, i) => {
+      if (this.gen.resources[i].kind === 'snowClump' && !this.frozen) return;
       if (r.charges <= 0 && now >= r.respawnAt) {
         const def = RESOURCES[this.gen.resources[i].kind];
         if (this.resourceCovered(i)) {
@@ -2052,6 +2188,7 @@ export class Simulation {
     }
     const targets = this.biomeDef.predatorTargets(this.day);
     for (const { species: id } of this.biomeDef.predators) {
+      if (id === 'bear' && this.frozen) continue;
       if ((counts[id] ?? 0) < (targets[id] ?? 0)) {
         const pt = findSpawnPoint(this.terrain, this.rng, id, avoidPred);
         if (pt) s.animals.push(createAnimal(s.nextId++, id, pt.x, pt.z, this.rng, this.terrain));
@@ -2083,7 +2220,7 @@ export class Simulation {
 
   canCraft(recipeId: string): CraftCheck {
     const r = RECIPE_BY_ID[recipeId];
-    if (!r) return { ok: false, reason: 'unknown' };
+    if (!r || !recipeOnMap(r, this.biome)) return { ok: false, reason: 'unknown' };
     return canCraft(this.state, r, { nearFire: this.isNearLitFire() });
   }
 
@@ -2169,11 +2306,14 @@ export class Simulation {
 
   /** Whether a gatherable is physically in the world (not gathered out and hidden while it regrows). */
   resourcePresent(index: number): boolean {
-    return this.state.resources[index].charges > 0 || !!RESOURCES[this.gen.resources[index].kind].persistent;
+    const g = this.gen.resources[index];
+    if (g.snow) return snowAmount(g, this.state, index) > 0;
+    return this.forageAvailable(index) && (this.state.resources[index].charges > 0 || !!RESOURCES[this.gen.resources[index].kind].persistent);
   }
 
   private resourceCovered(index: number): boolean {
     const g = this.gen.resources[index];
+    if (g.snow) return snowCovered(g, this.state);
     const spot = circle(g.x, g.z, RESOURCES[g.kind].blockRadius);
     this.colliders.query(g.x, g.z, spot.r + 3, this.tmpColliders);
     return this.tmpColliders.some((c) => c.kind === 'structure' && !!c.footprint && overlaps(spot, c.footprint));
@@ -2184,8 +2324,8 @@ export class Simulation {
     const pl = this.placement;
     if (!pl) return;
     const p = this.state.player;
-    const ey = p.y + BALANCE.player.eyeHeight;
-    const d = lookDir(p.yaw, p.pitch, this.look);
+    const ey = this.hasCameraAim ? this.aimEye.y : p.y + BALANCE.player.eyeHeight;
+    const d = this.aimDirection();
     const t = this.terrain.raycast(p.x, ey, p.z, d.x, d.y, d.z, PLACE_MAX_DIST + 3, this.hit);
     let x: number;
     let z: number;
@@ -2408,6 +2548,7 @@ export class Simulation {
     const coldLethal = this.coldLethal;
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
+    this.advanceCalendarAtDawn();
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
@@ -2644,6 +2785,7 @@ export class Simulation {
     const s = this.state;
     const before = s.totalHours;
     s.totalHours = nextDayStart(s.totalHours);
+    this.advanceCalendarAtDawn();
     const elapsed = s.totalHours - before;
     for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
@@ -2672,7 +2814,7 @@ export class Simulation {
     this.sleepingIn = null;
     const s = this.state;
     const st = s.structures.find((x) => x.id === id);
-    const rest = st ? restBonus(st.prefab) : null;
+    const rest = st ? restBonus(st.prefab) : id === -1 ? { warmthBonus: 0, healthBonus: 0 } : null;
     const coldLethal = dayOf(Math.max(0, s.totalHours - elapsed)) > BALANCE.needs.coldGraceNights;
     const night = rest ? applySleep(s.needs, rest, this.sleepByFire, elapsed, coldLethal, this.sleepClimate) : null;
     this.updateWear(elapsed, false, false);
@@ -2680,7 +2822,7 @@ export class Simulation {
     this.wasNight = this.night;
     s.stats.events.slept = (s.stats.events.slept ?? 0) + 1;
     this.worldVersion++;
-    this.emit({ type: 'slept', day: this.day, byFire: this.sleepByFire });
+    this.emit({ type: 'slept', day: this.day, byFire: this.sleepByFire, passedOut: id === -1 });
     this.emit({ type: 'dayStart', day: this.day });
     if (night) this.afterNight(night);
     this.progress();
@@ -2692,7 +2834,8 @@ export class Simulation {
     this.timeScale = timeScale;
     const prevDay = this.day;
     const d = hours - s.totalHours;
-    s.totalHours = Math.abs(d) > 0.05 ? hours : s.totalHours + d * 0.3;
+    // A dawn correction must snap even a tiny drift, so guests apply the host's daily weather to the same day.
+    s.totalHours = Math.abs(d) > 0.05 || dayOf(hours) !== prevDay ? hours : s.totalHours + d * 0.3;
     if (this.day !== prevDay) this.emit({ type: 'dayStart', day: this.day });
   }
 
@@ -2849,6 +2992,30 @@ export class Simulation {
 
   // ------------------------------------------------------------------ dev helpers
 
+  devSetSeason(id: Season): boolean {
+    if (this.biome !== 'pnw' || this.authority === 'guest') return false;
+    this.followSeason({ id, startDay: this.day });
+    this.followWeather(this.state.weather);
+    this.message(`Dev: ${SEASON_NAMES[id]}, day 1 of 25.`, 'good');
+    return true;
+  }
+
+  devSetWeather(id: Weather): boolean {
+    if (!this.state.season || this.authority === 'guest') return false;
+    this.followWeather(this.state.weather);
+    this.state.weather!.id = weatherForSeason(id, this.state.season.id);
+    this.message(`Dev: ${WEATHER_NAMES[this.state.weather!.id]} until next dawn.`, 'good');
+    return true;
+  }
+
+  devResetWeather(): boolean {
+    if (!this.state.weather || this.authority === 'guest') return false;
+    this.followWeather(this.state.weather);
+    const w = this.state.weather!;
+    w.id = w.pattern[clamp(this.day - w.startDay, 0, w.pattern.length - 1)];
+    return true;
+  }
+
   devGive(item: ItemId, count: number): number {
     return this.give(item, count, this.state.player.x, this.state.player.y + 1, this.state.player.z, 'craft');
   }
@@ -2870,6 +3037,7 @@ export class Simulation {
   }
 
   devSpawn(species: SpeciesId, distance = 22): AnimalState | null {
+    if (species === 'bear' && this.frozen) return null;
     const p = this.state.player;
     if (SPECIES[species].habitat === 'water') {
       // Swimmers go in the nearest water they live in.

@@ -205,6 +205,8 @@ export class GuestSession extends Session {
       this.tracker!.accept(d);
     }
     sim.followClock(t.h, t.r);
+    sim.followSeason(t.season);
+    sim.followWeather(t.weather);
     for (const row of t.p ?? []) {
       const pid = row[0];
       if (pid === this.pid || typeof pid !== 'string') continue;
@@ -224,7 +226,10 @@ export class GuestSession extends Session {
   private applyDawn(m: DawnMsg): void {
     const sim = this.sim!;
     if (!m || typeof m.h !== 'number') return;
+    if (m.forced) sim.passOut();
     sim.state.totalHours = m.h;
+    sim.followSeason(m.season);
+    sim.followWeather(m.weather);
     sim.wakeUp(Math.max(0, m.e || 0));
     this.sleeping.clear();
     this.events.push({ type: 'dawn', elapsed: m.e || 0 });

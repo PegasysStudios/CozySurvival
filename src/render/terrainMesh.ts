@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/math';
 import { hash2 } from '../core/rng';
 import { TERRAIN_CELL, TERRAIN_CELLS, TERRAIN_VERTS, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, type Terrain } from '../sim/terrain';
+import type { Season } from '../sim/seasons';
+import { seasonColors } from './seasons';
 
 const C = {
   deep: new THREE.Color('#4d4a3c'),
@@ -72,7 +74,7 @@ function desertColor(t: Terrain, c: THREE.Color, mx: number, my: number, mz: num
  * Flat-shaded terrain whose triangulation matches `Terrain.heightAt` exactly
  * (each cell split along its (i,j)-(i+1,j+1) diagonal).
  */
-export function buildTerrainMesh(t: Terrain): THREE.Mesh {
+export function buildTerrainMesh(t: Terrain, season: Season | null = null): THREE.Mesh {
   const tris = TERRAIN_CELLS * TERRAIN_CELLS * 2;
   const pos = new Float32Array(tris * 9);
   const colors = new Float32Array(tris * 9);
@@ -148,6 +150,7 @@ export function buildTerrainMesh(t: Terrain): THREE.Mesh {
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   g.computeVertexNormals();
+  if (t.biome === 'pnw') seasonColors(g, season, 'terrain');
   g.computeBoundingSphere();
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   const mesh = new THREE.Mesh(g, mat);

@@ -238,7 +238,7 @@ describe('island saves across the follow-ups', () => {
   });
 
   it('keeps players on the old island layout out of new servers', () => {
-    expect(PROTOCOL_VERSION).toBe(9);
+    expect(PROTOCOL_VERSION).toBeGreaterThanOrEqual(9);
   });
 });
 

@@ -29,13 +29,14 @@ export class FishingView {
     this.group.visible = false;
   }
 
-  update(f: FishingLine | null, cam: THREE.Camera, time: number): void {
+  update(f: FishingLine | null, cam: THREE.Camera, time: number, toolTip?: THREE.Vector3): void {
     if (!f || f.phase === 'charging') {
       this.group.visible = false;
       return;
     }
     this.group.visible = true;
-    this.tip.set(0.5, 0.45, -1.8).applyMatrix4(cam.matrixWorld);
+    if (toolTip) this.tip.copy(toolTip);
+    else this.tip.set(0.5, 0.45, -1.8).applyMatrix4(cam.matrixWorld);
     const water = WATER_LEVEL + 0.03;
     if (f.phase === 'flying') {
       const k = clamp(f.t / BALANCE.fishing.flightSeconds, 0, 1);

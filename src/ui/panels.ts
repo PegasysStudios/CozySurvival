@@ -24,7 +24,7 @@ import { ingredients, nextTierInfo, packRoomNote, repairTile, restText, shelterM
 
 export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
 export type CraftTab = RecipeCategory | 'upgrades';
-export type InventoryView = 'pack' | 'forage';
+export type CraftSection = 'crafting' | 'forage' | 'skills';
 
 export interface PanelHost {
   sim(): Simulation;
@@ -81,11 +81,12 @@ export function tileButton(t: Tile, selected: boolean): HTMLButtonElement {
 export class Panels {
   readonly root = el('div', 'panel-overlay');
   mode: PanelMode = 'none';
+  private readonly backdrop = el('div', 'panel-backdrop');
   private readonly card = el('div', 'panel');
   private readonly tip = el('div', 'tile-tip');
   private readonly host: PanelHost;
   private tab: CraftTab = 'tools';
-  private view: InventoryView = 'pack';
+  private section: CraftSection = 'crafting';
   /** The selected tile in the crafting, upgrades and campfire grids. */
   private selected: string | null = null;
   private selectedSlot = -1;
@@ -98,7 +99,8 @@ export class Panels {
 
   constructor(parent: HTMLElement, host: PanelHost) {
     this.host = host;
-    this.root.append(this.card, this.tip);
+    this.backdrop.setAttribute('aria-hidden', 'true');
+    this.root.append(this.backdrop, this.card, this.tip);
     attachTooltip(this.card, this.tip);
     this.root.addEventListener('mousedown', (e) => {
       if (e.target === this.root) host.close();
@@ -107,11 +109,11 @@ export class Panels {
     parent.append(this.root);
   }
 
-  open(mode: Exclude<PanelMode, 'none'>, opts: { targetId?: number; tab?: CraftTab; view?: InventoryView } = {}): void {
+  open(mode: Exclude<PanelMode, 'none'>, opts: { targetId?: number; tab?: CraftTab; section?: CraftSection } = {}): void {
     this.mode = mode;
     this.targetId = opts.targetId ?? null;
     if (opts.tab) this.tab = opts.tab;
-    if (opts.view) this.view = opts.view;
+    if (mode === 'crafting') this.section = opts.section ?? 'crafting';
     this.selectedSlot = -1;
     if (mode === 'inventory') {
       this.selectedTool = null;
@@ -135,7 +137,8 @@ export class Panels {
   private render(): void {
     this.tip.classList.remove('show');
     this.card.innerHTML = '';
-    this.card.className = `panel panel-${this.mode}`;
+    const framed = this.mode === 'crafting' || this.mode === 'inventory';
+    this.card.className = `panel panel-${this.mode}${framed ? ' panel-framed' : ''}`;
     if (this.mode === 'inventory') this.renderInventory();
     else if (this.mode === 'crafting') this.renderCrafting();
     else if (this.mode === 'campfire') this.renderCampfire();
@@ -153,21 +156,8 @@ export class Panels {
 
   private renderInventory(): void {
     const s = this.host.sim().state;
-    const guide = forageGuide(s);
-    const sub = this.view === 'pack'
-      ? `${usedSlots(s.inventory)} / ${s.inventory.slots.length} slots · click a tool on your belt to upgrade it`
-      : `${guide.unlocked} of ${guide.total} plants found · harvest a plant to fill in its page`;
-    const head = this.head(this.view === 'pack' ? 'Pack' : `${MISC_ICONS.leaf} Foraging`, sub);
-    const tabs = el('div', 'tabs');
-    const views: [InventoryView, string][] = [['pack', 'Pack'], ['forage', `Foraging <span class="tab-count">${guide.unlocked}/${guide.total}</span>`]];
-    for (const [v, label] of views) {
-      tabs.append(button(label, `tab ${this.view === v ? 'active' : ''}`, () => {
-        this.view = v;
-        this.host.sfx('click');
-        this.render();
-      }));
-    }
-    this.card.append(head, tabs, this.view === 'pack' ? this.packBody() : this.forageBody(guide.pages));
+    const head = this.head('Pack', `${usedSlots(s.inventory)} / ${s.inventory.slots.length} slots · click a tool on your belt to upgrade it`);
+    this.card.append(head, this.packBody());
   }
 
   private packBody(): HTMLElement {
@@ -179,6 +169,7 @@ export class Panels {
     s.inventory.slots.forEach((slot, i) => {
       const cell = el('button', `slot ${slot ? '' : 'empty'} ${i === this.selectedSlot ? 'selected' : ''}`);
       cell.type = 'button';
+      cell.setAttribute('aria-label', 'Empty pack slot');
       if (slot) {
         const def = ITEMS[slot.item];
         cell.innerHTML = `${itemIcon(slot.item)}<span class="count">${slot.count}</span>${def.meal ? '<span class="meal-dot"></span>' : ''}`;
@@ -218,7 +209,8 @@ export class Panels {
     belt.innerHTML = '<h3>Tool belt</h3>';
     const tools = el('div', 'tile-grid small');
     for (const t of TOOL_ORDER) {
-      const tile = { ...toolTile(sim, t), greyed: !s.tools.includes(t), badge: null };
+      if (!s.tools.includes(t)) continue;
+      const tile = { ...toolTile(sim, t), greyed: false, badge: null };
       const b = tileButton(tile, this.selectedTool === t);
       b.insertAdjacentHTML('beforeend', `<span class="tile-key">${TOOLS[t].slot}</span>`);
       if (s.tools.includes(t) && sim.canUpgradeTool(t).ok) b.insertAdjacentHTML('beforeend', `<em class="up-ready">${MISC_ICONS.upgrade}</em>`);
@@ -230,8 +222,9 @@ export class Panels {
     gear.innerHTML = '<h3>Gear</h3>';
     const gearGrid = el('div', 'tile-grid small');
     for (const g of ['basket', 'backpack', 'canteen'] as const) {
+      if (!s.gear.includes(g)) continue;
       const r = recipeFor.gear(g)!;
-      const tile = { ...recipeTile(sim, r), greyed: !s.gear.includes(g), ready: false, badge: null };
+      const tile = { ...recipeTile(sim, r), greyed: false, ready: false, badge: null };
       if (g === 'canteen' && s.gear.includes(g)) tile.name = `${GEAR.canteen.name} · ${canteenServings(s)}/${BALANCE.carry.canteenCapacity} water`;
       const b = tileButton(tile, this.selectedGear === g);
       if (g === 'canteen' && s.gear.includes(g)) b.insertAdjacentHTML('beforeend', `<span class="dur water ${canteenServings(s) === 0 ? 'empty' : ''}"><i style="transform:scaleX(${canteenFill(s).toFixed(3)})"></i></span>`);
@@ -239,14 +232,8 @@ export class Panels {
       gearGrid.append(b);
     }
     gear.append(gearGrid);
-    const skills = el('div', 'inv-section');
-    skills.innerHTML = `<h3>Skills</h3><div class="skills">${SKILL_IDS.map((id) => {
-      const xp = s.skills[id];
-      const level = skillLevel(xp);
-      const pct = Math.round(skillProgress(xp) * 100);
-      return `<div class="skill" title="${escapeHtml(SKILL_INFO[id].how)}"><div class="skill-head"><b>${SKILL_INFO[id].name}</b><span>Lv ${level}${level >= MAX_SKILL_LEVEL ? ' · max' : ''}</span></div><div class="skill-track"><i style="transform:scaleX(${pct / 100})"></i></div><div class="skill-effect">${escapeHtml(skillEffect(id, xp))}</div></div>`;
-    }).join('')}</div>`;
-    left.append(belt, gear, skills);
+    left.append(belt);
+    if (gearGrid.children.length) left.append(gear);
 
     let right: HTMLElement;
     const slot = this.selectedSlot >= 0 ? s.inventory.slots[this.selectedSlot] : null;
@@ -497,11 +484,83 @@ export class Panels {
 
   // ------------------------------------------------------------------ crafting
 
+  private craftingHead(sub: string): HTMLElement {
+    const head = this.head('Crafting', sub);
+    const tabs = el('div', 'menu-sections');
+    tabs.setAttribute('role', 'tablist');
+    tabs.setAttribute('aria-label', 'Crafting menu sections');
+    const sections: { id: CraftSection; name: string }[] = [
+      { id: 'crafting', name: 'Crafting' },
+      { id: 'forage', name: 'Foraging' },
+      { id: 'skills', name: 'Skills' },
+    ];
+    const select = (id: CraftSection) => {
+      this.section = id;
+      this.host.sfx('click');
+      this.render();
+      this.card.querySelector<HTMLButtonElement>('.menu-section[aria-selected="true"]')?.focus({ preventScroll: true });
+    };
+    sections.forEach((section, index) => {
+      const active = this.section === section.id;
+      const tab = button(section.name, `menu-section ${active ? 'active' : ''}`, () => select(section.id));
+      tab.id = `menu-section-${section.id}`;
+      tab.dataset.section = section.id;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-selected', String(active));
+      tab.setAttribute('aria-controls', 'menu-section-content');
+      tab.tabIndex = active ? 0 : -1;
+      tab.addEventListener('keydown', (event) => {
+        const next = event.key === 'ArrowRight' ? (index + 1) % sections.length
+          : event.key === 'ArrowLeft' ? (index + sections.length - 1) % sections.length
+            : event.key === 'Home' ? 0 : event.key === 'End' ? sections.length - 1 : null;
+        if (next === null) return;
+        event.preventDefault();
+        select(sections[next].id);
+      });
+      tabs.append(tab);
+    });
+    head.querySelector('h2')!.replaceWith(tabs);
+    return head;
+  }
+
+  private appendCraftSection(head: HTMLElement, body: HTMLElement): void {
+    body.id = 'menu-section-content';
+    body.setAttribute('role', 'tabpanel');
+    body.setAttribute('aria-labelledby', `menu-section-${this.section}`);
+    body.tabIndex = 0;
+    this.card.append(head, body);
+  }
+
+  private skillsBody(): HTMLElement {
+    const s = this.host.sim().state;
+    const body = el('div', 'panel-body skills-body');
+    const skills = el('div', 'skills');
+    skills.innerHTML = SKILL_IDS.map((id) => {
+      const xp = s.skills[id];
+      const level = skillLevel(xp);
+      const pct = Math.round(skillProgress(xp) * 100);
+      return `<div class="skill" data-skill="${id}"><div class="skill-head"><b>${SKILL_INFO[id].name}</b><span>Lv ${level}${level >= MAX_SKILL_LEVEL ? ' · max' : ''}</span></div><div class="skill-track" role="progressbar" aria-label="${SKILL_INFO[id].name} level progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="transform:scaleX(${pct / 100})"></i></div><div class="skill-effect">${escapeHtml(skillEffect(id, xp))}</div><div class="skill-how">${escapeHtml(SKILL_INFO[id].how)}</div></div>`;
+    }).join('');
+    body.append(skills);
+    return body;
+  }
+
   private renderCrafting(): void {
     const sim = this.host.sim();
+    if (this.section === 'forage') {
+      const guide = forageGuide(sim.state);
+      const head = this.craftingHead(`${guide.unlocked} of ${guide.total} plants found · harvest a plant to fill in its page`);
+      this.appendCraftSection(head, this.forageBody(guide.pages));
+      return;
+    }
+    if (this.section === 'skills') {
+      const head = this.craftingHead('Your skills improve as you use them. Track your levels, progress and current benefits.');
+      this.appendCraftSection(head, this.skillsBody());
+      return;
+    }
     const recipes = recipesFor(sim.biome);
     const dayOne = recipes.some((r) => sim.canCraft(r.id).reason === 'tomorrow');
-    const head = this.head('Crafting', this.tab === 'upgrades'
+    const head = this.craftingHead(this.tab === 'upgrades'
       ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have.'
       : dayOne
         ? `Day 1: only what your onboarding steps have reached so far can be made; locked tiles unlock tomorrow. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist (up to ${MAX_PINS}).`
@@ -531,7 +590,7 @@ export class Panels {
     }
 
     const tiles = this.tab === 'upgrades' ? upgradeTiles(sim) : craftTiles(sim, this.tab);
-    this.card.append(head, this.gridBody(tiles, tabs));
+    this.appendCraftSection(head, this.gridBody(tiles, tabs));
   }
 
   /** The campfire's own menu: fuel meter, adding fuel, sleeping beside it, and only the recipes cooked over a fire. */

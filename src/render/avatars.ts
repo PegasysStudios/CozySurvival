@@ -3,7 +3,9 @@ import { clamp, damp } from '../core/math';
 import type { ToolId } from '../data/items';
 import type { Avatar } from '../net/protocol';
 import { F_AIR, F_DEAD, F_SIT, F_SLEEP, F_SWIM, F_WORK } from '../net/protocol';
-import type { Peer } from '../net/peers';
+import { newPeer, type Peer } from '../net/peers';
+import { localPose } from '../net/session';
+import type { Simulation } from '../sim/simulation';
 import { between, col, GeoBuilder, mix, tf } from './geo';
 
 const { BoxGeometry, CylinderGeometry, IcosahedronGeometry, ConeGeometry, DodecahedronGeometry } = THREE;
@@ -268,8 +270,8 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
 
 interface AvatarView {
   model: AvatarModel;
-  tag: Label;
-  bubble: Label;
+  tag: Label | null;
+  bubble: Label | null;
   phase: number;
   lie: number;
   sit: number;
@@ -285,6 +287,16 @@ export class AvatarLayer {
   private readonly views = new Map<string, AvatarView>();
   private readonly material = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   private stamp = 0;
+  private readonly labels: boolean;
+
+  constructor(labels = true) { this.labels = labels; }
+
+  setOpacity(opacity: number): void {
+    this.material.transparent = opacity < 1;
+    this.material.opacity = opacity;
+    this.material.depthWrite = opacity >= 1;
+    this.group.visible = opacity > 0;
+  }
 
   update(peers: Iterable<Peer>, dt: number, camX: number, camY: number, camZ: number): void {
     this.stamp++;
@@ -293,8 +305,8 @@ export class AvatarLayer {
       let v = this.views.get(peer.pid);
       if (!v) {
         const model = new AvatarModel(peer.avatar, this.material);
-        v = { model, tag: new Label(false), bubble: new Label(true), phase: 0, lie: 0, sit: 0, swim: 0, stamp: 0 };
-        model.root.add(v.tag.sprite, v.bubble.sprite);
+        v = { model, tag: this.labels ? new Label(false) : null, bubble: this.labels ? new Label(true) : null, phase: 0, lie: 0, sit: 0, swim: 0, stamp: 0 };
+        if (v.tag && v.bubble) model.root.add(v.tag.sprite, v.bubble.sprite);
         this.group.add(model.root);
         this.views.set(peer.pid, v);
       }
@@ -304,8 +316,8 @@ export class AvatarLayer {
     for (const [pid, v] of this.views) {
       if (v.stamp === this.stamp) continue;
       this.group.remove(v.model.root);
-      v.tag.dispose();
-      v.bubble.dispose();
+      v.tag?.dispose();
+      v.bubble?.dispose();
       this.views.delete(pid);
     }
   }
@@ -366,6 +378,7 @@ export class AvatarLayer {
     m.body.position.z = v.lie * 0.9;
 
     // Labels keep a readable on-screen size at any distance.
+    if (!v.tag || !v.bubble) return;
     const d = Math.hypot(peer.x - camX, peer.y + 2 - camY, peer.z - camZ);
     const k = clamp(d * 0.028, 0.28, 1.6);
     const topY = 2.12 - v.lie * 1.5 - v.sit * SIT_DROP - v.swim * 0.9;
@@ -383,6 +396,70 @@ export class AvatarLayer {
 
   clear(): void {
     this.update([], 0, 0, 0, 0);
+  }
+
+  model(pid: string): AvatarModel | undefined {
+    return this.views.get(pid)?.model;
+  }
+}
+
+/** The local body uses the same rigs and animations as peers, without a name tag or network interpolation. */
+export class LocalAvatar {
+  private readonly layer = new AvatarLayer(false);
+  readonly group = this.layer.group;
+  private readonly peer = newPeer('local', '', 'm', false);
+  private readonly peers = [this.peer];
+  private readonly tip = new THREE.Vector3();
+  private kind: Avatar = 'm';
+  private swim = 0;
+
+  swing(): void { this.peer.swingT = 0; }
+  wave(): void { this.peer.waveT = 0; }
+
+  hide(dt: number): void {
+    this.group.visible = false;
+    this.peer.swingT += dt;
+    this.peer.waveT += dt;
+  }
+
+  update(sim: Simulation, kind: Avatar, dt: number, opacity: number): void {
+    if (kind !== this.kind) {
+      this.layer.clear();
+      this.kind = kind;
+      this.peer.avatar = kind;
+      this.swim = 0;
+    }
+    const p = this.peer;
+    const pose = localPose(sim, 0);
+    p.target = pose;
+    p.x = pose.x;
+    p.y = pose.y;
+    p.z = pose.z;
+    p.yaw = pose.yaw;
+    p.speed = Math.hypot(pose.vx, pose.vz);
+    p.flags = pose.flags;
+    p.tool = pose.tool;
+    p.swingT += dt;
+    p.waveT += dt;
+    this.layer.update(this.peers, dt, 0, 0, 0);
+    this.layer.setOpacity(opacity);
+    const m = this.layer.model(p.pid)!;
+    this.swim = damp(this.swim, pose.flags & F_SWIM && !(pose.flags & (F_SLEEP | F_DEAD)) ? 1 : 0, 5, dt);
+    // Player y is the feet below the surface. Keep the swimming rig's head above water as its body tilts.
+    m.body.position.y += this.swim * 0.95 + (NECK_Y + 0.12) * (1 - Math.cos(this.swim * 1.2));
+    if (sim.bowDraw >= 0 && !(pose.flags & (F_SLEEP | F_DEAD | F_SWIM))) {
+      m.armR.rotation.x = -1.45 - sim.state.player.pitch;
+      m.armL.rotation.x = -1.2 - sim.state.player.pitch;
+    }
+    this.group.updateMatrixWorld(true);
+  }
+
+  /** World-space tip of the local held tool (torch flame or fishing rod). */
+  toolTip(tool: 'torch' | 'rod', out: THREE.Vector3): THREE.Vector3 {
+    const m = this.layer.model(this.peer.pid);
+    if (!m) return out.set(this.peer.x, this.peer.y + 1, this.peer.z);
+    this.tip.set(0, tool === 'torch' ? -0.49 : 0.79, tool === 'torch' ? -0.34 : -1.027);
+    return out.copy(this.tip).applyMatrix4(m.armR.matrixWorld);
   }
 }
 

@@ -8,6 +8,7 @@ const S = BALANCE.needs.sleep;
 
 function byTheFire() {
   const sim = quietSim();
+  sim.devSetSeason('summer'); // Original 30-point sleep cost; seasonal costs are covered separately.
   const fire = placeStructure(sim, 'campfire');
   teleport(sim, fire.x + 1.6, fire.z);
   Object.assign(sim.state.needs, { hunger: 80, thirst: 80, health: 50, warmth: 70, energy: 15 });

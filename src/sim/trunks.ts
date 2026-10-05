@@ -3,7 +3,7 @@ import { BALANCE } from '../data/balance';
 import { TREES, type TreeSpecies } from '../data/resources';
 import type { SolidTop } from './colliders';
 import type { TreeDyn } from './state';
-import type { RockGen, TreeGen } from './worldgen';
+import type { LogGen, RockGen, TreeGen } from './worldgen';
 
 /** A fallen trunk lies half a radius into the ground: its axis sits this many radii above the terrain. */
 export const TRUNK_AXIS_LIFT = 0.7;
@@ -71,6 +71,16 @@ export function trunkBox(span: TrunkSpan, pad = 0): BoxShape {
 
 export function trunkTop(span: TrunkSpan): SolidTop {
   return { type: 'slab', shape: trunkBox(span), lift: span.r * TRUNK_TOP_LIFT };
+}
+
+/** A map log lies horizontally at its centre's ground height, like the rendered cylinder. */
+export function logTop(log: LogGen, groundY: number): SolidTop {
+  return {
+    type: 'slab',
+    shape: box(log.x, log.z, log.length / 2, log.r, log.rot),
+    base: groundY,
+    lift: log.r * TRUNK_TOP_LIFT,
+  };
 }
 
 /** Per-variant extents of the boulder model at unit scale (x, top y, z), measured from the render mesh. */

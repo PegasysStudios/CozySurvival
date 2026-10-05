@@ -4,13 +4,14 @@ import { recipesFor } from '../src/data/recipes';
 import { PREFABS } from '../src/data/prefabs';
 import { BIN_UPGRADES, SHELTER_TIERS, SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../src/data/upgrades';
 import { hasAll } from '../src/sim/inventory';
-import type { Simulation } from '../src/sim/simulation';
+import { Simulation } from '../src/sim/simulation';
 import { campfireTiles, craftTiles, UPGRADE_ONLY_SHELTERS, upgradeTiles } from '../src/ui/catalog';
 import { attachTooltip, el } from '../src/ui/dom';
 import { CRAFT_TABS, Panels } from '../src/ui/panels';
 import { BALANCE } from '../src/data/balance';
 import { countItem } from '../src/sim/inventory';
 import { repairCost } from '../src/sim/repair';
+import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillLevel } from '../src/sim/skills';
 import { buildFresh, give, giveRecipe, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 
 const RECIPES = recipesFor('pnw');
@@ -120,18 +121,95 @@ describe('all recipes visible from the start (round 6)', () => {
     expect(detail.querySelector('.btn.primary')!.textContent).toBe('Cook');
   });
 
-  it('the pack shows the tool belt and gear as tiles, unmade ones greyed but named', () => {
+  it('the pack shows only owned tools and gear, with no guide toggle or skills section', () => {
     const sim = quietSim();
     sim.state.tools.push('axe');
     sim.state.toolLevels.axe = 2;
+    sim.state.gear.push('canteen');
     const { panels, root } = openPanels(sim);
-    panels.open('inventory', { view: 'pack' });
+    panels.open('inventory');
     const names = tiles(root, '.inv-section .tile').map((t) => [t.dataset.tip, t.classList.contains('greyed')]);
     expect(names).toEqual([
-      ['Hands', false], ['Stone Axe II', false], ['Spear', true], ['Bow', true], ['Torch', true], ['Fishing Pole', true], ['Stone Knife', true],
-      ['Grass Basket', true], ['Hide Backpack', true], ['Bark Canteen', true],
+      ['Hands', false], ['Stone Axe II', false], [`Bark Canteen · 0/${BALANCE.carry.canteenCapacity} water`, false],
     ]);
+    expect(root.querySelector('.panel > .tabs')).toBeNull();
+    expect(root.querySelector('.skills')).toBeNull();
+    expect(root.querySelector('.forage-body')).toBeNull();
     expect(root.textContent).not.toContain('???');
+  });
+});
+
+describe('crafting menu sections', () => {
+  const section = (root: HTMLElement, id: string) => root.querySelector<HTMLButtonElement>(`.menu-section[data-section="${id}"]`)!;
+
+  it('switches between recipes, foraging and skills while preserving recipe selection', () => {
+    const sim = quietSim();
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting', { tab: 'tools' });
+    expect([...root.querySelectorAll('.menu-section')].map((tab) => tab.textContent)).toEqual(['Crafting', 'Foraging', 'Skills']);
+    root.querySelector<HTMLElement>('.tile[data-key="r:bow"]')!.click();
+    section(root, 'forage').click();
+    expect(root.querySelector('.forage-body')).not.toBeNull();
+    expect(root.querySelector('.craft-tabs')).toBeNull();
+    expect(section(root, 'forage').getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector('[role="tabpanel"]')!.getAttribute('aria-labelledby')).toBe(section(root, 'forage').id);
+    section(root, 'skills').click();
+    expect(root.querySelectorAll('.skills-body .skill')).toHaveLength(SKILL_IDS.length);
+    expect(root.querySelector('.forage-body')).toBeNull();
+    section(root, 'crafting').click();
+    expect(root.querySelector('.tile.selected')!.getAttribute('data-key')).toBe('r:bow');
+    expect(root.querySelector('.craft-tab.active')!.getAttribute('data-tab')).toBe('tools');
+    panels.open('inventory');
+    expect(root.querySelector('.menu-sections')).toBeNull();
+    expect(root.querySelector('.panel-head h2')!.textContent).toBe('Pack');
+    panels.open('crafting');
+    expect(section(root, 'crafting').getAttribute('aria-selected')).toBe('true');
+  });
+
+  it.each([['pnw', 5], ['desert', 9], ['island', 8]] as const)('shows the %s guide and keeps its live unlocks on refresh', (biome, total) => {
+    const sim = Simulation.newGame(42, biome);
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting', { section: 'forage' });
+    expect(root.querySelectorAll('.forage-card')).toHaveLength(total);
+    expect(root.querySelector('.panel-sub')!.textContent).toContain(`0 of ${total}`);
+    const plant = sim.gen.resources.findIndex((resource) => resource.kind === (biome === 'pnw' ? 'berryBush' : biome === 'desert' ? 'pricklyPear' : 'seaGrape'));
+    sim.perform({ kind: 'resource', index: plant, dist: 1 });
+    panels.refresh();
+    expect(section(root, 'forage').getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector('.panel-sub')!.textContent).toContain(`1 of ${total}`);
+    const unlocked = root.querySelector<HTMLButtonElement>('.forage-card:not(.locked)')!;
+    unlocked.click();
+    expect(root.querySelector('.forage-detail h3')!.textContent).not.toBe('???');
+    expect(root.querySelector('.forage-detail')!.textContent).toContain('Habitat');
+  });
+
+  it('refreshes personal skill levels and progress in the Skills section', () => {
+    const sim = quietSim();
+    const { panels, root } = openPanels(sim);
+    panels.open('crafting', { section: 'skills' });
+    expect(root.querySelector('.skills-body')!.textContent).toContain(SKILL_INFO.gathering.how);
+    sim.state.skills.gathering = BALANCE.skills.thresholds[2];
+    sim.state.skills.fishing = BALANCE.skills.thresholds.at(-1)!;
+    panels.refresh();
+    expect(section(root, 'skills').getAttribute('aria-selected')).toBe('true');
+    expect(root.querySelector('[data-skill="gathering"] .skill-head')!.textContent).toContain(`Lv ${skillLevel(sim.state.skills.gathering)}`);
+    expect(root.querySelector('[data-skill="fishing"] .skill-head')!.textContent).toContain(`Lv ${MAX_SKILL_LEVEL} · max`);
+    expect(root.querySelector('[data-skill="fishing"] [role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('100');
+  });
+
+  it('supports arrow, Home and End navigation across the new header tabs', () => {
+    const { panels, root } = openPanels(quietSim());
+    panels.open('crafting');
+    section(root, 'crafting').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(document.activeElement).toBe(section(root, 'forage'));
+    section(root, 'forage').dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    expect(document.activeElement).toBe(section(root, 'skills'));
+    section(root, 'skills').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(document.activeElement).toBe(section(root, 'crafting'));
+    section(root, 'crafting').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
+    expect(document.activeElement).toBe(section(root, 'skills'));
+    section(root, 'skills').dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    expect(document.activeElement).toBe(section(root, 'crafting'));
   });
 });
 

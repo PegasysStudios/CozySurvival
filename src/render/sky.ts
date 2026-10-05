@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
 import type { BiomeId } from '../data/biomes';
+import type { Weather } from '../sim/weather';
 import { cloudGeometry } from './models';
+import { WEATHER_LOOK } from './weather';
 
 interface Key {
   h: number;
@@ -139,6 +141,7 @@ const skyFragment = /* glsl */ `
   uniform vec3 uSunColor;
   uniform vec3 uMoonDir;
   uniform float uNight;
+  uniform float uClear;
   varying vec3 vDir;
   void main() {
     vec3 d = normalize(vDir);
@@ -147,9 +150,9 @@ const skyFragment = /* glsl */ `
     if (d.y < 0.0) col = mix(uHorizon, uHorizon * 0.75, clamp(-d.y * 4.0, 0.0, 1.0));
     float sd = max(dot(d, uSunDir), 0.0);
     float day = 1.0 - uNight;
-    col += uSunColor * (smoothstep(0.9985, 0.9992, sd) * 3.0 + pow(sd, 10.0) * 0.22 + pow(sd, 3.0) * 0.06) * max(day, 0.15);
+    col += uSunColor * (smoothstep(0.9985, 0.9992, sd) * 3.0 + pow(sd, 10.0) * 0.22 + pow(sd, 3.0) * 0.06) * max(day, 0.15) * uClear;
     float md = max(dot(d, uMoonDir), 0.0);
-    col += vec3(0.86, 0.9, 1.0) * (smoothstep(0.9992, 0.9995, md) * 1.1 + pow(md, 60.0) * 0.12) * uNight;
+    col += vec3(0.86, 0.9, 1.0) * (smoothstep(0.9992, 0.9995, md) * 1.1 + pow(md, 60.0) * 0.12) * uNight * uClear;
     gl_FragColor = vec4(col, 1.0);
     #include <tonemapping_fragment>
     #include <colorspace_fragment>
@@ -185,7 +188,7 @@ export class SkyView {
   private readonly starMat: THREE.ShaderMaterial;
   private readonly clouds: THREE.Mesh[] = [];
   private readonly cloudMat: THREE.MeshLambertMaterial;
-  private readonly cloudBase: { x: number; z: number; speed: number }[] = [];
+  private readonly cloudBase: { x: number; z: number; speed: number; scale: THREE.Vector3 }[] = [];
 
   constructor(seed: number, clouds = 16) {
     this.skyMat = new THREE.ShaderMaterial({
@@ -201,6 +204,7 @@ export class SkyView {
         uSunColor: { value: new THREE.Color() },
         uMoonDir: { value: new THREE.Vector3() },
         uNight: { value: 0 },
+        uClear: { value: 1 },
       },
     });
     const dome = new THREE.Mesh(new THREE.SphereGeometry(380, 32, 16), this.skyMat);
@@ -246,10 +250,12 @@ export class SkyView {
       const m = new THREE.Mesh(cloudGeometry(300 + i), this.cloudMat);
       const a = rng.range(0, Math.PI * 2);
       const r = rng.range(70, 250);
-      this.cloudBase.push({ x: Math.cos(a) * r, z: Math.sin(a) * r, speed: rng.range(0.5, 1.2) });
+      const base = { x: Math.cos(a) * r, z: Math.sin(a) * r, speed: rng.range(0.5, 1.2), scale: new THREE.Vector3() };
       m.position.set(0, rng.range(85, 120), 0);
       const s = rng.range(0.8, 1.6);
       m.scale.set(s, s * rng.range(0.8, 1.1), s);
+      base.scale.copy(m.scale);
+      this.cloudBase.push(base);
       m.rotation.y = rng.range(0, Math.PI);
       m.renderOrder = -8;
       this.clouds.push(m);
@@ -257,7 +263,7 @@ export class SkyView {
     }
   }
 
-  update(dn: DayNight, camera: THREE.Camera, time: number): void {
+  update(dn: DayNight, camera: THREE.Camera, time: number, weather: Weather | null = null): void {
     this.group.position.copy(camera.position);
     const u = this.skyMat.uniforms;
     (u.uTop.value as THREE.Color).copy(dn.top);
@@ -266,12 +272,17 @@ export class SkyView {
     (u.uSunColor.value as THREE.Color).copy(dn.sun);
     (u.uMoonDir.value as THREE.Vector3).copy(dn.moonDir);
     u.uNight.value = dn.night;
-    this.starMat.uniforms.uOpacity.value = smoothstep(0.35, 1, dn.night);
+    const look = weather ? WEATHER_LOOK[weather] : null;
+    u.uClear.value = look?.clear ?? 1;
+    this.starMat.uniforms.uOpacity.value = smoothstep(0.35, 1, dn.night) * (look?.clear ?? 1);
     this.starMat.uniforms.uTime.value = time;
     this.cloudMat.emissive.copy(dn.horizon).multiplyScalar(0.35);
     this.cloudMat.opacity = 0.9 - dn.night * 0.35;
+    this.cloudMat.color.set(weather && weather !== 'sunny' ? '#b5c3ca' : '#ffffff');
     for (let i = 0; i < this.clouds.length; i++) {
       const b = this.cloudBase[i];
+      this.clouds[i].visible = !look || i < Math.ceil(this.clouds.length * look.clouds);
+      this.clouds[i].scale.copy(b.scale).multiplyScalar(look?.cloudScale ?? 1);
       let x = b.x + time * b.speed;
       x = ((x + 260) % 520 + 520) % 520 - 260;
       this.clouds[i].position.x = x;

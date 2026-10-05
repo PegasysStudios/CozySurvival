@@ -36,6 +36,8 @@ function legacyStorage(): { storage: MemoryStorage; save: string } {
   const storage = new MemoryStorage();
   const sim = Simulation.newGame(1111);
   sim.state.totalHours += 30;
+  // Old saves predate daily weather; migration adds it without changing the original run.
+  delete sim.state.weather;
   const save = serializeState(sim.state);
   storage.setItem(STORAGE_KEYS.meta, JSON.stringify({ version: 1, worldSeed: 1111, best: { hours: 40, day: 2 }, deaths: 3, settings: { muted: true } }));
   storage.setItem(STORAGE_KEYS.save, save);
@@ -54,7 +56,10 @@ describe('per-map saves', () => {
     const sim = rm.loadCurrent()!;
     expect(sim.biome).toBe('pnw');
     expect(sim.state.seed).toBe(1111);
-    expect(serializeState(sim.state)).toBe(save);
+    const loaded = JSON.parse(serializeState(sim.state));
+    expect(loaded.weather).toMatchObject({ day: 2, season: 'spring' });
+    delete loaded.weather;
+    expect(loaded).toEqual(JSON.parse(save));
     expect(rm.hasContinue('pnw')).toBe(true);
     expect(rm.hasContinue('desert')).toBe(false);
     expect(storageKeys('pnw')).toEqual({ save: STORAGE_KEYS.save, snapshot: STORAGE_KEYS.snapshot });

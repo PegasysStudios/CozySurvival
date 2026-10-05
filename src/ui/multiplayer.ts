@@ -4,6 +4,7 @@ import type { ServerInfo } from '../net/lobby';
 import { cleanName, cleanText, NAME_MAX, type Avatar, type Profile } from '../net/protocol';
 import type { RosterEntry } from '../net/session';
 import { button, el, escapeHtml, setText, toggle } from './dom';
+import { MenuModal } from './modal';
 
 const PROFILE_KEY = 'cozysurvival.v1.profile';
 const SERVER_NAME_MAX = 24;
@@ -39,6 +40,7 @@ export interface MpMenuHost {
   onJoin(profile: Profile, server: ServerInfo): void;
   onCancel(): void;
   onRetry(): void;
+  onStatus?(status: MpStatus): void;
   portrait(kind: Avatar): string;
   sfx(): void;
 }
@@ -48,10 +50,12 @@ const AVATARS: { kind: Avatar; label: string }[] = [
   { kind: 'f', label: 'Female' },
 ];
 
-/** The title screen's multiplayer block plus the character / joining overlay. */
+/** Server browser and character / joining pop-ups launched from the title menu. */
 export class MpMenu {
   readonly section = el('section', 'mp-section');
-  readonly overlay = el('div', 'screen mp-screen');
+  readonly overlay: HTMLElement;
+  private readonly modal: MenuModal;
+  private view: 'lobby' | 'form' | 'busy' | 'error' | null = null;
   private readonly host: MpMenuHost;
   private status: MpStatus = { kind: 'unconfigured' };
   private servers: ServerInfo[] | null = null;
@@ -61,7 +65,14 @@ export class MpMenu {
 
   constructor(parent: HTMLElement, host: MpMenuHost) {
     this.host = host;
-    parent.append(this.overlay);
+    this.modal = new MenuModal(parent, 'mp-screen', () => {
+      this.host.sfx();
+      if (this.view === 'busy') this.host.onCancel();
+      else if (this.view === 'lobby') this.closeOverlay();
+      else this.openLobby();
+    });
+    this.overlay = this.modal.root;
+    this.overlay.setAttribute('aria-labelledby', 'mp-popup-heading');
     this.render();
   }
 
@@ -73,6 +84,7 @@ export class MpMenu {
     this.status = s;
     if (s.kind !== 'online') this.servers = null;
     this.render();
+    this.host.onStatus?.(s);
   }
 
   /** `null` while the first lobby list is still on its way. */
@@ -94,6 +106,18 @@ export class MpMenu {
   }
 
   private render(): void {
+    const active = document.activeElement;
+    const focused = active instanceof HTMLButtonElement && this.section.contains(active) ? active : null;
+    this.renderSection();
+    if (focused) {
+      const replacement = [...this.section.querySelectorAll<HTMLButtonElement>('button')].find((b) => focused.dataset.server
+        ? b.dataset.server === focused.dataset.server
+        : b.className === focused.className);
+      (replacement && !replacement.disabled ? replacement : this.overlay).focus();
+    }
+  }
+
+  private renderSection(): void {
     const s = this.status;
     const sec = this.section;
     sec.innerHTML = '';
@@ -104,7 +128,7 @@ export class MpMenu {
       : s.kind === 'online' ? ['ok', s.local ? 'Local test mode' : 'Online']
       : s.kind === 'outdated' ? ['bad', 'Update needed']
       : ['bad', 'Offline'];
-    head.innerHTML = `<h3>Multiplayer</h3><span class="mp-pill ${pill[0]}">${pill[1]}</span>`;
+    head.innerHTML = `<h3>Available servers</h3><span class="mp-pill ${pill[0]}">${pill[1]}</span>`;
     sec.append(head);
     if (this.notice) sec.append(el('div', 'mp-notice', escapeHtml(this.notice)));
 
@@ -117,7 +141,7 @@ export class MpMenu {
     sec.append(create);
 
     if (s.kind === 'unconfigured') {
-      sec.append(el('div', 'mp-note', 'Multiplayer is not set up for this build. Add <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> to <code>.env.local</code> (see <code>docs/multiplayer-setup.md</code>).'));
+      sec.append(el('div', 'mp-note', 'Multiplayer is unavailable in this build. You can still continue or start a single-player run.'));
       return;
     }
     if (s.kind === 'checking') {
@@ -153,21 +177,40 @@ export class MpMenu {
       this.openForm(sv);
     });
     join.disabled = full || mismatch;
+    join.dataset.server = sv.sid;
     row.append(join);
     return row;
   }
 
+  openLobby(): void {
+    this.view = 'lobby';
+    this.overlay.innerHTML = '';
+    const card = el('div', 'mp-card mp-lobby menu-popup-card');
+    const head = el('div', 'menu-popup-head', '<h2 id="mp-popup-heading">Multiplayer</h2>');
+    const close = button('×', 'btn subtle menu-popup-close', () => {
+      this.host.sfx();
+      this.closeOverlay();
+    });
+    close.setAttribute('aria-label', 'Close multiplayer');
+    head.append(close);
+    this.render();
+    card.append(head, this.section);
+    this.overlay.append(card);
+    this.modal.show(close);
+  }
+
   /** Character creation: `server` null creates a new server, otherwise joins it. */
   openForm(server: ServerInfo | null): void {
+    this.view = 'form';
     const saved = loadProfile();
     let avatar: Avatar = saved?.avatar ?? 'm';
     const o = this.overlay;
     o.innerHTML = '';
-    const card = el('form', 'mp-card');
+    const card = el('form', 'mp-card menu-popup-card');
     card.noValidate = true;
     card.innerHTML = `
       <div class="death-kicker">${server ? `Join a server · ${escapeHtml(BIOMES[server.map].name)}` : `New multiplayer world · ${escapeHtml(BIOMES[this.map].name)}`}</div>
-      <h2>${server ? escapeHtml(server.name) : 'Create a server'}</h2>
+      <h2 id="mp-popup-heading">${server ? escapeHtml(server.name) : 'Create a server'}</h2>
       <label class="mp-field">Your name<input name="name" maxlength="${NAME_MAX}" autocomplete="nickname" spellcheck="false" placeholder="Up to ${NAME_MAX} characters" value="${escapeHtml(saved?.name ?? '')}"></label>
       ${server ? '' : `<label class="mp-field">Server name<input name="server" maxlength="${SERVER_NAME_MAX}" spellcheck="false" placeholder="${escapeHtml(saved ? `${saved.name}'s camp` : 'Lakeside camp')}"></label>`}
       <div class="mp-field-label">Your character</div>
@@ -196,7 +239,7 @@ export class MpMenu {
     submit.type = 'submit';
     actions.append(button('Back', 'btn subtle', () => {
       this.host.sfx();
-      this.closeOverlay();
+      this.openLobby();
     }), submit);
     card.append(actions);
     card.addEventListener('submit', (ev) => {
@@ -214,40 +257,40 @@ export class MpMenu {
       else this.host.onCreate(profile, cleanText(serverIn?.value, SERVER_NAME_MAX) || `${name}'s camp`);
     });
     o.append(card);
-    o.classList.add('show');
-    setTimeout(() => nameIn.focus(), 30);
+    this.modal.show(nameIn);
   }
 
   showBusy(text: string): void {
+    this.view = 'busy';
     const o = this.overlay;
     o.innerHTML = '';
-    const card = el('div', 'mp-card mp-busy');
-    card.innerHTML = `<div class="mp-spin big"></div><h2>${escapeHtml(text)}</h2>`;
+    const card = el('div', 'mp-card mp-busy menu-popup-card');
+    card.innerHTML = `<div class="mp-spin big"></div><h2 id="mp-popup-heading">${escapeHtml(text)}</h2>`;
     card.append(button('Cancel', 'btn subtle', () => {
       this.host.sfx();
       this.host.onCancel();
     }));
     o.append(card);
-    o.classList.add('show');
+    this.modal.show();
   }
 
   showError(text: string): void {
+    this.view = 'error';
     const o = this.overlay;
     o.innerHTML = '';
-    const card = el('div', 'mp-card mp-busy');
-    card.innerHTML = `<div class="death-kicker">Couldn't connect</div><h2>${escapeHtml(text)}</h2>`;
-    card.append(button('Back to the menu', 'btn primary', () => {
+    const card = el('div', 'mp-card mp-busy menu-popup-card');
+    card.innerHTML = `<div class="death-kicker">Couldn't connect</div><h2 id="mp-popup-heading">${escapeHtml(text)}</h2>`;
+    card.append(button('Back to servers', 'btn primary', () => {
       this.host.sfx();
-      this.closeOverlay();
+      this.openLobby();
     }));
     o.append(card);
-    o.classList.add('show');
+    this.modal.show();
   }
 
   closeOverlay(): void {
-    this.overlay.classList.remove('show');
-    const focused = document.activeElement;
-    if (focused instanceof HTMLElement && this.overlay.contains(focused)) focused.blur();
+    this.view = null;
+    this.modal.close();
   }
 }
 

@@ -20,6 +20,8 @@ export interface MoveInput {
 
 export interface MoveEnv {
   terrain: Terrain;
+  /** Seasonal ice is per simulation, never a mutation of the shared terrain cache. */
+  readonly frozen?: boolean;
   query(x: number, z: number, r: number, out: Collider[]): Collider[];
 }
 
@@ -54,10 +56,11 @@ const tmpColliders: Collider[] = [];
 const tmpTops: Collider[] = [];
 const push = [0, 0];
 
-/** Height you stand at: the terrain, or the top of a boulder or fallen trunk under your footprint. */
+/** Height you stand at: the terrain, or the top of a boulder, log or fallen trunk under your footprint. */
 export function surfaceAt(env: MoveEnv, x: number, z: number): number {
   const t = env.terrain;
   let h = t.heightAt(x, z);
+  if (env.frozen) h = Math.max(h, WATER_LEVEL);
   env.query(x, z, P.radius + 0.5, tmpTops);
   for (let i = 0; i < tmpTops.length; i++) {
     const top = tmpTops[i].top;

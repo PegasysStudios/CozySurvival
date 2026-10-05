@@ -154,6 +154,7 @@ describe('hot days, cold nights', () => {
 
   function evening(biome: 'pnw' | 'desert', fromHour: number, hours: number, fire = false): number {
     const sim = biome === 'desert' ? quietDesert() : Simulation.newGame(42);
+    if (biome === 'pnw') sim.devSetSeason('summer'); // Compare against the original PNW climate.
     sim.state.animals.length = 0;
     sim.state.spawnCheckAt = Infinity;
     if (fire) placeStructure(sim, 'campfire');

@@ -1,4 +1,5 @@
 import { clamp, damp } from '../core/math';
+import type { Vector3 } from 'three';
 import { BALANCE } from '../data/balance';
 import { BIOME_IDS, BIOMES, biomeDef, speciesName, type BiomeId } from '../data/biomes';
 import { ITEMS, TOOLS, getDisplayBiome, itemName, setDisplayBiome, type ItemId } from '../data/items';
@@ -18,6 +19,7 @@ import type { Session, SessionEvent } from '../net/session';
 import { createSupabaseTransport } from '../net/supabase';
 import { broadcastBus, LocalTransport, type Transport } from '../net/transport';
 import { avatarPortrait } from '../render/avatars';
+import { CAMERA_LABELS, PlayerCamera } from '../render/camera';
 import type { SimEvent } from '../sim/events';
 import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import { browserStorage, RunManager, type DeathSummary, type Settings } from '../sim/run';
@@ -96,6 +98,17 @@ export class Game {
   readonly dev: DevPanel | null;
   mode: Mode = 'title';
   ready = false;
+  readonly playerCamera = new PlayerCamera();
+  private cameraDt = 0;
+  private cameraUpdated = false;
+  private readonly clipCamera = (origin: Vector3, direction: Vector3, length: number) =>
+    this.view.clipCamera(this.sim, origin, direction, length);
+  private readonly resolveCameraAim: NonNullable<SimInput['resolveAim']> = (eye, out) => {
+    this.view.prepareCamera(this.sim);
+    this.updateCamera(this.cameraDt);
+    this.cameraUpdated = true;
+    this.view.aimCamera(this.sim, this.pose, eye, out);
+  };
 
   private isPreview = true;
   private yaw = 0;
@@ -154,6 +167,7 @@ export class Game {
     root.append(ui);
     this.input = new Input(this.view.renderer.domElement);
     this.hud = new Hud(ui);
+    this.hud.setGoalsVisible(this.settings.showGoals);
     this.panels = new Panels(ui, {
       sim: () => this.sim,
       sfx: (n) => this.sfx(n),
@@ -164,6 +178,7 @@ export class Game {
       onContinue: () => this.continueRun(),
       onNewRun: () => this.beginPlay(this.run.restartFromDay1(), true),
       onNewWorld: () => this.beginPlay(this.run.startFromScratch(), true),
+      onMultiplayer: () => this.mpMenu.openLobby(),
       onResume: () => this.resume(),
       onQuitToTitle: () => this.quitToTitle(),
       onRetryDay: () => this.retryDay(),
@@ -183,13 +198,13 @@ export class Game {
       onJoin: (p, server) => void this.joinServer(p, server),
       onCancel: () => this.cancelJoin(),
       onRetry: () => this.refreshLobby(true),
+      onStatus: (status) => this.screens.setMultiplayerStatus(status),
       portrait: (kind) => this.portrait(kind),
       sfx: () => {
         this.audio.start();
         this.sfx('click');
       },
     });
-    this.screens.setTitleExtra(this.mpMenu.section);
     this.mpHud = new MpHud(ui, {
       onSend: (text) => this.sendChat(text),
       onCloseChat: () => this.closeChat(),
@@ -338,6 +353,7 @@ export class Game {
     this.isPreview = false;
     sim.timeScale = this.timeScale;
     if (worldChanged || fresh) this.view.setWorld(sim);
+    this.playerCamera.reset();
     this.syncCameraToPlayer();
     this.lastWalked = sim.distanceWalked;
     this.death = null;
@@ -435,7 +451,7 @@ export class Game {
       else if (action === 'pause') this.pause();
       return;
     }
-    if (this.mode === 'title' && (code === 'ArrowLeft' || code === 'ArrowRight') && this.screens.titleShown && !this.mpMenu.overlayOpen) {
+    if (this.mode === 'title' && (code === 'ArrowLeft' || code === 'ArrowRight') && this.screens.titleShown && !this.screens.titlePopupOpen && !this.mpMenu.overlayOpen) {
       this.audio.start();
       this.sfx('click');
       this.selectMap(code === 'ArrowLeft' ? -1 : 1);
@@ -444,6 +460,11 @@ export class Game {
     if (code === 'KeyM') {
       this.applySettings({ ...this.settings, muted: !this.settings.muted });
       this.hud.toast(this.settings.muted ? 'Sound off (M)' : `Sound on · ${volumePercent(this.settings.masterVolume)}`);
+      return;
+    }
+    if (code === 'KeyK' && (this.mode === 'playing' || this.mode === 'paused' || this.mode === 'panel')
+      && !this.mpHud.chatting && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      this.applySettings({ ...this.settings, showGoals: !this.settings.showGoals });
       return;
     }
     if (code === 'Backquote' && this.dev && (this.mode === 'playing' || this.mode === 'panel')) {
@@ -477,11 +498,14 @@ export class Game {
       }
       if (code === 'KeyG' && !sim.state.dead) {
         this.mp.wave();
+        this.view.localAvatar.wave();
         this.throttledToast('wave', 'You wave to the others.', 'info', 2);
         return;
       }
     }
-    if (code === 'Tab') this.openPanel('inventory');
+    if (code === 'KeyV' && this.input.locked && !this.mpHud.chatting && !sim.state.dead) {
+      this.hud.toast(`${CAMERA_LABELS[this.playerCamera.cycle()]} (V)`);
+    } else if (code === 'Tab') this.openPanel('inventory');
     else if (code === 'KeyC') this.openPanel('crafting');
     else if (code === 'KeyF') sim.quickConsume();
     else if (code === 'KeyR' && sim.placement) sim.rotatePlacement(ev.shiftKey ? -PLACE_ROTATE_BIG_STEP : PLACE_ROTATE_BIG_STEP);
@@ -507,6 +531,7 @@ export class Game {
 
   private applySettings(s: Settings): void {
     this.settings = s;
+    this.hud.setGoalsVisible(s.showGoals);
     this.run.meta.settings = { ...s };
     this.run.saveMeta();
     this.audio.setVolume(s);
@@ -531,6 +556,8 @@ export class Game {
     const rawDt = (now - this.last) / 1000;
     this.last = now;
     const dt = clamp(rawDt, 0, 0.1);
+    this.cameraDt = dt;
+    this.cameraUpdated = false;
     this.time += dt;
     if (rawDt > 0) this.fpsAvg = this.fpsAvg * 0.95 + (1 / Math.max(rawDt, 1e-3)) * 0.05;
     let sim = this.sim;
@@ -554,6 +581,7 @@ export class Game {
       inp.primary = input.primary;
       inp.primaryPressed = input.primaryPressed;
       inp.primaryReleased = input.primaryReleased;
+      inp.resolveAim = this.playerCamera.active ? this.resolveCameraAim : undefined;
       if (sim.placement) {
         if (input.secondaryPressed) {
           sim.cancelPlacement();
@@ -599,7 +627,10 @@ export class Game {
       }
     }
 
-    this.updateCamera(dt);
+    if (!this.cameraUpdated) {
+      if (this.playerCamera.active && this.mode !== 'title') this.view.prepareCamera(sim);
+      this.updateCamera(dt);
+    }
     const vm = this.vmInput;
     const ps = sim.state.player;
     vm.tool = sim.state.activeTool;
@@ -611,7 +642,11 @@ export class Game {
     vm.draw = sim.fishing?.phase === 'charging' ? sim.fishing.power : sim.bowDraw >= 0 ? Math.min(1, sim.bowDraw / BALANCE.combat.bow.fullDraw) : -1;
     vm.sitting = ps.sitting;
     vm.hasArrows = sim.state.inventory.slots.some((s) => s?.item === 'arrow');
-    this.view.showViewModel = this.mode !== 'title' && this.mode !== 'dead' && !sim.placement && sim.sleepingIn === null;
+    const thirdPerson = this.mode !== 'title' && this.mode !== 'dead' && this.playerCamera.active;
+    this.view.thirdPerson = thirdPerson;
+    this.view.showViewModel = !thirdPerson && this.mode !== 'title' && this.mode !== 'dead' && !sim.placement && sim.sleepingIn === null;
+    if (thirdPerson) this.view.localAvatar.update(sim, this.mp?.profile.avatar ?? 'm', dt, this.playerCamera.avatarOpacity);
+    else this.view.localAvatar.hide(dt);
     if (this.mpInWorld) this.view.avatars.update(this.mp!.peers.values(), dt, this.pose.x, this.pose.y, this.pose.z);
     this.view.frame(sim, dt, this.time, this.pose, vm);
 
@@ -677,6 +712,15 @@ export class Game {
     const fovTarget = BASE_FOV + (p.sprinting && speed > 5 ? 7 : 0);
     this.fov = damp(this.fov, fovTarget, 6, dt);
     pose.fov = this.fov;
+    if (!dead && this.playerCamera.active) {
+      // The third-person boom follows the eye without first-person head bob, landing dip or tool shake.
+      pose.x = p.x;
+      pose.y = this.camY;
+      pose.z = p.z;
+      pose.yaw = this.yaw;
+      pose.pitch = this.pitch;
+      this.playerCamera.update(pose, dt, this.clipCamera);
+    }
     if (dead) this.pitch = pose.pitch;
   }
 
@@ -697,6 +741,7 @@ export class Game {
       night: this.view.dayNight.night,
       fireDist,
       waterDist,
+      frozen: sim.frozen,
       indoors: sheltered,
       paused: this.mode === 'paused' || this.mode === 'title' || this.mode === 'dead',
     });
@@ -775,6 +820,7 @@ export class Game {
       case 'swing':
         this.mp?.noteSwing();
         this.view.viewModel.swing(e.tool, e.hit);
+        this.view.localAvatar.swing();
         if (!e.hit) this.sfx('swing');
         break;
       case 'chop': {
@@ -960,8 +1006,8 @@ export class Game {
         this.sfx('nightfall');
         break;
       case 'slept':
-        if (this.mp && this.mode !== 'playing') this.hud.showBanner(`Day ${e.day}`, 'Everyone slept through the night.');
-        else this.sleepTransition(e.day, e.byFire);
+        if (this.mp && this.mode !== 'playing' && !e.passedOut && this.view.displayedSeason === sim.season) this.hud.showBanner(`Day ${e.day}`, 'Everyone slept through the night.');
+        else this.sleepTransition(e.day, e.byFire, e.passedOut);
         break;
       case 'sleepWait':
         this.sfx('sleep');
@@ -1052,11 +1098,19 @@ export class Game {
     }
   }
 
-  private sleepTransition(day: number, byFire: boolean): void {
+  private sleepTransition(day: number, byFire: boolean, passedOut = false): void {
     this.sfx('sleep');
+    const seasonal = this.view.displayedSeason !== this.sim.season;
+    if (seasonal) this.view.deferSeasonReveal();
+    if (passedOut || seasonal) {
+      this.panels.close();
+      if (this.dev?.open) this.dev.toggle();
+      this.screens.hidePause();
+      this.mpHud.closeChat();
+    }
     this.mode = 'sleeping';
     this.sim.cancelPlacement();
-    const text = byFire
+    const text = passedOut ? 'Exhaustion catches up with you at 2 AM. You pass out and wake in the same place at first light.' : byFire
       ? 'You drift off to the crackle of the fire and wake at first light, fully rested.'
       : 'You sleep without a fire and wake at first light, rested but chilled to the bone.';
     void this.screens.playSleep(day, text).then(() => {
@@ -1284,6 +1338,9 @@ export class Game {
         this.mpHud.setHostAway(e.away);
         break;
       case 'dawn':
+        // The session advances sleep after this frame's normal event drain. Start the fade before rendering it.
+        this.sim.takeEvents(this.events);
+        for (const event of this.events) this.handleEvent(event);
         break;
     }
   }

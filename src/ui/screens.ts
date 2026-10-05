@@ -3,8 +3,10 @@ import type { BiomeId } from '../data/biomes';
 import type { BestRecord, DeathSummary, Settings } from '../sim/run';
 import { formatDuration } from '../sim/time';
 import { button, el, escapeHtml } from './dom';
+import { MenuModal } from './modal';
+import type { MpStatus } from './multiplayer';
 
-/** The map shown on the title screen; the arrows cycle through `count` maps. */
+/** The title screen's map; selection is available in its Settings pop-up. */
 export interface TitleMap {
   id: BiomeId;
   name: string;
@@ -26,12 +28,13 @@ export interface ScreenHost {
   onContinue(): void;
   onNewRun(): void;
   onNewWorld(): void;
+  onMultiplayer(): void;
   onResume(): void;
   onQuitToTitle(): void;
   onRetryDay(): void;
   onRestartDay1(): void;
   onStartFromScratch(): void;
-  /** Step to the previous (-1) or next (1) map on the title screen. */
+  /** Step to the previous (-1) or next (1) map from the title menu's Settings. */
   onSelectMap(step: -1 | 1): void;
   onSettings(s: Settings): void;
   onLeaveServer(): void;
@@ -71,10 +74,12 @@ const CONTROLS = `
     <span>Jump · climb onto rocks and logs</span><b>Space</b>
     <span>Swim</span><b>W A S D in deep water</b>
     <span>Look</span><b>Mouse</b>
+    <span>Camera · first person / close / far</span><b>V</b>
     <span>Gather · use · interact</span><b>Left-click (hold to repeat)</b>
     <span>Tools</span><b>1–5 · mouse wheel</b>
     <span>Crafting</span><b>C</b>
     <span>Pack</span><b>Tab</b>
+    <span>Show / hide Goals</span><b>K</b>
     <span>Quick eat / drink</span><b>F</b>
     <span>Rotate placement</span><b>R · wheel</b>
     <span>Cancel placement</span><b>Right-click · Q</b>
@@ -82,9 +87,13 @@ const CONTROLS = `
     <span>Pause</span><b>Esc</b>
   </div>`;
 
-function bestLine(best: BestRecord | null): string {
-  return best ? `Best run: ${formatDuration(best.hours)} · reached day ${best.day}` : 'No runs recorded yet';
-}
+const menuSvg = (body: string) => `<svg viewBox="0 0 32 32" aria-hidden="true">${body}</svg>`;
+const MENU_ICONS = {
+  play: menuSvg('<path d="m12 7 15 9-15 9z" fill="currentColor"/>'),
+  tree: menuSvg('<path d="m16 2-7 10h4L6 22h8v8h4v-8h8l-7-10h4z" fill="currentColor"/>'),
+  multiplayer: menuSvg('<circle cx="16" cy="10" r="5" fill="currentColor"/><path d="M7 28v-4a9 9 0 0 1 18 0v4z" fill="currentColor"/><circle cx="5" cy="14" r="3" fill="currentColor"/><circle cx="27" cy="14" r="3" fill="currentColor"/><path d="M1 25v-3a5 5 0 0 1 6-5M31 25v-3a5 5 0 0 0-6-5" stroke="currentColor" stroke-width="3" fill="none"/>'),
+  settings: menuSvg('<path d="m14 3-1 4-4 2-4-1-2 4 3 3v3l-3 3 2 4 4-1 4 2 1 4h4l1-4 4-2 4 1 2-4-3-3v-3l3-3-2-4-4 1-4-2-1-4z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="16" cy="16" r="4" fill="none" stroke="currentColor" stroke-width="2"/>'),
+};
 
 export class Screens {
   readonly title = el('div', 'screen title-screen');
@@ -95,14 +104,14 @@ export class Screens {
   readonly loading = el('div', 'loading-screen');
   private readonly host: ScreenHost;
   private settings: Settings;
-  private confirmNewWorld = false;
   private confirmScratch = false;
-  private confirmNewRun = false;
   private lastTitle: TitleInfo | null = null;
   private lastDeath: DeathSummary | null = null;
   private deathPlace = 'forest';
-  private titleExtra: HTMLElement | null = null;
   private confirmClose = false;
+  private readonly titleModal: MenuModal;
+  private titleDialog: 'new-run' | 'settings' | null = null;
+  private mpStatus: MpStatus = { kind: 'unconfigured' };
 
   constructor(parent: HTMLElement, host: ScreenHost, settings: Settings) {
     this.host = host;
@@ -110,6 +119,7 @@ export class Screens {
     this.loading.innerHTML = '<div class="loading-inner"><div class="logo">CozySurvival</div><div class="loading-bar"><div></div></div><div class="loading-text">Growing the forest…</div></div>';
     this.clickToPlay.innerHTML = '<div class="ctp-inner">Click to continue</div>';
     parent.append(this.title, this.pause, this.death, this.sleep, this.clickToPlay, this.loading);
+    this.titleModal = new MenuModal(parent, 'title-popup', () => this.closeTitleDialog());
   }
 
   hideLoading(): void {
@@ -119,11 +129,12 @@ export class Screens {
 
   showTitle(info: TitleInfo): void {
     const mapChanged = !!this.lastTitle && this.lastTitle.map.id !== info.map.id;
+    const settingsOpen = mapChanged && this.titleDialog === 'settings';
+    this.closeTitleDialog();
     this.lastTitle = info;
-    this.confirmNewWorld = false;
-    this.confirmNewRun = false;
     this.renderTitle(mapChanged);
     this.title.classList.add('show');
+    if (settingsOpen) this.showTitleSettings();
   }
 
   get titleShown(): boolean {
@@ -137,64 +148,134 @@ export class Screens {
     const row = el('div', 'title-row');
     const card = el('div', `title-card${mapChanged ? ' map-changed' : ''}`);
     const m = info.map;
-    const dots = Array.from({ length: m.count }, (_, i) => `<i class="${i === m.index ? 'on' : ''}"></i>`).join('');
-    card.innerHTML = `<div class="logo">CozySurvival</div>
-      <div class="map-pick" aria-live="polite"><span class="map-name">${escapeHtml(m.name)}</span><span class="map-dots" aria-label="Map ${m.index + 1} of ${m.count}">${dots}</span></div>
+    card.innerHTML = `<div class="title-emblem"><img src="/ui/cozy-survival-logo.png" alt="" draggable="false"></div><h1 class="logo">CozySurvival</h1>
+      <div class="map-pick" aria-live="polite"><span class="map-name">${escapeHtml(m.name)}</span></div>
       <div class="tagline">${escapeHtml(m.tagline)}</div>`;
-    const arrow = (step: -1 | 1) => {
-      const b = button(step < 0 ? '&#8249;' : '&#8250;', `map-arrow ${step < 0 ? 'prev' : 'next'}`, () => {
+    const actions = el('div', 'title-actions');
+    const action = (id: string, label: string, icon: string, sub: string, onClick: () => void) => {
+      const b = button(`<span class="menu-button-icon">${icon}</span><span class="menu-button-copy"><span class="menu-button-label">${label}</span>${sub ? `<span class="btn-sub">${sub}</span>` : ''}</span><span class="menu-button-arrow" aria-hidden="true">›</span>`, `btn title-menu-button title-${id}${id === 'continue' ? ' primary' : ''}`, () => {
         this.host.sfx();
-        this.host.onSelectMap(step);
+        onClick();
       });
-      b.setAttribute('aria-label', step < 0 ? 'Previous map' : 'Next map');
-      b.dataset.map = step < 0 ? 'prev' : 'next';
-      b.disabled = m.count < 2;
+      b.dataset.action = id;
+      actions.append(b);
       return b;
     };
-    const actions = el('div', 'title-actions');
-    if (info.continueLabel) {
-      actions.append(button(`Continue <span class="btn-sub">${escapeHtml(info.continueLabel)}</span>`, 'btn primary big', () => {
-        this.host.sfx();
-        this.host.onContinue();
-      }));
-    }
-    const newLabel = info.continueLabel ? (this.confirmNewRun ? 'Abandon current run and start over?' : 'New run') : 'Start surviving';
-    actions.append(button(`${newLabel} <span class="btn-sub">Day 1 in this same ${escapeHtml(m.place)}</span>`, `btn ${info.continueLabel ? '' : 'primary'} big ${this.confirmNewRun ? 'danger' : ''}`, () => {
+    const resume = action('continue', 'Continue', MENU_ICONS.play, escapeHtml(info.continueLabel ?? 'No saved run'), () => this.host.onContinue());
+    resume.disabled = !info.continueLabel;
+    action('new-run', 'New Run', MENU_ICONS.tree, '', () => this.showNewRun());
+    action('multiplayer', 'Multiplayer <span class="mp-pill"></span>', MENU_ICONS.multiplayer, `Play together in the ${escapeHtml(m.name)}.`, () => this.host.onMultiplayer());
+    const settings = button(`${MENU_ICONS.settings}<span>Settings</span>`, 'btn subtle title-settings', () => {
       this.host.sfx();
-      if (info.continueLabel && !this.confirmNewRun) {
-        this.confirmNewRun = true;
-        this.renderTitle();
-        return;
-      }
-      this.host.onNewRun();
-    }));
-    actions.append(button(this.confirmNewWorld ? `Really wipe this map's save and records? Click again` : `New world <span class="btn-sub">Fresh ${escapeHtml(m.name)} map · clears its save and records</span>`, `btn subtle ${this.confirmNewWorld ? 'danger' : ''}`, () => {
-      this.host.sfx();
-      if (!this.confirmNewWorld) {
-        this.confirmNewWorld = true;
-        this.renderTitle();
-        return;
-      }
-      this.host.onNewWorld();
-    }));
-    const meta = el('div', 'title-meta', `${escapeHtml(bestLine(info.best))}${info.deaths ? ` · ${info.deaths} run${info.deaths === 1 ? '' : 's'} ended` : ''}`);
-    const help = el('details', 'title-help');
-    help.innerHTML = `<summary>Controls</summary>${CONTROLS}`;
-    card.append(actions, meta);
-    if (this.titleExtra) card.append(this.titleExtra);
-    card.append(help);
-    row.append(arrow(-1), card, arrow(1));
+      this.showTitleSettings();
+    });
+    card.append(actions, settings);
+    row.append(card);
     t.append(row);
+    this.setMultiplayerStatus(this.mpStatus);
   }
 
-  /** Extra block on the title card (the multiplayer section); kept across re-renders. */
-  setTitleExtra(e: HTMLElement): void {
-    this.titleExtra = e;
-    if (this.lastTitle) this.renderTitle();
+  setMultiplayerStatus(status: MpStatus): void {
+    this.mpStatus = status;
+    const pill = this.title.querySelector<HTMLElement>('.title-multiplayer .mp-pill');
+    if (!pill) return;
+    const online = status.kind === 'online';
+    pill.className = `mp-pill ${online ? 'ok' : status.kind === 'checking' ? 'wait' : 'idle'}`;
+    pill.textContent = online ? 'Online' : status.kind === 'checking' ? 'Connecting' : status.kind === 'outdated' ? 'Update needed' : status.kind === 'offline' ? 'Offline' : 'Unavailable';
+  }
+
+  get titlePopupOpen(): boolean {
+    return this.titleModal.open;
+  }
+
+  private closeTitleDialog(): void {
+    this.titleDialog = null;
+    this.titleModal.close();
+  }
+
+  private titleDialogCard(title: string): HTMLElement {
+    const overlay = this.titleModal.root;
+    overlay.innerHTML = '';
+    overlay.setAttribute('aria-labelledby', 'title-popup-heading');
+    const card = el('div', 'menu-popup-card title-popup-card');
+    card.innerHTML = `<h2 id="title-popup-heading">${title}</h2>`;
+    overlay.append(card);
+    return card;
+  }
+
+  private showNewRun(): void {
+    this.titleDialog = 'new-run';
+    const card = this.titleDialogCard('Start a new run?');
+    const warning = this.lastTitle!.continueLabel ? 'Starting a new run will replace your current one. Are you sure?' : `Start a new run in the ${this.lastTitle!.map.name}?`;
+    const note = el('p', 'menu-popup-note', escapeHtml(warning));
+    note.id = 'new-run-warning';
+    this.titleModal.root.setAttribute('aria-describedby', note.id);
+    const actions = el('div', 'menu-popup-actions');
+    const no = button('No', 'btn', () => {
+      this.host.sfx();
+      this.closeTitleDialog();
+    });
+    const yes = button('Yes', 'btn primary', () => {
+      this.host.sfx();
+      this.closeTitleDialog();
+      this.host.onNewRun();
+    });
+    yes.dataset.action = 'confirm-new-run';
+    no.dataset.action = 'cancel-new-run';
+    actions.append(no, yes);
+    card.append(note, actions);
+    this.title.querySelector<HTMLElement>('.title-new-run')!.focus();
+    this.titleModal.show(no);
+  }
+
+  private showTitleSettings(): void {
+    this.titleDialog = 'settings';
+    const card = this.titleDialogCard('Settings');
+    this.titleModal.root.removeAttribute('aria-describedby');
+    const map = this.lastTitle!.map;
+    const mapPick = el('div', 'settings-map');
+    const previous = button('‹', 'btn', () => { this.host.sfx(); this.host.onSelectMap(-1); });
+    const next = button('›', 'btn', () => { this.host.sfx(); this.host.onSelectMap(1); });
+    previous.classList.add('map-arrow', 'prev');
+    next.classList.add('map-arrow', 'next');
+    previous.setAttribute('aria-label', 'Previous map');
+    next.setAttribute('aria-label', 'Next map');
+    previous.disabled = next.disabled = map.count < 2;
+    mapPick.append(previous, el('div', 'settings-map-name', `<span>Map</span><b>${escapeHtml(map.name)}</b>`), next);
+    const help = el('details', 'title-help', `<summary>Controls</summary>${CONTROLS}`);
+    const done = button('Done', 'btn primary', () => { this.host.sfx(); this.closeTitleDialog(); });
+    const actions = el('div', 'menu-popup-actions');
+    actions.append(done);
+    card.append(mapPick, this.settingsPanel(), help, actions);
+    this.title.querySelector<HTMLElement>('.title-settings')!.focus();
+    this.titleModal.show(done);
   }
 
   hideTitle(): void {
+    this.closeTitleDialog();
     this.title.classList.remove('show');
+  }
+
+  private settingsPanel(includeGoals = false): HTMLElement {
+    const settings = el('div', 'settings');
+    const s = this.settings;
+    settings.innerHTML = `
+      <label>Master volume <span class="vol-pct" data-pct="masterVolume">${s.muted ? 'Muted' : volumePercent(s.masterVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-k="masterVolume" aria-label="Master volume"></label>
+      <label>Music <span class="vol-pct" data-pct="musicVolume">${volumePercent(s.musicVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.musicVolume}" data-k="musicVolume" aria-label="Music volume"></label>
+      <label>Effects <span class="vol-pct" data-pct="sfxVolume">${volumePercent(s.sfxVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.sfxVolume}" data-k="sfxVolume" aria-label="Effects volume"></label>
+      <label>Mouse sensitivity <input type="range" min="0.3" max="2.5" step="0.05" value="${s.sensitivity}" data-k="sensitivity"></label>
+      <label class="check"><input type="checkbox" ${s.muted ? 'checked' : ''} data-k="muted"> Mute audio</label>
+      <label class="check"><input type="checkbox" ${s.invertY ? 'checked' : ''} data-k="invertY"> Invert mouse Y</label>
+      ${includeGoals ? `<label class="check"><input type="checkbox" ${s.showGoals ? 'checked' : ''} data-k="showGoals"> Show Goals (K)</label>` : ''}`;
+    settings.querySelectorAll('input').forEach((inp) => {
+      inp.addEventListener('input', () => {
+        const k = inp.dataset.k as keyof Settings;
+        if (k === 'muted' || k === 'invertY' || k === 'showGoals') this.settings[k] = inp.checked;
+        else this.settings[k] = Number(inp.value);
+        this.host.onSettings({ ...this.settings });
+      });
+    });
+    return settings;
   }
 
   showPause(mp: MpPauseInfo | null = null): void {
@@ -208,23 +289,7 @@ export class Screens {
       this.host.sfx();
       this.host.onResume();
     }));
-    const settings = el('div', 'settings');
-    const s = this.settings;
-    settings.innerHTML = `
-      <label>Master volume <span class="vol-pct" data-pct="masterVolume">${s.muted ? 'Muted' : volumePercent(s.masterVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.masterVolume}" data-k="masterVolume" aria-label="Master volume"></label>
-      <label>Music <span class="vol-pct" data-pct="musicVolume">${volumePercent(s.musicVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.musicVolume}" data-k="musicVolume" aria-label="Music volume"></label>
-      <label>Effects <span class="vol-pct" data-pct="sfxVolume">${volumePercent(s.sfxVolume)}</span><input type="range" min="0" max="1" step="0.05" value="${s.sfxVolume}" data-k="sfxVolume" aria-label="Effects volume"></label>
-      <label>Mouse sensitivity <input type="range" min="0.3" max="2.5" step="0.05" value="${s.sensitivity}" data-k="sensitivity"></label>
-      <label class="check"><input type="checkbox" ${s.muted ? 'checked' : ''} data-k="muted"> Mute audio</label>
-      <label class="check"><input type="checkbox" ${s.invertY ? 'checked' : ''} data-k="invertY"> Invert mouse Y</label>`;
-    settings.querySelectorAll('input').forEach((inp) => {
-      inp.addEventListener('input', () => {
-        const k = inp.dataset.k as keyof Settings;
-        if (k === 'muted' || k === 'invertY') this.settings[k] = inp.checked;
-        else this.settings[k] = Number(inp.value);
-        this.host.onSettings({ ...this.settings });
-      });
-    });
+    const settings = this.settingsPanel(true);
     const help = el('details', 'title-help');
     help.innerHTML = `<summary>Controls</summary>${CONTROLS}`;
     if (mp) {
@@ -258,15 +323,15 @@ export class Screens {
     this.pause.classList.remove('show');
   }
 
-  /** Keep the pause-menu controls in step with settings changed elsewhere (e.g. the M key). */
+  /** Keep both settings menus in step with changes made elsewhere (e.g. the M key). */
   syncSettings(s: Settings): void {
     this.settings = { ...s };
-    this.pause.querySelectorAll<HTMLInputElement>('.settings input').forEach((inp) => {
+    [this.pause, this.titleModal.root].flatMap(root => [...root.querySelectorAll<HTMLInputElement>('.settings input')]).forEach((inp) => {
       const k = inp.dataset.k as keyof Settings;
-      if (k === 'muted' || k === 'invertY') inp.checked = s[k];
+      if (k === 'muted' || k === 'invertY' || k === 'showGoals') inp.checked = s[k];
       else if (document.activeElement !== inp) inp.value = String(s[k]);
     });
-    this.pause.querySelectorAll<HTMLElement>('.vol-pct').forEach((pct) => {
+    [this.pause, this.titleModal.root].flatMap(root => [...root.querySelectorAll<HTMLElement>('.vol-pct')]).forEach((pct) => {
       const k = pct.dataset.pct as 'masterVolume' | 'musicVolume' | 'sfxVolume';
       pct.textContent = k === 'masterVolume' && s.muted ? 'Muted' : volumePercent(s[k]);
     });

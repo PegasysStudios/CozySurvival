@@ -5,6 +5,8 @@ import type { SpeciesId } from '../data/species';
 import { setCapacity } from '../sim/inventory';
 import { slotsFor } from '../sim/crafting';
 import type { Simulation } from '../sim/simulation';
+import { SEASONS, SEASON_NAMES } from '../sim/seasons';
+import { WEATHER_NAMES, type Weather } from '../sim/weather';
 import { button, el } from './dom';
 
 export const TIME_SCALES = [1, 10, 60, 240];
@@ -47,6 +49,43 @@ export class DevPanel {
     section('Set time',
       ...[6, 9, 12, 17, 18.5, 20, 23].map((h) => button(`${Math.floor(h)}:${h % 1 ? '30' : '00'}`, 'dev-btn', () => host.sim().devSetHour(h))),
       button('Next morning', 'dev-btn', () => host.sim().devNextMorning()));
+    const seasonRow = section('PNW season · starts at day 1');
+    const renderSeasons = () => {
+      const sim = host.sim();
+      seasonRow.parentElement!.hidden = sim.biome !== 'pnw';
+      seasonRow.replaceChildren(...SEASONS.map((id) => {
+        const b = button(SEASON_NAMES[id], `dev-btn ${sim.season === id ? 'active' : ''}`, () => {
+          if (host.sim().devSetSeason(id)) host.toast(`Dev: ${SEASON_NAMES[id]}, day 1 of 25`);
+          renderSeasons();
+          renderWeather();
+        });
+        b.disabled = sim.authority === 'guest';
+        b.title = sim.authority === 'guest' ? 'The host controls the shared season' : `Switch immediately to ${SEASON_NAMES[id]}`;
+        return b;
+      }));
+    };
+    const weatherRow = section('PNW weather · lasts until next dawn');
+    const renderWeather = () => {
+      const sim = host.sim();
+      weatherRow.parentElement!.hidden = sim.biome !== 'pnw';
+      const states: Weather[] = ['sunny', 'cloudy', 'foggy', sim.frozen ? 'snowy' : 'rainy'];
+      weatherRow.replaceChildren(...states.map((id) => {
+        const b = button(WEATHER_NAMES[id], `dev-btn ${sim.weather === id ? 'active' : ''}`, () => {
+          if (host.sim().devSetWeather(id)) host.toast(`Dev: ${WEATHER_NAMES[id]} until next dawn`);
+          renderWeather();
+        });
+        b.disabled = sim.authority === 'guest';
+        b.setAttribute('aria-pressed', String(sim.weather === id));
+        b.title = sim.authority === 'guest' ? 'The host controls the shared weather' : `Show ${WEATHER_NAMES[id].toLowerCase()} weather immediately`;
+        return b;
+      }));
+      const reset = button("Use today's weather", 'dev-btn', () => {
+        if (host.sim().devResetWeather()) host.toast("Dev: restored today's weather");
+        renderWeather();
+      });
+      reset.disabled = sim.authority === 'guest';
+      weatherRow.append(reset);
+    };
     section('Give',
       button('Basics', 'dev-btn', give({ stick: 10, stone: 8, fiber: 10 }, 'basics')),
       button('Cooking', 'dev-btn', give({ mushroom: 4, onion: 3, berries: 6, rawMeat: 2, rawFish: 2 }, 'cooking ingredients')),
@@ -79,7 +118,7 @@ export class DevPanel {
         host.toast(a ? `Dev: spawned a ${sp}` : 'Dev: no spot found');
       })));
     };
-    this.onOpen = renderSpawns;
+    this.onOpen = () => { renderSpawns(); renderSeasons(); renderWeather(); };
     section('Player',
       button('Refill needs', 'dev-btn', () => {
         const n = host.sim().state.needs;

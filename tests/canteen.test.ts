@@ -77,7 +77,7 @@ describe('canteen water (round 8)', () => {
     const root = document.createElement('div');
     document.body.append(root);
     const panels = new Panels(root, { sim: () => sim, sfx: () => {}, close: () => panels.close(), toast: () => {} });
-    panels.open('inventory', { view: 'pack' });
+    panels.open('inventory');
     const tile = () => [...root.querySelectorAll<HTMLElement>('.inv-section .tile')].find((t) => t.dataset.key === 'r:canteen')!;
     const bar = tile().querySelector<HTMLElement>('.dur.water i')!;
     expect(bar.style.transform).toBe(`scaleX(${(3 / CAP).toFixed(3)})`);

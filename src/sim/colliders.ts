@@ -10,8 +10,8 @@ export type ColliderKind = 'tree' | 'stump' | 'rock' | 'log' | 'trunk' | 'struct
 export type SolidTop =
   /** Half-ellipsoid boulder: `base` is the height of its widest ring, `ax`/`az` the local semi-axes. */
   | { type: 'dome'; x: number; z: number; base: number; height: number; ax: number; az: number; rot: number }
-  /** Flat-topped block that follows the ground: surface = terrain height + `lift` anywhere inside `shape`. */
-  | { type: 'slab'; shape: BoxShape; lift: number };
+  /** Flat-topped block: surface = (`base` or terrain height) + `lift` anywhere inside `shape`. */
+  | { type: 'slab'; shape: BoxShape; lift: number; base?: number };
 
 export interface Collider {
   kind: ColliderKind;
@@ -47,7 +47,7 @@ export function topHeight(top: SolidTop, x: number, z: number, r: number, ground
     probe.x = x;
     probe.z = z;
     probe.r = r;
-    return circleBox(probe, top.shape) ? ground.heightAt(x, z) + top.lift : -Infinity;
+    return circleBox(probe, top.shape) ? (top.base ?? ground.heightAt(x, z)) + top.lift : -Infinity;
   }
   const dx = x - top.x;
   const dz = z - top.z;

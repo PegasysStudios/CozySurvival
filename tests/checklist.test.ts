@@ -128,7 +128,7 @@ describe('live have/need counts on the checklist (round 9)', () => {
     const hud = hudFor(sim);
     hud.update();
     expect(hud.card.classList.contains('show')).toBe(false);
-    expect(hud.card.parentElement!.firstElementChild!.classList.contains('hud-objective')).toBe(true);
+    expect(hud.card.previousElementSibling!.classList.contains('hud-objective')).toBe(true);
     sim.togglePin('axe');
     hud.update();
     expect(hud.card.classList.contains('show')).toBe(true);
