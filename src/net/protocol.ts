@@ -85,15 +85,17 @@ export function decodePose(w: unknown): Pose | null {
 
 const SPECIES_IDS: SpeciesId[] = [
   'rabbit', 'deer', 'fish', 'wolf', 'bear', 'jackrabbit', 'javelina', 'quail', 'roadrunner', 'lizard', 'snake', 'cougar', 'scorpion',
-  'boar', 'goat', 'junglefowl', 'crab', 'viper', 'reefFish', 'jellyfish', 'shark',
+  'boar', 'goat', 'junglefowl', 'crab', 'viper', 'reefFish', 'jellyfish', 'shark', 'squirrel',
 ];
-const MODES: AnimalMode[] = ['idle', 'wander', 'alert', 'flee', 'stalk', 'chase', 'attack', 'reposition', 'warn', 'retreat'];
+const MODES: AnimalMode[] = ['idle', 'wander', 'alert', 'flee', 'stalk', 'chase', 'attack', 'reposition', 'warn', 'retreat', 'climb', 'hide', 'descend'];
 
-/** [id, species, x cm, z cm, heading crad, mode, speed cm/s, hurt ms] */
+/** [id, species, x cm, z cm, heading crad, mode, speed cm/s, hurt ms, squirrel-only y cm?, refuge height cm?] */
 export type AnimalWire = number[];
 
 export function encodeAnimal(a: AnimalState): AnimalWire {
-  return [a.id, SPECIES_IDS.indexOf(a.species), Math.round(a.x * 100), Math.round(a.z * 100), Math.round(a.heading * 100), MODES.indexOf(a.mode), Math.round(a.speed * 100), Math.round(a.hurt * 1000)];
+  const wire = [a.id, SPECIES_IDS.indexOf(a.species), Math.round(a.x * 100), Math.round(a.z * 100), Math.round(a.heading * 100), MODES.indexOf(a.mode), Math.round(a.speed * 100), Math.round(a.hurt * 1000)];
+  if (a.species === 'squirrel') wire.push(Math.round(a.y * 100), a.climbHeight === undefined ? -1 : Math.round(a.climbHeight * 100));
+  return wire;
 }
 
 export interface AnimalPose {
@@ -105,13 +107,18 @@ export interface AnimalPose {
   mode: AnimalMode;
   speed: number;
   hurt: number;
+  /** Absolute elevation for tree-climbing squirrels. */
+  y?: number;
+  climbHeight?: number;
 }
 
 export function decodeAnimal(w: unknown): AnimalPose | null {
   if (!Array.isArray(w) || w.length < 8) return null;
   const species = SPECIES_IDS[w[1]];
   if (!species || typeof w[0] !== 'number') return null;
-  return { id: w[0], species, x: w[2] / 100, z: w[3] / 100, heading: w[4] / 100, mode: MODES[w[5]] ?? 'idle', speed: w[6] / 100, hurt: w[7] / 1000 };
+  return { id: w[0], species, x: w[2] / 100, z: w[3] / 100, heading: w[4] / 100, mode: MODES[w[5]] ?? 'idle', speed: w[6] / 100, hurt: w[7] / 1000,
+    ...(species === 'squirrel' && Number.isFinite(w[8]) ? { y: w[8] / 100 } : {}),
+    ...(species === 'squirrel' && Number.isFinite(w[9]) && w[9] >= 0 ? { climbHeight: w[9] / 100 } : {}) };
 }
 
 // ------------------------------------------------------------------ messages

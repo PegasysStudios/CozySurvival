@@ -84,7 +84,7 @@ describe('shallow desert pools (round 9)', () => {
       return sum / RAYS;
     };
     for (const seed of SEEDS.slice(0, 10)) {
-      const pnw = getTerrain(seed, 'pnw');
+      const pnw = getTerrain(seed, 'pnw', 1);
       const woods = Math.max(...pnw.lakes.map((l) => bankAt(pnw, l)));
       const desert = getTerrain(seed, 'desert');
       for (const l of desert.lakes) expect(bankAt(desert, l), `seed ${seed} ${l.kind}`).toBeLessThanOrEqual(woods + 0.1);

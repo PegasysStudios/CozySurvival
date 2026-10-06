@@ -25,8 +25,23 @@ Click **Start surviving**, then click into the game to capture the mouse. **Esc*
 | `npm test` | Vitest suite for the simulation (no browser or WebGL needed) |
 | `npm run typecheck` | TypeScript only |
 | `npm run smoke` | Build, boot the game in headless Chrome, then play through it with real input: walk, check the day-1 crafting lock, skip to the next morning, craft, place a campfire (red/green ghost, rotate, click), open its campfire menu and close it with Esc, reload and Continue, and use all three death-screen options. Then switch to the desert through Settings, start a desert run, check that each map continues its own run, and play a two-tab multiplayer session on a desert server over `?net=local`. Saves title and first-person screenshots of both maps. Fails on any console error |
+| `npm run smoke:pnw` | After `npm run build`, check expanded and legacy PNW worlds in headless Chrome: generation switching, save/load, seasons, meadow movement, wildlife, real fishing casts and species restrictions, fish inventory icons and recipes, Desert/Island switching, and browser/WebGL/shader errors. No screenshots or visual checks. |
 
 `npm run smoke` needs a local Chrome or Chromium. It checks the usual install paths; set `CHROME_PATH` to point at another one. Screenshots go to `smoke-shots/` (git-ignored); set `SMOKE_SHOTS` to save them elsewhere.
+
+## Pacific Northwest world generation
+
+New PNW runs have a **592 × 592 m movement area**, exactly four times the original 296 × 296 m area. The terrain is 616 m across, retaining the 12 m outer margin on each side and the same 2 m heightfield resolution. Trees, forage, fallen logs, snow and seasonal ground cover populate the expanded bounds at their normal physical scale.
+
+Each seed places an irregular large lake targeting **19% of the playable area**, one or two smaller ponds, a meandering freshwater stream joining the lake to a pond, and a shallow ford. The player starts on dry, gentle ground within a short walk of the main lake, with the starter supplies and birches nearby. A broad grassy meadow stays open in the forest; wildflowers bloom abundantly in spring and summer, thin out in fall, and disappear in winter. Lakes, ponds and streams share the existing drinking, fishing and winter ice rules.
+
+Existing saves retain their original landscape and indexed tree/resource states. **Continue**, **Retry the day**, and **Restart from day 1** preserve the saved generation; **New Run** and **Start from scratch** create expanded forests. New saves and multiplayer snapshots carry `pnwGen: 2`; missing markers select the original generator. Desert and Island generation remain unchanged. Multiplayer protocol 13 supports the distinct fish items, squirrel climbing elevation and seeded layout version; hosts and guests must use matching versions.
+
+The main PNW lake yields Trout, Bass and Salmon with equal species odds on each bite. Other freshwater lakes and the connected stream yield Trout only. A PNW lake needs a nominal radius of at least 12 m (24 m diameter, about 452 m²) to hold fish, and the lure still needs more than 0.35 m of unfrozen water. Both forest generators already guarantee at least two lakes above this minimum, with water reachable by a normal cast from shore. Bass and Salmon have separate raw inventory items using the existing icons, and separate campfire recipes: one Raw Bass makes one Grilled Bass, and one Raw Salmon makes one Grilled Salmon. All three species satisfy the fishing objective. These fishing rules also work in saved forests without regenerating their landscape; Desert and Island fishing remain unchanged.
+
+PNW runs also include huntable Douglas's squirrels, with population density scaled to their saved map size. Previously saved forests receive missing squirrels once when opened, preserving their landscape and existing progress. PNW butterflies and dragonflies flutter, feed, patrol and perch at their natural scale, appearing only on sunlit nonwinter days. Nearby encounter placement keeps these small animals within the player's view. Up to two subtle wisps float through forest habitat by day and night. [Wildlife behavior, research and validation](docs/pnw-wildlife.md) describes the implementation.
+
+As with the larger Island map, terrain dimensions belong to the terrain instance, scenery uses chunked instances, and ground chunks are culled at the fog distance. Expanded PNW terrain uses 96 m chunks, and its water shader reads the matching larger height grid. See [PNW expansion design and validation](docs/pnw-map-expansion.md) for architecture and design sources.
 
 ## Pacific Northwest seasons
 
@@ -168,7 +183,7 @@ Today's weather and its remaining seasonal schedule survive saving, reloading an
   - Predators are rare early. Day 1 has a single distant grey wolf, black bears appear from day 2, and numbers grow slowly after that. Wolves spot you from farther away at night.
   - Predators stalk and attack, but keep away from lit fires, and a raised torch holds them off.
   - A kill leaves a carcass that needs a Stone Knife: without one you can still kill, but clicking the carcass only says "Needs a knife". See **Knife, skinning and butchering** under [Round 10](#round-10).
-- **Fishing.** Craft a Fishing Pole (10 sticks, 5 stones, 5 cordage) once you have made cordage and found the water. Stand at a lake or pond, hold left-click to wind up (longer throws further, 3 to 14 m), release to cast, and wait for a bite (2.5 to 7 s). Click within 0.9 s of the float dipping to strike; your fishing skill decides whether the trout is landed or slips the hook. Clicking early reels in, and switching tools, swimming or walking off reels the line in too.
+- **Fishing.** Craft a Fishing Pole (10 sticks, 5 stones, 5 cordage) once you have made cordage and found the water. Stand at a fishable lake or pond, hold left-click to wind up (longer throws further, 3 to 14 m), release to cast, and wait for a bite (2.5 to 7 s). Click within 0.9 s of the float dipping to strike; your fishing skill decides whether the fish is landed or slips the hook. PNW's main lake has Trout, Bass and Salmon; smaller eligible lakes and the stream have Trout. Clicking early reels in, and switching tools, swimming or walking off reels the line in too.
 - **Stripped birches.** Peeling all the bark off a paper birch leaves the lower half of its trunk bare wood until the bark grows back a day later. The look follows the saved bark state, so it survives reloads and syncs in multiplayer.
 - **Trees.** Felling a tree takes two steps.
   - Chop it down with the axe. It topples with a thud and the whole trunk lies on the ground, leaving a stump.
@@ -424,7 +439,9 @@ Rendering is built for 60 fps:
 
 ## Testing
 
-`npm test` runs 723 tests covering:
+`npm test` runs 1,017 tests covering:
+
+- expanded PNW generation (`tests/pnw-expansion.test.ts`): 24 seeds including zero and 32-bit extremes, exact 4× movement bounds, measured 18–20% main-lake coverage, smaller ponds, connected stream water, reachable meadow and ford, terrain connectivity, forest and resources in every outer direction, safe scenery footprints, starter supplies and direct walking to the lake; deterministic terrain/scenery/snow, legacy and expanded save/load/retry/restart, multiplayer generation and resource indices, seasonal meadow flowers, matching chunk vertices and depth textures, and unchanged other-map dimensions. The PNW golden fixture continues to check the original generator without regenerating the fixture.
 
 - the island follow-ups (`tests/island-followups.test.ts`, eight seeds): 300+ purslane per island with three near the spawn, all on dry ground off the sand and out of the deep jungle and caves, spread round the whole island, with no ground cover within 1.4 m and a model a metre wide with red stems and yellow flowers; wide strands of bare sand with no trees, no plant forage and no ground cover on them, while driftwood, stones and coconuts still lie there and palms still line the top of the beach; the water opacity setting existing only for the island, driving the island water shader and leaving the forest and desert lake shader untouched; and island saves from before the follow-ups loading with fresh trees and plants and a reseated camp, current island saves keeping felled trees and picked plants, forest and desert saves unchanged, and protocol 9
 - the HUD compass (`tests/compass.test.ts`): all eight headings as the player turns, each matching its world direction and the camera's look direction, the switch halfway between points and wrapping past full turns, the sun rising in the east and setting in the west on every map, and the same reading on all three maps
@@ -448,7 +465,7 @@ Rendering is built for 60 fps:
 - campfire sleep: the menu option, the normal sleep cycle, warmth by a burning or dead fire, and the usual refusals
 - the 11-step onboarding track walked with real actions (with the day-1 limit on), out-of-order progress, spear-only hare kills, old-save migration, and the lake-near spawn across 10 worlds
 - the Foraging guide: first-harvest unlocks, page contents, save/load and old-save unlocks
-- fishing: the pole recipe, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals
+- fishing: the pole recipe, wind-up and cast distance, dry-ground and swimming refusals, bites, the strike window, reeling in, catch rates by skill, and the fish meals; PNW species eligibility across 14 seeds and both generations, minimum lake size and depth, stream-mouth boundaries, real main/secondary-lake casts, distinct catches and full-pack drops, Bass/Salmon grilling and objective progress, save/retry/restart, shared multiplayer drops, existing icons and unchanged Island/Desert fishing
 - placement validity against trees, rocks, felled trunks, structures, water, slope and reach, plus rotation
 - needs, energy drain for movement, swimming, tasks and every tool action, regen and sleep restore
 - stripped birches: the bare-trunk state, its survival through save and load, and regrowth

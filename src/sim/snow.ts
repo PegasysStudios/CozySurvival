@@ -6,7 +6,7 @@ import { Occupancy } from './occupancy';
 import { footprintShape } from './placement';
 import { SEASON_DAYS, type SeasonState } from './seasons';
 import type { GameState } from './state';
-import { PLAY_HALF, WATER_LEVEL, type Terrain } from './terrain';
+import { WATER_LEVEL, type Terrain } from './terrain';
 import { topHeight } from './colliders';
 import { rockTop, TRUNK_AXIS_LIFT } from './trunks';
 import type { ResourceGen, WorldGen } from './worldgen';
@@ -88,8 +88,8 @@ export function generateSnow(t: Terrain, gen: WorldGen): ResourceGen[] {
     const a = rng.range(0, Math.PI * 2), d = rng.range(5, 19);
     if (ground(t.spawn.x + Math.cos(a) * d, t.spawn.z + Math.sin(a) * d)) placed++;
   }
-  for (let x = -PLAY_HALF + 4; x < PLAY_HALF - 4; x += 13) {
-    for (let z = -PLAY_HALF + 4; z < PLAY_HALF - 4; z += 13) {
+  for (let x = -t.playHalf + 4; x < t.playHalf - 4; x += 13) {
+    for (let z = -t.playHalf + 4; z < t.playHalf - 4; z += 13) {
       const px = x + rng.range(0, 9), pz = z + rng.range(0, 9);
       if (rng.chance(0.65)) ground(px, pz);
     }

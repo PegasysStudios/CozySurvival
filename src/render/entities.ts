@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { damp } from '../core/math';
 import type { ItemId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
-import { SPECIES, type SpeciesId } from '../data/species';
+import { SPECIES, SQUIRREL_CLIMB, type SpeciesId } from '../data/species';
 import type { Simulation } from '../sim/simulation';
 import type { AnimalState, GameState } from '../sim/state';
 import { WATER_LEVEL, type Terrain } from '../sim/terrain';
@@ -30,11 +30,13 @@ interface StructureView {
 }
 
 const STRIDE: Record<SpeciesId, number> = {
+  squirrel: 7,
   rabbit: 3.4, deer: 2.3, fish: 0, wolf: 2.7, bear: 2.1,
   jackrabbit: 3.0, javelina: 3.6, quail: 7.5, roadrunner: 5.2, lizard: 9, snake: 3.2, cougar: 2.5, scorpion: 10,
   boar: 3.2, goat: 2.8, junglefowl: 7, crab: 11, viper: 3, reefFish: 0, jellyfish: 0, shark: 0,
 };
 const PIVOT_Y: Record<SpeciesId, number> = {
+  squirrel: 0.08,
   rabbit: 0.15, deer: 0.95, fish: 0, wolf: 0.6, bear: 0.62,
   jackrabbit: 0.2, javelina: 0.3, quail: 0.07, roadrunner: 0.2, lizard: 0.05, snake: 0.045, cougar: 0.58, scorpion: 0.05,
   boar: 0.36, goat: 0.56, junglefowl: 0.12, crab: 0.08, viper: 0.048, reefFish: 0, jellyfish: 0, shark: 0,
@@ -270,11 +272,12 @@ export class EntityView {
     const swims = def.habitat === 'water';
     const lim = swims && a.species !== 'shark' ? FISH_VIEW : VIEW_DIST;
     const root = v.rig.root;
-    root.visible = d2 < lim * lim;
+    root.visible = d2 < lim * lim && !(a.species === 'squirrel' && a.mode === 'hide');
     if (!root.visible) return;
     root.position.set(a.x, swims ? WATER_LEVEL - (SWIM_DEPTH[a.species] ?? 0.32) : a.y, a.z);
-    root.rotation.y = a.heading;
-    const speed = a.speed;
+    const climbing = a.species === 'squirrel' && (a.mode === 'climb' || a.mode === 'descend');
+    root.rotation.set(climbing ? (a.mode === 'descend' ? Math.PI / 2 : -Math.PI / 2) : 0, a.heading + (climbing && a.mode === 'descend' ? Math.PI : 0), 0, 'YXZ');
+    const speed = climbing ? (a.mode === 'descend' ? SQUIRREL_CLIMB.down : SQUIRREL_CLIMB.up) : a.speed;
 
     if (a.species === 'jellyfish') {
       // The bell pulses and the whole jelly bobs gently.
@@ -300,7 +303,11 @@ export class EntityView {
       this.poseSnake(v, a, dt, time);
       return;
     }
-    if (HOPPERS.has(a.species)) {
+    if (a.species === 'squirrel') {
+      const bound = climbing ? 0 : Math.max(0, Math.sin(v.phase)) * Math.min(0.075, speed * 0.014);
+      v.rig.pivot.position.y = PIVOT_Y.squirrel + bound;
+      for (const l of v.rig.legs) l.mesh.rotation.x = Math.cos(v.phase + l.phase) * amp;
+    } else if (HOPPERS.has(a.species)) {
       const hop = Math.max(0, Math.sin(v.phase)) * Math.min(1, speed / 1.5);
       v.rig.pivot.position.y = PIVOT_Y[a.species] + hop * (speed > 3 ? 0.22 : 0.08);
       for (let i = 0; i < v.rig.legs.length; i++) v.rig.legs[i].mesh.rotation.x = (i < 2 ? -1 : 1) * Math.cos(v.phase) * 0.7 * moveK;
@@ -326,7 +333,7 @@ export class EntityView {
     v.rig.head.rotation.x = v.headPitch;
     const rearAngle = a.species === 'bear' ? -0.95 : -0.35;
     v.rig.pivot.rotation.x = v.rear * rearAngle;
-    if (!HOPPERS.has(a.species)) v.rig.pivot.position.y = PIVOT_Y[a.species] - v.crouch * 0.1;
+    if (!HOPPERS.has(a.species) && a.species !== 'squirrel') v.rig.pivot.position.y = PIVOT_Y[a.species] - v.crouch * 0.1;
     if (v.rig.tail) v.rig.tail.rotation.x = 0.3 + Math.sin(time * (pest && a.mode !== 'retreat' ? 11 : 3) + a.id) * 0.08 + (a.mode === 'flee' ? -0.8 : 0);
     const hurt = a.hurt > 0 ? Math.sin((0.35 - a.hurt) * 30) * a.hurt * 0.4 : 0;
     root.scale.set(1 + hurt, 1 - hurt, 1 + hurt);

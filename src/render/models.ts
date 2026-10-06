@@ -311,11 +311,13 @@ export function flowerGeometry(variant: number): THREE.BufferGeometry {
   const b = new GeoBuilder(700 + variant);
   const colors = ['#7d72d6', '#d6569a', '#f2d04b', '#f4f1ea'];
   const c = colors[variant % colors.length];
+  const blooms: [number, number, number][] = [];
   blades(b, rng, 4, [0.18, 0.3], 0.02, '#4f7a38', '#7fa650', 0.08);
   for (let i = 0; i < 3; i++) {
     const x = rng.range(-0.12, 0.12);
     const z = rng.range(-0.12, 0.12);
     const h = rng.range(0.35, 0.6);
+    blooms.push([x, h + (variant % 4 <= 1 ? 0.047 : 0.0225), z]);
     b.add(new CylinderGeometry(0.008, 0.01, 1, 4), { matrix: between(0, 0, 0, x, h, z), color: '#5a8540', sway: 0.06 });
     if (variant % 4 <= 1) {
       for (let k = 0; k < 4; k++) b.add(new OctahedronGeometry(0.035 - k * 0.006, 0), { matrix: tf(x, h - 0.12 + k * 0.05, z), color: mix(c, '#ffffff', k * 0.1), sway: 0.07 });
@@ -324,7 +326,9 @@ export function flowerGeometry(variant: number): THREE.BufferGeometry {
       b.add(new CylinderGeometry(0.02, 0.02, 0.025, 6), { matrix: tf(x, h + 0.01, z), color: '#e39b2a', sway: 0.07 });
     }
   }
-  return b.build(true);
+  const geo = b.build(true);
+  geo.userData.blooms = blooms;
+  return geo;
 }
 
 export function cloudGeometry(seed: number): THREE.BufferGeometry {

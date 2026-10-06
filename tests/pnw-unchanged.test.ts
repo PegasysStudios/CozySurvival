@@ -6,7 +6,7 @@ const FIXTURE = new URL('./fixtures/pnw-golden.json', import.meta.url);
 const SEEDS = [1, 42, 777, 20260929];
 
 // Captured from the pre-desert build; regenerate only for an intentional PNW change (UPDATE_GOLDEN=1).
-describe('the Pacific Northwest map is unchanged', () => {
+describe('legacy Pacific Northwest worlds are unchanged', () => {
   const current = Object.fromEntries(SEEDS.map((s) => [s, pnwFingerprint(s)]));
   if (process.env.UPDATE_GOLDEN || !existsSync(FIXTURE)) writeFileSync(FIXTURE, JSON.stringify(current, null, 2) + '\n');
   const golden = JSON.parse(readFileSync(FIXTURE, 'utf8')) as typeof current;

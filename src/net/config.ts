@@ -1,5 +1,5 @@
-/** Bumped whenever the wire format or the seeded world layout changes (resource deltas are indexed); hosts and guests must match. */
-export const PROTOCOL_VERSION = 10;
+/** Bumped for wire format, shared item ids or seeded layout changes (resource deltas are indexed); hosts and guests must match. */
+export const PROTOCOL_VERSION = 13;
 export const MAX_PLAYERS = 4;
 export const LOBBY_CHANNEL = 'cozy:lobby';
 

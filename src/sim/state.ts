@@ -6,6 +6,7 @@ import type { SpeciesId } from '../data/species';
 import type { WearingTool } from './durability';
 import type { SeasonState } from './seasons';
 import type { WeatherState } from './weather';
+import type { PnwGeneration } from './pnw';
 
 export const STATE_VERSION = 6;
 
@@ -153,7 +154,10 @@ export type AnimalMode =
   | 'attack'
   | 'reposition'
   | 'warn'
-  | 'retreat';
+  | 'retreat'
+  | 'climb'
+  | 'hide'
+  | 'descend';
 
 export interface AnimalState {
   id: number;
@@ -182,6 +186,11 @@ export interface AnimalState {
   lod: number;
   /** Id of the animal this one is charging (a javelina) or running from; unset means the player. */
   foe?: number;
+  /** Squirrel refuge: standing worldgen tree index and height above its base. */
+  tree?: number;
+  climbHeight?: number;
+  /** Last unreachable refuge; avoid immediately choosing the same obstructed tree again. */
+  failedTree?: number;
 }
 
 export type DamageSource =
@@ -193,6 +202,10 @@ export interface GameState {
   seed: number;
   /** The map; absent means the Pacific Northwest (every save from before the desert). */
   biome?: BiomeId;
+  /** Forest generation pinned to this run. Missing means the original 320 m terrain. */
+  pnwGen?: PnwGeneration;
+  /** PNW squirrel population initialized. Prevents restocking hunted animals on Continue. */
+  pnwWildlife?: 1;
   runId: string;
   /** Game hours since day 1 at 06:00. */
   totalHours: number;

@@ -14,13 +14,13 @@ const E = BALANCE.needs.energy;
 const K = BALANCE.skills;
 const MAX_XP = K.thresholds[K.thresholds.length - 1];
 
-/** A sim standing on dry ground at the edge of the first lake, facing its centre, pole in hand. */
+/** A sim at the trout-only secondary lake, facing its centre, pole in hand. */
 function atTheLake(): { sim: Simulation; reach: number } {
   const sim = quietSim();
   keepAlive(sim);
   sim.state.tools.push('rod');
   expect(sim.selectTool('rod')).toBe(true);
-  const lake = sim.terrain.lakes[0];
+  const lake = sim.terrain.lakes[1];
   let d = 0;
   while (sim.terrain.heightAt(lake.x + d, lake.z) < 0.3) d += 0.25;
   teleport(sim, lake.x + d, lake.z);
@@ -117,7 +117,7 @@ describe('casting', () => {
 
   it('cannot cast while swimming', () => {
     const { sim } = atTheLake();
-    const lake = sim.terrain.lakes[0];
+    const lake = sim.terrain.lakes[1];
     teleport(sim, lake.x, lake.z);
     run(sim, 1);
     expect(sim.state.player.swimming).toBe(true);
@@ -216,7 +216,7 @@ describe('fishing skill', () => {
     for (let k = 0; k < n; k++) {
       sim.state.skills.fishing = xp;
       const p = sim.state.player;
-      sim.fishing = { phase: 'bite', t: 0, power: 0.5, fromX: p.x, fromZ: p.z, x: p.x - 6, z: p.z, biteAt: 0 };
+      sim.fishing = { phase: 'bite', t: 0, power: 1, fromX: p.x, fromZ: p.z, x: p.x - F.maxCast, z: p.z, biteAt: 0 };
       const ev = click(sim);
       if (ev.some((e) => e.type === 'fishDone' && e.result === 'caught')) caught++;
       sim.state.inventory.slots.fill(null);
@@ -247,7 +247,7 @@ describe('fishing skill', () => {
     const { sim } = atTheLake();
     for (let k = 0; k < 30; k++) {
       const p = sim.state.player;
-      sim.fishing = { phase: 'bite', t: 0, power: 0.5, fromX: p.x, fromZ: p.z, x: p.x - 6, z: p.z, biteAt: 0 };
+      sim.fishing = { phase: 'bite', t: 0, power: 1, fromX: p.x, fromZ: p.z, x: p.x - F.maxCast, z: p.z, biteAt: 0 };
       click(sim);
       sim.state.inventory.slots.fill(null);
       keepAlive(sim);

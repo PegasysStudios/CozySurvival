@@ -138,6 +138,18 @@ export const RECIPES: Recipe[] = [
     output: { kind: 'item', item: 'grilledTrout', count: 1 },
   }, onIsland('Grilled Fish', 'Grilled Trout'), () => 'Flaky and smoky.'),
   {
+    id: 'grilledBass', biome: PNW, name: 'Grilled Bass', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawBass', count: 1 }],
+    output: { kind: 'item', item: 'grilledBass', count: 1 },
+    description: 'Bass grilled over the campfire.',
+  },
+  {
+    id: 'grilledSalmon', biome: PNW, name: 'Grilled Salmon', category: 'cooking', station: 'fire',
+    inputs: [{ item: 'rawSalmon', count: 1 }],
+    output: { kind: 'item', item: 'grilledSalmon', count: 1 },
+    description: 'Salmon grilled over the campfire.',
+  },
+  {
     id: 'skewer', biome: PNW, name: 'Mushroom Skewer', category: 'cooking', station: 'fire',
     inputs: [{ item: 'mushroom', count: 2 }, { item: 'onion', count: 1 }, { item: 'stick', count: 1 }],
     output: { kind: 'item', item: 'skewer', count: 1 },

@@ -31,7 +31,7 @@ export const SAVE_FORMAT = 'cozysurvival-save';
  * the same number older saves used as the resource index, so thinning forage never shifts saved state.
  */
 export function serializeState(s: GameState): string {
-  const gen = getWorldGen(s.seed, s.biome);
+  const gen = getWorldGen(s.seed, s.biome, s.pnwGen ?? 1);
   const trees: number[][] = [];
   s.trees.forEach((t, i) => {
     const def = TREES[gen.trees[i].species];
@@ -103,7 +103,10 @@ export function deserializeState(json: string | null): GameState | null {
   if (raw.biome !== undefined && !isBiomeId(raw.biome)) return null;
   const biome: BiomeId = isBiomeId(raw.biome) ? raw.biome : DEFAULT_BIOME;
 
-  const gen = getWorldGen(raw.seed, biome);
+  // A missing marker pins old forests to their original terrain, RNG draws and saved indices.
+  if (biome === 'pnw' && raw.pnwGen !== undefined && raw.pnwGen !== 1 && raw.pnwGen !== 2) return null;
+  const pnwGen = biome === 'pnw' && raw.pnwGen === 2 ? 2 : 1;
+  const gen = getWorldGen(raw.seed, biome, pnwGen);
   // Round 9 reshaped the desert around its pools and scattered stones in place of the pebbles, and a map whose
   // WORLD_REVISION has moved on since the save was written has regrown too, so an older save's trees and plants no
   // longer line up with the world: they start fresh.
@@ -176,6 +179,7 @@ export function deserializeState(json: string | null): GameState | null {
   delete (state as { worldRev?: unknown }).worldRev;
   // Saves from before round 6 list learned recipes; every recipe is available now.
   delete state.known;
+  if (biome !== 'pnw') { delete state.pnwGen; delete state.pnwWildlife; }
   if (biome === 'pnw') {
     state.season = parseSeason(raw.season, state.totalHours);
     state.weather = parseWeather(raw.weather, state.seed, state.totalHours, state.season);
@@ -214,7 +218,7 @@ export function deserializeState(json: string | null): GameState | null {
 
 /** Seats structures, drops and carcasses on the reshaped ground; people and animals find it themselves as they move. */
 function settleOnNewGround(s: GameState): void {
-  const t = getTerrain(s.seed, s.biome);
+  const t = getTerrain(s.seed, s.biome, s.pnwGen ?? 1);
   for (const st of s.structures) st.y = seatHeight(t, st.prefab, st.x, st.z, st.rot);
   for (const d of s.drops) d.y = t.heightAt(d.x, d.z);
   for (const c of s.carcasses) c.y = t.heightAt(c.x, c.z);

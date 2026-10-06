@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { TERRAIN_CELL, TERRAIN_VERTS, WATER_LEVEL, WORLD_HALF, type Terrain } from '../sim/terrain';
+import { TERRAIN_CELL, WATER_LEVEL, type Terrain } from '../sim/terrain';
 import { buildDepthTexture } from './terrainMesh';
 
 const vertex = /* glsl */ `
@@ -33,6 +33,7 @@ const fragment = /* glsl */ `
   uniform vec3 uSunColor;
   uniform float uSunStrength;
   uniform vec2 uGrid;
+  uniform float uHalf;
   varying vec3 vWorld;
 
   float waveH(vec2 p) {
@@ -41,7 +42,7 @@ const fragment = /* glsl */ `
   }
 
   void main() {
-    vec2 uv = ((vWorld.xz + vec2(${WORLD_HALF.toFixed(1)})) / ${TERRAIN_CELL.toFixed(1)} + 0.5) / uGrid;
+    vec2 uv = ((vWorld.xz + vec2(uHalf)) / ${TERRAIN_CELL.toFixed(1)} + 0.5) / uGrid;
     float depth = (texture2D(uDepth, uv).r * 1.2 - 0.2) * 5.0;
     float e = 0.15;
     vec2 p = vWorld.xz * 0.9;
@@ -110,7 +111,8 @@ export class WaterView {
           uSunDir: { value: new THREE.Vector3(0, 1, 0) },
           uSunColor: { value: new THREE.Color('#fff4dc') },
           uSunStrength: { value: 1 },
-          uGrid: { value: new THREE.Vector2(TERRAIN_VERTS, TERRAIN_VERTS) },
+          uGrid: { value: new THREE.Vector2(t.verts, t.verts) },
+          uHalf: { value: t.half },
         },
       ]),
     });
@@ -119,7 +121,15 @@ export class WaterView {
       this.alkali = this.material.clone();
       this.alkali.uniforms.uDepth.value = this.depthTex;
     }
-    for (const lake of t.lakes) {
+    // One surface covers the expanded forest's basins and stream; dry terrain occludes it, as on the island.
+    if (t.pnw) {
+      const geo = new THREE.PlaneGeometry(t.size, t.size, t.cells, t.cells);
+      geo.rotateX(-Math.PI / 2);
+      const mesh = new THREE.Mesh(geo, this.material);
+      mesh.position.y = WATER_LEVEL;
+      mesh.renderOrder = 2;
+      this.group.add(mesh);
+    } else for (const lake of t.lakes) {
       const size = lake.r * 3.6;
       const segs = lake.r < 10 ? 18 : 36;
       const geo = new THREE.PlaneGeometry(size, size, segs, segs);

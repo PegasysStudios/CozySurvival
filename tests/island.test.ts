@@ -104,7 +104,7 @@ describe('the island map', () => {
   });
 
   it('has about four times the area of the other maps to explore, on every seed', () => {
-    const pnw = getTerrain(42);
+    const pnw = getTerrain(42, 'pnw', 1);
     let pnwLand = 0;
     for (let z = -pnw.playHalf; z < pnw.playHalf; z += TERRAIN_CELL) {
       for (let x = -pnw.playHalf; x < pnw.playHalf; x += TERRAIN_CELL) if (pnw.heightAt(x, z) > WATER_LEVEL) pnwLand += TERRAIN_CELL * TERRAIN_CELL;

@@ -99,6 +99,8 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       { species: 'rabbit', count: 18, minDist: 22 },
       { species: 'deer', count: 8, minDist: 45 },
       { species: 'fish', count: 14, minDist: 0 },
+      // Maintain the squirrel encounter density across the fourfold expanded forest.
+      { species: 'squirrel', count: 128, minDist: 8 },
     ],
     predators: [
       { species: 'wolf', minDist: 100 },

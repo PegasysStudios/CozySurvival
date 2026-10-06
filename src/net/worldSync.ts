@@ -7,6 +7,7 @@ import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, T
 import { addToStore, cloneStore, ensureStore, removeFromStore, sameStore, storeTotals } from '../sim/storage';
 import { freshTree } from '../sim/trunks';
 import { getWorldGen } from '../sim/worldgen';
+import type { PnwGeneration } from '../sim/pnw';
 import { parseSeason, type SeasonState } from '../sim/seasons';
 import { cloneWeather, parseWeather, type WeatherState } from '../sim/weather';
 
@@ -367,6 +368,7 @@ function mergeTree(sim: Simulation, i: number, v: TreeDyn, p: TreeDyn, from: { x
 
 /** The world as a sparse diff from the seed's fresh world: terrain and placement regenerate from the seed. */
 export interface WorldSnapshot {
+  pnwGen?: PnwGeneration;
   season?: SeasonState;
   weather?: WeatherState;
   seed: number;
@@ -394,6 +396,7 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
   });
   return {
     seed: s.seed,
+    ...(sim.biome === 'pnw' && s.pnwGen ? { pnwGen: s.pnwGen } : {}),
     ...(sim.biome !== DEFAULT_BIOME ? { b: sim.biome } : {}),
     h: s.totalHours,
     ...(s.season ? { season: { id: s.season.id, startDay: s.season.startDay } } : {}),
@@ -410,14 +413,17 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
 /** A guest's starting state: the host's world, with a fresh character at the spawn and no animals (they stream in). */
 export function stateFromSnapshot(snap: WorldSnapshot): GameState {
   const biome = isBiomeId(snap.b) ? snap.b : DEFAULT_BIOME;
-  const state = createNewState(snap.seed, biome);
-  const gen = getWorldGen(snap.seed, biome);
+  const pnwGen = snap.pnwGen === 2 ? 2 : 1;
+  const state = createNewState(snap.seed, biome, pnwGen);
+  const gen = getWorldGen(snap.seed, biome, pnwGen);
   for (const [i, dyn] of snap.t) if (i >= 0 && i < gen.trees.length) state.trees[i] = { ...dyn };
   for (const [i, dyn] of snap.rs) if (i >= 0 && i < gen.resources.length) state.resources[i] = { ...dyn };
   state.structures = snap.st.map(cloneStructure);
   state.drops = snap.dr.map((d) => ({ ...d }));
   state.carcasses = snap.ca.map(cloneCarcass);
   state.animals = [];
+  // Guests receive the host's animals through ticks and must never run the local population migration.
+  if (biome === 'pnw') state.pnwWildlife = 1;
   state.totalHours = snap.h;
   if (biome === 'pnw') {
     state.season = parseSeason(snap.season, snap.h);

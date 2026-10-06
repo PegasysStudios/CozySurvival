@@ -35,10 +35,10 @@ function clickWater(sim: Simulation, l: Lake): void {
 }
 
 describe('biome config', () => {
-  it('the Pacific Northwest keeps its original numbers', () => {
+  it('the Pacific Northwest keeps existing animal numbers and adds squirrels', () => {
     const p = BIOMES.pnw;
     expect(p.warmth).toMatchObject({ day: BALANCE.needs.warmth.day, night: BALANCE.needs.warmth.night, rate: BALANCE.needs.warmthRatePerHour, coolRate: BALANCE.needs.warmthRatePerHour });
-    expect(p.prey.map((s) => [s.species, s.count])).toEqual([['rabbit', 18], ['deer', 8], ['fish', 14]]);
+    expect(p.prey.map((s) => [s.species, s.count])).toEqual([['rabbit', 18], ['deer', 8], ['fish', 14], ['squirrel', 128]]);
     expect(p.predators.map((s) => s.species)).toEqual(['wolf', 'bear']);
     expect(p.storageSuffix).toBe('');
   });

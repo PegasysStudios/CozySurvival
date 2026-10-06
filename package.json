@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:pnw": "node scripts/pnw-smoke.mjs"
   },
   "devDependencies": {
     "@types/three": "^0.186.0",

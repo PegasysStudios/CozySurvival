@@ -1,6 +1,6 @@
 import { damp } from '../core/math';
 import { TOOL_ORDER } from '../data/items';
-import { SPECIES } from '../data/species';
+import { SPECIES, SQUIRREL_CLIMB } from '../data/species';
 import { Simulation } from '../sim/simulation';
 import type { AnimalState } from '../sim/state';
 import { WATER_LEVEL } from '../sim/terrain';
@@ -273,7 +273,14 @@ export class GuestSession extends Session {
       a.mode = t.mode;
       a.hurt = Math.max(0, Math.max(a.hurt - dt, t.hurt));
       t.hurt = 0;
-      a.y = SPECIES[a.species].habitat === 'water' ? WATER_LEVEL : sim.terrain.heightAt(a.x, a.z);
+      const elevated = t.y !== undefined && (t.mode === 'climb' || t.mode === 'hide' || t.mode === 'descend');
+      if (elevated && t.y !== undefined) {
+        const ground = sim.terrain.heightAt(t.x, t.z);
+        // Predict between host ticks without passing through the ground or above the refuge.
+        if (t.mode === 'climb') t.y = Math.min(ground + (t.climbHeight ?? 6), t.y + SQUIRREL_CLIMB.up * dt);
+        else if (t.mode === 'descend') t.y = Math.max(ground, t.y - SQUIRREL_CLIMB.down * dt);
+        a.y = damp(a.y, t.y, 12, dt);
+      } else a.y = SPECIES[a.species].habitat === 'water' ? WATER_LEVEL : sim.terrain.heightAt(a.x, a.z);
     }
   }
 
@@ -292,7 +299,7 @@ export class GuestSession extends Session {
 
 function animalFromPose(t: AnimalPose, y: number): AnimalState {
   return {
-    id: t.id, species: t.species, x: t.x, y, z: t.z, heading: t.heading, mode: t.mode, modeTime: 0, timer: 0,
+    id: t.id, species: t.species, x: t.x, y: t.y ?? y, z: t.z, heading: t.heading, mode: t.mode, modeTime: 0, timer: 0,
     tx: t.x, tz: t.z, alertDist: 0, health: SPECIES[t.species].maxHealth, temperament: 1, homeX: t.x, homeZ: t.z,
     speed: t.speed, cooldown: 0, aggroCooldown: 0, hurt: t.hurt, lod: 0,
   };

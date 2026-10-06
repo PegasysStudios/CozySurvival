@@ -360,6 +360,40 @@ describe('multiplayer: shared world', () => {
     expect(b.state.resources[pile].charges).toBe(0);
   });
 
+  it('guests follow squirrel elevation, canopy hiding and headfirst descent', async () => {
+    const w = await new World().open();
+    const ben = await w.join('Ben');
+    const host = w.host.sim, guest = guestSim(ben), tr = host.gen.trees[0];
+    const base = host.terrain.heightAt(tr.x, tr.z);
+    teleport(host, tr.x + 30, tr.z);
+    teleport(guest, tr.x + 30, tr.z);
+    const a = createAnimal(host.state.nextId++, 'squirrel', tr.x + tr.trunkR + 0.04, tr.z, new Rng(4), host.terrain);
+    Object.assign(a, { tree: 0, climbHeight: 6, mode: 'climb', y: base + 2, speed: 0 });
+    host.state.animals.push(a);
+    w.pump(0.5);
+    let seen = guest.state.animals.find((o) => o.id === a.id)!;
+    expect(seen.mode).toBe('climb');
+    expect(seen.y).toBeGreaterThan(base + 2);
+    expect(Math.abs(a.y - seen.y)).toBeLessThan(0.5);
+    w.pump(2);
+    expect(a.mode).toBe('hide');
+    expect(seen.mode).toBe('hide');
+    guest.hitAnimal(seen, 999, 'bow');
+    w.pump(0.3);
+    expect(a.health).toBe(SPECIES.squirrel.maxHealth);
+    teleport(host, tr.x + 30, tr.z);
+    teleport(guest, tr.x + 30, tr.z);
+    a.mode = 'descend';
+    const high = seen.y;
+    w.pump(0.5);
+    seen = guest.state.animals.find((o) => o.id === a.id)!;
+    expect(seen.mode).toBe('descend');
+    expect(seen.y).toBeLessThan(high);
+    w.pump(3);
+    expect(a.tree).toBeUndefined();
+    expect(seen.y).toBeCloseTo(host.terrain.heightAt(a.x, a.z), 0);
+  });
+
   it("guests hunt the host's animals and get credit for the kill", async () => {
     const w = await new World().open();
     const ben = await w.join('Ben');

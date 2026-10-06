@@ -30,14 +30,14 @@ function withoutSkinning<T extends { skinning?: number }>(skills: T): Omit<T, 's
  * worldgen, the starting state, and the state after a scripted walk with wildlife running through dusk.
  */
 export function pnwFingerprint(seed: number): Record<string, string> {
-  const t = getTerrain(seed);
-  const g = getWorldGen(seed);
+  const t = getTerrain(seed, 'pnw', 1);
+  const g = getWorldGen(seed, 'pnw', 1);
   // Seasonal snow is appended separately; keep checking the original summer forage and its saved indices.
   const forage = g.resources.filter((r) => !r.snow);
   const snowCount = g.resources.length - forage.length;
   const heights: number[] = [];
   for (let i = 0; i < t.heights.length; i += 7) heights.push(t.heights[i]);
-  const sim = Simulation.newGame(seed);
+  const sim = Simulation.newGame(seed, 'pnw', 1);
   // Compare the original summer climate; omit the new season/weather metadata from this world/gameplay fingerprint.
   sim.state.season = { id: 'summer', startDay: 1 };
   // Round 8 added the canteen and bumped the save version; neither changes the world or how it plays.

@@ -1,6 +1,10 @@
 import type { ItemId } from './items';
 
+/** Shared by host movement, guest prediction and the climbing animation. Metres per second. */
+export const SQUIRREL_CLIMB = { up: 3.3, down: 2.7 } as const;
+
 export type SpeciesId =
+  | 'squirrel'
   | 'rabbit' | 'deer' | 'fish' | 'wolf' | 'bear'
   | 'jackrabbit' | 'javelina' | 'quail' | 'roadrunner' | 'lizard' | 'snake' | 'cougar' | 'scorpion'
   | 'boar' | 'goat' | 'junglefowl' | 'crab' | 'viper' | 'reefFish' | 'jellyfish' | 'shark';
@@ -110,6 +114,13 @@ export interface PestSpecies extends BaseSpecies {
 export type SpeciesDef = PreySpecies | PredatorSpecies | PestSpecies;
 
 export const SPECIES: Record<SpeciesId, SpeciesDef> = {
+  squirrel: {
+    id: 'squirrel', name: "Douglas's Squirrel", kind: 'prey', habitat: 'land',
+    maxHealth: 0.6, radius: 0.12, hitHeight: 0.12, hitRadius: 0.18,
+    walkSpeed: 1.5, runSpeed: 7.8, turnRate: 10, wanderRadius: 9,
+    alertRadius: 10, fearRadius: 5, calmRadius: 17, alertTime: [0.4, 1.1],
+    drops: [{ item: 'rawMeat', count: 1 }, { item: 'hide', count: 1 }],
+  },
   rabbit: {
     id: 'rabbit', name: 'Snowshoe Hare', kind: 'prey', habitat: 'land',
     maxHealth: 1, radius: 0.25, hitHeight: 0.22, hitRadius: 0.32,

@@ -76,13 +76,13 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
     expect(rows('night', s)).toEqual(['See the morning of day 2 1/1']);
   });
 
-  it('8. fishing pole ingredients, the pole, a trout and a cooked trout', () => {
+  it('8. fishing pole ingredients, the pole, a fish and a cooked fish', () => {
     const s = state({ stick: 12, cordage: 2 });
-    expect(rows('fish', s)).toEqual(['Sticks 10/10', 'Stones 0/5', 'Cordage 2/5', 'Fishing Pole crafted 0/1', 'Trout caught 0/1', 'Trout cooked 0/1']);
+    expect(rows('fish', s)).toEqual(['Sticks 10/10', 'Stones 0/5', 'Cordage 2/5', 'Fishing Pole crafted 0/1', 'Fish caught 0/1', 'Fish cooked 0/1']);
     s.stats.crafted.rod = 1;
     s.stats.gathered.rawFish = 1;
     s.stats.crafted.smokedTrout = 1;
-    expect(rows('fish', s)).toEqual(['Fishing Pole crafted 1/1', 'Trout caught 1/1', 'Trout cooked 1/1']);
+    expect(rows('fish', s)).toEqual(['Fishing Pole crafted 1/1', 'Fish caught 1/1', 'Fish cooked 1/1']);
   });
 
   it('9. spear ingredients, the spear, then a hare killed with it', () => {

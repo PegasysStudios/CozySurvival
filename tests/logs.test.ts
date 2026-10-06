@@ -11,7 +11,7 @@ const P = BALANCE.player;
 const opts = { canSprint: true, exhausted: false };
 
 function firstLog() {
-  const world = Simulation.newGame(42);
+  const world = Simulation.newGame(42, 'pnw', 1);
   const log = world.gen.logs[0];
   const hits: Collider[] = [];
   world.queryColliders(log.x, log.z, 0.1, hits);

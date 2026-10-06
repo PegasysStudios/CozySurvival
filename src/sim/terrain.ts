@@ -3,8 +3,9 @@ import { Noise2D } from '../core/noise';
 import { Rng } from '../core/rng';
 import { DEFAULT_BIOME, type BiomeId } from '../data/biomes';
 import { IslandLayout, ISLAND_WORLD_SIZE, type IslandWaterKind } from './island';
+import { PnwLayout, PNW_GENERATION, PNW_WORLD_SIZE, type PnwGeneration } from './pnw';
 
-/** The Pacific Northwest and desert world square; the island is bigger (see `Terrain.size`). */
+/** Legacy forest and desert dimensions. New forests and the island use `Terrain.size`. */
 export const WORLD_SIZE = 320;
 export const WORLD_HALF = WORLD_SIZE / 2;
 export const TERRAIN_CELL = 2;
@@ -26,7 +27,7 @@ export interface Lake {
   r: number;
   depth: number;
   phase: number;
-  /** Absent on the PNW lakes: a drinkable lake with trout. */
+  /** Absent on the PNW lakes: a drinkable freshwater lake. */
   kind?: WaterKind;
   drinkable?: boolean;
   fish?: boolean;
@@ -34,6 +35,10 @@ export interface Lake {
 
 export const isDrinkable = (l: Lake): boolean => l.drinkable !== false;
 export const holdsFish = (l: Lake): boolean => l.fish !== false;
+/** Minimum PNW lake radius (24 m nominal diameter, about 452 m²); depth is checked at the lure. */
+export const PNW_MIN_FISHABLE_LAKE_RADIUS = 12;
+export const pnwLakeHoldsFish = (l: Lake): boolean => holdsFish(l) && isDrinkable(l)
+  && (l.kind === undefined || l.kind === 'lake') && l.r >= PNW_MIN_FISHABLE_LAKE_RADIUS;
 
 /**
  * How a desert pool sits in the ground, built like the PNW lakes: a shallow basin whose bank stands `bank` metres
@@ -89,9 +94,12 @@ export class Terrain {
   readonly playHalf: number;
   /** The island's coast, reef, streams, caves and regions; null on the other maps. */
   readonly island: IslandLayout | null = null;
+  /** Expanded forest landmarks; null on legacy forests and other maps. */
+  readonly pnw: PnwLayout | null = null;
+  readonly pnwGen: PnwGeneration;
   readonly heights: Float32Array;
   readonly lakes: Lake[];
-  /** Lakes fish can live in (all of them on the PNW map). */
+  /** Lakes fish can live in; PNW pools below the minimum size are excluded. */
   readonly fishLakes: Lake[];
   readonly spawn = { x: 0, z: 0 };
   /** Desert mesas, buttes and the volcanic spire; empty on the PNW map. */
@@ -104,10 +112,11 @@ export class Terrain {
   private readonly noise: Noise2D;
   private readonly detail: Noise2D;
 
-  constructor(seed: number, biome: BiomeId = DEFAULT_BIOME) {
+  constructor(seed: number, biome: BiomeId = DEFAULT_BIOME, pnwGen: PnwGeneration = PNW_GENERATION) {
     this.seed = seed;
     this.biome = biome;
-    this.size = biome === 'island' ? ISLAND_WORLD_SIZE : WORLD_SIZE;
+    this.pnwGen = biome === 'pnw' ? pnwGen : 1;
+    this.size = biome === 'island' ? ISLAND_WORLD_SIZE : biome === 'pnw' && pnwGen === 2 ? PNW_WORLD_SIZE : WORLD_SIZE;
     this.half = this.size / 2;
     this.cells = this.size / TERRAIN_CELL;
     this.verts = this.cells + 1;
@@ -127,9 +136,15 @@ export class Terrain {
       this.lakes = this.layoutDesert(seed);
       this.fishLakes = this.lakes.filter(holdsFish);
       sample = (x, z) => this.sampleDesert(x, z);
+    } else if (pnwGen === 2) {
+      this.pnw = new PnwLayout(seed);
+      this.lakes = this.pnw.lakes;
+      this.fishLakes = this.lakes.filter(pnwLakeHoldsFish);
+      Object.assign(this.spawn, this.pnw.spawn);
+      sample = (x, z) => this.pnw!.sample(x, z);
     } else {
       this.lakes = this.layoutLakes(seed);
-      this.fishLakes = this.lakes;
+      this.fishLakes = this.lakes.filter(pnwLakeHoldsFish);
       sample = (x, z) => this.sampleRaw(x, z);
     }
 
@@ -231,6 +246,7 @@ export class Terrain {
 
   /** Analytic height function used to build the grid. */
   sampleRaw(x: number, z: number): number {
+    if (this.pnw) return this.pnw.sample(x, z);
     const n = this.noise;
     let h = 4 + n.fbm(x * 0.0065, z * 0.0065, 4) * 9;
     h += n.fbm(x * 0.021 + 71.3, z * 0.021 - 12.7, 3) * 1.8;
@@ -382,6 +398,7 @@ export class Terrain {
   /** The pool or lake a water point belongs to, or null on dry land. On the island any water that isn't fresh is the sea. */
   lakeAt(x: number, z: number): Lake | null {
     if (this.island) return this.island.waterAt(x, z);
+    if (this.pnw) return this.pnw.waterAt(x, z);
     let best: Lake | null = null;
     let bd = 1.35;
     for (const l of this.lakes) {
@@ -442,6 +459,10 @@ export class Terrain {
 
   /** Low-frequency field for biome decisions (forest density, meadows). */
   field(x: number, z: number, layer: number): number {
+    if (this.pnw && layer === 1) {
+      const forest = 0.56 + this.noise.get(x * 0.012 + 37.1, z * 0.012 - 11.3) * 0.3;
+      return forest * (1 - this.pnw.meadowAt(x, z));
+    }
     return this.noise.get(x * 0.012 + layer * 37.1, z * 0.012 - layer * 11.3) * 0.5 + 0.5;
   }
 
@@ -487,11 +508,11 @@ export class Terrain {
 
 const cache = new Map<string, Terrain>();
 
-export function getTerrain(seed: number, biome: BiomeId = DEFAULT_BIOME): Terrain {
-  const key = `${biome}:${seed}`;
+export function getTerrain(seed: number, biome: BiomeId = DEFAULT_BIOME, pnwGen: PnwGeneration = PNW_GENERATION): Terrain {
+  const key = `${biome}:${seed}:${biome === 'pnw' ? pnwGen : 1}`;
   let t = cache.get(key);
   if (!t) {
-    t = new Terrain(seed, biome);
+    t = new Terrain(seed, biome, pnwGen);
     cache.set(key, t);
   }
   return t;

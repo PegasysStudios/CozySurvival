@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, smoothstep } from '../core/math';
 import { hash2 } from '../core/rng';
-import { TERRAIN_CELL, TERRAIN_CELLS, TERRAIN_VERTS, WATER_LEVEL, WORLD_HALF, WORLD_SIZE, type Terrain } from '../sim/terrain';
+import { TERRAIN_CELL, WATER_LEVEL, WORLD_SIZE, type Terrain } from '../sim/terrain';
 import type { Season } from '../sim/seasons';
 import { seasonColors } from './seasons';
 
@@ -74,14 +74,14 @@ function desertColor(t: Terrain, c: THREE.Color, mx: number, my: number, mz: num
  * Flat-shaded terrain whose triangulation matches `Terrain.heightAt` exactly
  * (each cell split along its (i,j)-(i+1,j+1) diagonal).
  */
-export function buildTerrainMesh(t: Terrain, season: Season | null = null): THREE.Mesh {
-  const tris = TERRAIN_CELLS * TERRAIN_CELLS * 2;
+export function buildTerrainMesh(t: Terrain, season: Season | null = null, region = { x: 0, z: 0, width: t.cells, depth: t.cells }): THREE.Mesh {
+  const tris = region.width * region.depth * 2;
   const pos = new Float32Array(tris * 9);
   const colors = new Float32Array(tris * 9);
   const h = t.heights;
   const c = new THREE.Color();
   let o = 0;
-  const vx = (i: number) => -WORLD_HALF + i * TERRAIN_CELL;
+  const vx = (i: number) => -t.half + i * TERRAIN_CELL;
   const put = (x: number, y: number, z: number) => {
     pos[o] = x;
     pos[o + 1] = y;
@@ -129,13 +129,13 @@ export function buildTerrainMesh(t: Terrain, season: Season | null = null): THRE
       colors[ci + 2] = c.b * j;
     }
   };
-  for (let jz = 0; jz < TERRAIN_CELLS; jz++) {
-    for (let ix = 0; ix < TERRAIN_CELLS; ix++) {
+  for (let jz = region.z; jz < region.z + region.depth; jz++) {
+    for (let ix = region.x; ix < region.x + region.width; ix++) {
       const x0 = vx(ix), x1 = vx(ix + 1), z0 = vx(jz), z1 = vx(jz + 1);
-      const h00 = h[jz * TERRAIN_VERTS + ix];
-      const h10 = h[jz * TERRAIN_VERTS + ix + 1];
-      const h01 = h[(jz + 1) * TERRAIN_VERTS + ix];
-      const h11 = h[(jz + 1) * TERRAIN_VERTS + ix + 1];
+      const h00 = h[jz * t.verts + ix];
+      const h10 = h[jz * t.verts + ix + 1];
+      const h01 = h[(jz + 1) * t.verts + ix];
+      const h11 = h[(jz + 1) * t.verts + ix + 1];
       put(x0, h00, z0);
       put(x0, h01, z1);
       put(x1, h11, z1);
@@ -161,7 +161,7 @@ export function buildTerrainMesh(t: Terrain, season: Season | null = null): THRE
 
 /** Water depth encoded in a texture so the water shader can tint shallows and draw shore foam. */
 export function buildDepthTexture(t: Terrain): THREE.DataTexture {
-  const n = TERRAIN_VERTS;
+  const n = t.verts;
   const data = new Uint8Array(n * n * 4);
   for (let j = 0; j < n; j++) {
     for (let i = 0; i < n; i++) {

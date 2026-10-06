@@ -3,13 +3,15 @@ import { damp, headingTo, turnToward } from '../core/math';
 import type { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { biomeDef } from '../data/biomes';
-import { SPECIES, type PestSpecies, type PredatorSpecies, type PreySpecies, type SpeciesId, type Territory, type WaterZone } from '../data/species';
+import { SPECIES, SQUIRREL_CLIMB, type PestSpecies, type PredatorSpecies, type PreySpecies, type SpeciesId, type Territory, type WaterZone } from '../data/species';
 import type { Collider } from './colliders';
 import type { SimEvent } from './events';
 import type { AnimalMode, AnimalState, DamageSource } from './state';
 import { WATER_LEVEL, type Terrain } from './terrain';
 
 export interface AnimalEnv {
+  /** Only standing trees are eligible refuges; optional for flat test worlds. */
+  tree?(ref: number): { x: number; z: number; radius: number; height: number } | null;
   terrain: Terrain;
   rng: Rng;
   query(x: number, z: number, r: number, out: Collider[]): Collider[];
@@ -181,6 +183,93 @@ export function preyRadii(a: AnimalState, env: Pick<AnimalEnv, 'playerNoise' | '
 function startFlee(a: AnimalState, env: AnimalEnv, spooked: boolean): void {
   setMode(a, 'flee', env.rng.range(2.5, 4));
   if (spooked) env.events.push({ type: 'animalFlee', id: a.id, species: a.species });
+}
+
+/** Hidden in the canopy; climbing squirrels remain huntable. */
+export const animalHidden = (a: AnimalState): boolean => a.species === 'squirrel' && a.mode === 'hide';
+
+const refuges: Collider[] = [];
+
+/** Douglas's squirrels forage in short ground runs, then escape up a real standing tree. */
+function updateSquirrel(a: AnimalState, def: PreySpecies, env: AnimalEnv, dt: number, d: number): void {
+  let tree = a.tree === undefined ? null : env.tree?.(a.tree);
+  const ground = env.terrain.heightAt(a.x, a.z);
+  if (a.tree !== undefined && !tree) {
+    // A chopped refuge cannot shelter its occupant. Fall to the ground before fleeing.
+    a.y = Math.max(ground, a.y - 9 * dt);
+    a.speed = 0;
+    a.mode = 'descend';
+    if (a.y > ground) return;
+    a.tree = undefined;
+    a.climbHeight = undefined;
+    startFlee(a, env, false);
+    a.cooldown = 2;
+  }
+  if (tree && (a.mode === 'climb' || a.mode === 'hide' || a.mode === 'descend')) {
+    const base = env.terrain.heightAt(tree.x, tree.z);
+    const top = a.climbHeight ?? Math.min(6, tree.height * 0.6);
+    a.speed = 0; // Horizontal dead reckoning must stop at the trunk.
+    a.heading = headingTo(a.x, a.z, tree.x, tree.z);
+    if (a.mode === 'climb') {
+      a.y = Math.min(base + top, a.y + SQUIRREL_CLIMB.up * dt);
+      if (a.y >= base + top) setMode(a, 'hide', env.rng.range(8, 16));
+    } else if (a.mode === 'hide') {
+      if (!env.night && a.timer <= 0 && (env.playerDead || d > def.calmRadius)) setMode(a, 'descend', 0);
+    } else {
+      if (!env.playerDead && d < def.fearRadius) setMode(a, 'climb', 0);
+      else a.y = Math.max(ground, a.y - SQUIRREL_CLIMB.down * dt);
+      if (a.y <= ground) {
+        a.tree = undefined;
+        a.climbHeight = undefined;
+        a.homeX = a.x; a.homeZ = a.z;
+        setMode(a, 'idle', env.rng.range(1, 3));
+      }
+    }
+    return;
+  }
+  if (a.mode !== 'flee') updatePrey(a, def, env, dt, d);
+  const seeking = a.mode === 'flee' || env.night;
+  if (!seeking) { a.tree = undefined; return; }
+  if (!tree && a.cooldown <= 0) {
+    let best = Infinity;
+    env.query(a.x, a.z, 14, refuges);
+    for (const c of refuges) {
+      if (c.kind !== 'tree' || c.ref === a.failedTree) continue;
+      const candidate = env.tree?.(c.ref);
+      if (!candidate || candidate.height < 5) continue;
+      const dist = Math.hypot(candidate.x - a.x, candidate.z - a.z);
+      // The approach must not run through the player who spooked it.
+      if (!env.playerDead && dist > 0.01) {
+        const dx = candidate.x - a.x, dz = candidate.z - a.z;
+        const u = Math.max(0, Math.min(1, ((env.playerX - a.x) * dx + (env.playerZ - a.z) * dz) / (dist * dist)));
+        if (u > 0 && Math.hypot(a.x + dx * u - env.playerX, a.z + dz * u - env.playerZ) < 1.5) continue;
+      }
+      if (dist < best) { best = dist; a.tree = c.ref; tree = candidate; }
+    }
+    if (tree) { a.timer = 5; a.modeTime = 0; }
+    else a.cooldown = 1.5;
+  }
+  if (tree) {
+    const dist = Math.hypot(tree.x - a.x, tree.z - a.z);
+    if (dist <= tree.radius + def.radius + 0.15) {
+      const h = headingTo(tree.x, tree.z, a.x, a.z);
+      a.x = tree.x + Math.sin(h) * (tree.radius + 0.04);
+      a.z = tree.z + Math.cos(h) * (tree.radius + 0.04);
+      a.y = env.terrain.heightAt(tree.x, tree.z);
+      a.climbHeight = Math.min(6, tree.height * env.rng.range(0.55, 0.68));
+      setMode(a, 'climb', 0);
+      a.speed = 0;
+    } else if (a.timer <= 0) {
+      // Unreachable tree: try another escape rather than circling it forever.
+      a.failedTree = a.tree;
+      a.tree = undefined; a.cooldown = 2;
+      if (env.night) setMode(a, 'idle', 2);
+      else flee(a, def, env, dt, d);
+    } else {
+      a.mode = 'flee';
+      steer(a, env, headingTo(a.x, a.z, tree.x, tree.z), def.runSpeed, dt);
+    }
+  } else if (a.mode === 'flee') flee(a, def, env, dt, d);
 }
 
 /**
@@ -711,7 +800,8 @@ export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
   a.cooldown -= dt;
   a.aggroCooldown -= dt;
   a.hurt = Math.max(0, a.hurt - dt);
-  if (def.kind === 'prey') updatePrey(a, def, env, dt, d);
+  if (a.species === 'squirrel' && def.kind === 'prey') updateSquirrel(a, def, env, dt, d);
+  else if (def.kind === 'prey') updatePrey(a, def, env, dt, d);
   else if (def.kind === 'pest') updatePest(a, def, env, dt, d);
   else if (def.habitat === 'water') updateShark(a, def, env, dt, d);
   else updatePredator(a, def, env, dt, d);
@@ -719,6 +809,7 @@ export function updateAnimal(a: AnimalState, env: AnimalEnv, dt: number): void {
 
 /** Applies damage. Returns true when the animal is killed. */
 export function damageAnimal(a: AnimalState, amount: number, env: AnimalEnv): boolean {
+  if (animalHidden(a)) return false;
   const def = SPECIES[a.species];
   a.health -= amount;
   a.hurt = 0.35;
@@ -735,7 +826,8 @@ export function damageAnimal(a: AnimalState, amount: number, env: AnimalEnv): bo
       a.foe = undefined;
       startFlee(a, env, false);
     }
-  } else if (def.kind === 'prey') startFlee(a, env, false);
+  } else if (a.species === 'squirrel' && (a.mode === 'climb' || a.mode === 'descend')) setMode(a, 'climb', 0);
+  else if (def.kind === 'prey') startFlee(a, env, false);
   else if (def.kind === 'pest') {
     if (a.mode !== 'retreat') setMode(a, 'chase', def.giveUpTime);
   } else if (a.health / def.maxHealth <= def.retreatHealthFrac) {
@@ -827,6 +919,7 @@ export function findSpawnPoint(t: Terrain, rng: Rng, species: SpeciesId, avoid: 
       if (t.slopeAt(x, z) > 0.5) continue;
       if (t.landforms.length > 0 && t.landformAt(x, z).rock > 0.3) continue;
       if (upland && t.upland(x, z) < 0.45) continue;
+      if (species === 'squirrel' && (t.biome !== 'pnw' || t.field(x, z, 1) < 0.48)) continue;
     }
     if (!isHabitable(t, species, x, z)) continue;
     let ok = true;

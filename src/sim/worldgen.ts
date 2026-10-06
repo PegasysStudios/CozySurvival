@@ -1,8 +1,9 @@
-import { circle, footprintSamples, type Shape2D } from '../core/geom2d';
+import { box, circle, footprintSamples, type Shape2D } from '../core/geom2d';
 import { smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
 import { DEFAULT_BIOME, type BiomeId } from '../data/biomes';
 import { RESOURCES, TREES, type ResourceKind, type TreeSpecies } from '../data/resources';
+import { PNW_GENERATION, type PnwGeneration } from './pnw';
 import { generateIsland } from './islandgen';
 import { Occupancy } from './occupancy';
 import { generateSnow, type SnowPatch } from './snow';
@@ -99,8 +100,8 @@ function pickSpecies(t: Terrain, x: number, z: number, rng: Rng): TreeSpecies {
   return rng.chance(0.18) ? 'cedar' : 'fir';
 }
 
-export function generateWorld(seed: number): WorldGen {
-  const t = getTerrain(seed);
+export function generateWorld(seed: number, pnwGen: PnwGeneration = PNW_GENERATION): WorldGen {
+  const t = getTerrain(seed, 'pnw', pnwGen);
   const rng = new Rng(seed ^ 0x7f4a7c15);
   const occ = new Occupancy();
   const trees: TreeGen[] = [];
@@ -113,14 +114,14 @@ export function generateWorld(seed: number): WorldGen {
 
   // Boulders
   const rockCell = 13;
-  for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += rockCell) {
-    for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += rockCell) {
+  for (let gx = -t.playHalf; gx < t.playHalf; gx += rockCell) {
+    for (let gz = -t.playHalf; gz < t.playHalf; gz += rockCell) {
       const x = gx + rng.range(0, rockCell);
       const z = gz + rng.range(0, rockCell);
       const rocky = t.field(x, z, 3);
       const shore = t.heightAt(x, z) < 1.6 ? 0.25 : 0;
       if (!rng.chance(0.08 + rocky * 0.28 + shore)) continue;
-      if (spawnDist(x, z) < 10) continue;
+      if (spawnDist(x, z) < 10 || (t.pnw && t.pnw.meadowAt(x, z) > 0.65)) continue;
       if (!dryAndGentle(t, x, z, -0.6, 1.3)) continue;
       const r = rng.range(0.7, 2.1);
       if (!occ.free(x, z, r + 0.4)) continue;
@@ -131,6 +132,7 @@ export function generateWorld(seed: number): WorldGen {
 
   const addTree = (x: number, z: number, species: TreeSpecies, scale: number): boolean => {
     const trunkR = TREES[species].trunkRadius * scale;
+    if (t.pnw && t.pnw.meadowAt(x, z) > 0.65) return false;
     if (!occ.free(x, z, trunkR + 1.4)) return false;
     occ.add(x, z, trunkR + 0.4);
     trees.push({ x, z, species, scale, rot: rng.range(0, Math.PI * 2), trunkR, tint: rng.next() });
@@ -150,8 +152,8 @@ export function generateWorld(seed: number): WorldGen {
 
   // Forest
   const treeCell = 5.4;
-  for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += treeCell) {
-    for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += treeCell) {
+  for (let gx = -t.playHalf; gx < t.playHalf; gx += treeCell) {
+    for (let gz = -t.playHalf; gz < t.playHalf; gz += treeCell) {
       const x = gx + rng.range(0.4, treeCell - 0.4);
       const z = gz + rng.range(0.4, treeCell - 0.4);
       const density = 0.12 + 0.78 * smoothstep(0.28, 0.68, t.field(x, z, 1));
@@ -165,9 +167,9 @@ export function generateWorld(seed: number): WorldGen {
   }
 
   // Fallen logs (decor + collision)
-  for (let attempt = 0; attempt < 400 && logs.length < 28; attempt++) {
-    const x = rng.range(-PLAY_HALF + 6, PLAY_HALF - 6);
-    const z = rng.range(-PLAY_HALF + 6, PLAY_HALF - 6);
+  for (let attempt = 0; attempt < (t.pnw ? 1600 : 400) && logs.length < (t.pnw ? 112 : 28); attempt++) {
+    const x = rng.range(-t.playHalf + 6, t.playHalf - 6);
+    const z = rng.range(-t.playHalf + 6, t.playHalf - 6);
     if (spawnDist(x, z) < 16) continue;
     if (!dryAndGentle(t, x, z, 0.8, 0.35)) continue;
     const length = rng.range(3, 5.5);
@@ -206,8 +208,8 @@ export function generateWorld(seed: number): WorldGen {
 
   // Scatter across the map by biome; each spot grows with its kind's RESOURCES[kind].scatter chance.
   const resCell = 8;
-  for (let gx = -PLAY_HALF; gx < PLAY_HALF; gx += resCell) {
-    for (let gz = -PLAY_HALF; gz < PLAY_HALF; gz += resCell) {
+  for (let gx = -t.playHalf; gx < t.playHalf; gx += resCell) {
+    for (let gz = -t.playHalf; gz < t.playHalf; gz += resCell) {
       if (!rng.chance(0.62)) continue;
       const x = gx + rng.range(0.5, resCell - 0.5);
       const z = gz + rng.range(0.5, resCell - 0.5);
@@ -226,7 +228,8 @@ export function generateWorld(seed: number): WorldGen {
   // Keep the original RNG draws and occupancy so saved tree/forage indices stay in place. Only remove unsafe
   // scenery after generation. The conservative footprint covers the warped meshes, beyond the collision body.
   const dryRocks = rocks.filter((r) => dryFootprint(t, circle(r.x, r.z, r.r * 1.6)));
-  const gen: WorldGen = { seed, biome: 'pnw', trees, resources, resourceSpots: spots, rocks: dryRocks, logs, cacti: [] };
+  const dryLogs = t.pnw ? logs.filter((l) => dryFootprint(t, box(l.x, l.z, l.length / 2 + 0.2, l.r + 0.1, l.rot))) : logs;
+  const gen: WorldGen = { seed, biome: 'pnw', trees, resources, resourceSpots: spots, rocks: dryRocks, logs: dryLogs, cacti: [] };
   const snow = generateSnow(t, gen);
   gen.resources.push(...snow);
   gen.resourceSpots += snow.length;
@@ -431,11 +434,11 @@ export const WORLD_REVISION: Partial<Record<BiomeId, number>> = { island: 2 };
 
 const cache = new Map<string, WorldGen>();
 
-export function getWorldGen(seed: number, biome: BiomeId = DEFAULT_BIOME): WorldGen {
-  const key = `${biome}:${seed}`;
+export function getWorldGen(seed: number, biome: BiomeId = DEFAULT_BIOME, pnwGen: PnwGeneration = PNW_GENERATION): WorldGen {
+  const key = `${biome}:${seed}:${biome === 'pnw' ? pnwGen : 1}`;
   let w = cache.get(key);
   if (!w) {
-    w = biome === 'island' ? generateIsland(seed) : biome === 'desert' ? generateDesert(seed) : generateWorld(seed);
+    w = biome === 'island' ? generateIsland(seed) : biome === 'desert' ? generateDesert(seed) : generateWorld(seed, pnwGen);
     cache.set(key, w);
   }
   return w;

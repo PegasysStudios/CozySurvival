@@ -54,6 +54,33 @@ function rabbit(winter = false): RigParts {
   };
 }
 
+/** Small native tree squirrel: about 34 cm nose to tail, with a tawny belly. */
+function squirrel(): RigParts {
+  const coat = (_x: number, _y: number, _z: number, n: THREE.Vector3) => n.y < -0.25 ? col('#c69857') : mix('#655b4f', '#8b7d64', 0.5 + n.y * 0.3);
+  const body = new GeoBuilder(61);
+  body.add(new IcosahedronGeometry(0.085, 1), { matrix: tf(0, 0.115, -0.005, 0, 0, 0, 0.55, 0.68, 1.12), color: coat });
+  const head = new GeoBuilder(62);
+  head.add(new IcosahedronGeometry(0.043, 1), { matrix: tf(0, 0, 0.015, 0, 0, 0, 0.8, 0.9, 1.2), color: coat });
+  head.add(new OctahedronGeometry(0.009), { matrix: tf(0, -0.01, 0.065), color: '#221b17' });
+  for (const s of [-1, 1]) {
+    head.add(new IcosahedronGeometry(0.016, 0), { matrix: tf(s * 0.022, 0.043, -0.01, 0, 0, 0, 0.65, 1, 0.45), color: '#5b4936' });
+    head.add(new OctahedronGeometry(0.012), { matrix: tf(s * 0.032, 0.012, 0.027), color: '#dac5a2' });
+    eye(head, s * 0.036, 0.014, 0.03, 0.008);
+  }
+  const tail = new GeoBuilder(63);
+  tail.add(new IcosahedronGeometry(0.075, 1), { matrix: tf(0, 0.055, -0.045, -0.5, 0, 0, 0.5, 1.05, 0.85), color: coat });
+  tail.add(new IcosahedronGeometry(0.045, 1), { matrix: tf(0, 0.13, -0.08, -0.4, 0, 0, 0.6, 1, 0.85), color: '#8e816c' });
+  return {
+    body: body.build(), head: head.build(), headPivot: [0, 0.145, 0.09], pivot: [0, 0.08, -0.035],
+    legs: [
+      { geo: leg(0.08, 0.016, 0.012, '#79634b', '#43382d', 0.02), hip: [-0.035, 0.08, -0.055], phase: 0 },
+      { geo: leg(0.08, 0.016, 0.012, '#79634b', '#43382d', 0.02), hip: [0.035, 0.08, -0.055], phase: 0 },
+      { geo: leg(0.065, 0.012, 0.009, '#8c754f', '#43382d', 0.018), hip: [-0.028, 0.065, 0.065], phase: Math.PI },
+      { geo: leg(0.065, 0.012, 0.009, '#8c754f', '#43382d', 0.018), hip: [0.028, 0.065, 0.065], phase: Math.PI },
+    ], tail: { geo: tail.build(), pivot: [0, 0.11, -0.09] },
+  };
+}
+
 function deer(antlers: boolean): RigParts {
   const coat = (_x: number, _y: number, _z: number, n: THREE.Vector3) => (n.y < -0.4 ? col('#d6c3a4') : mix('#7a5a3e', '#9c7a55', 0.4 + n.y * 0.4));
   const body = new GeoBuilder(3);
@@ -435,7 +462,7 @@ function scorpion(): RigParts {
 }
 
 const BUILDERS: Partial<Record<SpeciesId, () => RigParts>> = {
-  rabbit, wolf, bear, jackrabbit, javelina, quail, roadrunner, lizard, snake, cougar, scorpion,
+  rabbit, squirrel, wolf, bear, jackrabbit, javelina, quail, roadrunner, lizard, snake, cougar, scorpion,
   boar, goat, junglefowl, crab, viper, reefFish, jellyfish, shark,
 };
 

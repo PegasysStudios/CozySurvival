@@ -23,7 +23,7 @@ function craftFresh(sim: Simulation, id: string): void {
 
 /** Walk to the lake edge, cast and strike until a trout is landed. */
 function catchFish(sim: Simulation): void {
-  const lake = sim.terrain.lakes[0];
+  const lake = sim.terrain.lakes[1]; // A guaranteed trout-only lake for this trout cooking walkthrough.
   let d = 0;
   while (sim.terrain.heightAt(lake.x + d, lake.z) < 0.3) d += 0.25;
   teleport(sim, lake.x + d, lake.z);
@@ -54,6 +54,7 @@ function bowHare(sim: Simulation): SimEvent[] {
   const d = lookDir(p.yaw, 0, { x: 0, y: 0, z: 0 });
   const hare = createAnimal(901, 'rabbit', p.x + d.x * 5, p.z + d.z * 5, new Rng(3), sim.terrain);
   hare.temperament = 0.1;
+  hare.timer = 100; // This shot tests onboarding progress against a standing hare, independent of AI RNG.
   sim.state.animals.push(hare);
   aimAt(sim, hare.x, hare.y + 0.25, hare.z);
   const aim = { yaw: p.yaw, pitch: p.pitch };

@@ -42,6 +42,10 @@ const island = (s: GameState) => s.biome === 'island';
 const pick = (s: GameState, pnw: string, dry: string, isle: string) => (island(s) ? isle : desert(s) ? dry : pnw);
 const SKEWERS = ['forageSkewer', 'skewer', 'desertSkewer', 'beachSkewer'];
 const FISH_DISHES = ['grilledTrout', 'cedarTrout', 'troutChowder', 'troutSkewer', 'smokedTrout', 'pinonTrout', 'pearTroutSkewer', 'coconutFish', 'fishLaulau', 'fishSkewer'];
+const pnw = (s: GameState) => !s.biome || s.biome === 'pnw';
+const caughtFish = (s: GameState) => got(s, 'rawFish') + (pnw(s) ? got(s, 'rawBass') + got(s, 'rawSalmon') : 0);
+const cookedFish = (s: GameState) => FISH_DISHES.some((m) => made(s, m) >= 1)
+  || (pnw(s) && (made(s, 'grilledBass') >= 1 || made(s, 'grilledSalmon') >= 1));
 const FORAGE_ITEMS: ItemId[] = ['berries', 'onion', 'mushroom', 'pricklyPear', 'chollaBuds', 'wolfberries', 'seaGrapes', 'purslane', 'banana', 'coconut'];
 const FORAGE_FOOD = 3;
 const foraged = (s: GameState) => FORAGE_ITEMS.reduce((n, i) => n + got(s, i), 0);
@@ -151,16 +155,16 @@ export const OBJECTIVES: Objective[] = [
   },
   {
     id: 'fish', title: 'Other food: catch and cook a fish',
-    hint: 'Twist fiber into cordage and craft a Fishing Pole. Hold left-click to cast, click when the float dips, then cook the trout at the fire.',
+    hint: 'Twist fiber into cordage and craft a Fishing Pole. The large lake has trout, bass and salmon; smaller fishable lakes have trout. Cast, click when the float dips, then grill your catch at the fire.',
     desert: { hint: 'Twist fiber into cordage and craft a Fishing Pole. Gila trout live only in the spring pool: cast there, click when the float dips, then cook it at the fire.' },
     island: { hint: 'Fish are the island\'s main meat. Twist fiber into cordage and craft a Fishing Pole, cast into the lagoon, the cove or a stream, click when the float dips, then cook your catch at the fire.' },
-    unlocks: ['rod', 'grilledTrout'],
-    done: (s) => made(s, 'rod') >= 1 && got(s, 'rawFish') >= 1 && FISH_DISHES.some((m) => made(s, m) >= 1),
+    unlocks: ['rod', 'grilledTrout', 'grilledBass', 'grilledSalmon'],
+    done: (s) => made(s, 'rod') >= 1 && caughtFish(s) >= 1 && cookedFish(s),
     needs: (s) => [
       ...ingredients(s, ['rod']),
       goal('Fishing Pole crafted', 'rod', made(s, 'rod')),
-      goal(island(s) ? 'Fish caught' : 'Trout caught', 'rawFish', got(s, 'rawFish')),
-      goal(island(s) ? 'Fish cooked' : 'Trout cooked', 'grilledTrout', FISH_DISHES.some((m) => made(s, m) >= 1) ? 1 : 0),
+      goal(desert(s) ? 'Trout caught' : 'Fish caught', 'rawFish', caughtFish(s)),
+      goal(desert(s) ? 'Trout cooked' : 'Fish cooked', 'grilledTrout', cookedFish(s) ? 1 : 0),
     ],
   },
   {

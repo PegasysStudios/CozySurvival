@@ -10,12 +10,14 @@ import { FishingView } from './fishing';
 import { windUniforms } from './geo';
 import { GhostView } from './ghost';
 import { makeNatureMaterials, NatureView } from './nature';
+import { PnwAmbience } from './pnwAmbience';
 import { Effects } from './particles';
 import { DayNight, SkyView } from './sky';
 import { IslandFeatures } from './islandFeatures';
 import { IslandTerrain } from './islandTerrain';
 import { IslandWaterView } from './islandWater';
 import { buildTerrainMesh } from './terrainMesh';
+import { ChunkedTerrain } from './chunkedTerrain';
 import { ViewModel, type ViewModelInput } from './viewmodel';
 import { WaterView } from './water';
 import { applyWeatherLight, WEATHER_LOOK, WeatherView } from './weather';
@@ -66,6 +68,8 @@ export class GameView {
   private season: Season | null = null;
   private seasonRevealAt = 0;
   private terrainMesh: THREE.Mesh | null = null;
+  private forestTerrain: ChunkedTerrain | null = null;
+  private pnwGen = 0;
   private islandTerrain: IslandTerrain | null = null;
   private islandFeatures: IslandFeatures | null = null;
   private fogKeys = FOG;
@@ -73,6 +77,7 @@ export class GameView {
   private sky: SkyView | null = null;
   private weatherView: WeatherView | null = null;
   nature: NatureView | null = null;
+  ambience: PnwAmbience | null = null;
   entities: EntityView | null = null;
   private ghost: GhostView | null = null;
   private worldVersion = -1;
@@ -139,11 +144,12 @@ export class GameView {
 
   /** Build (or rebuild) the world for a simulation. Static terrain is reused when the seed is unchanged. */
   setWorld(sim: Simulation): void {
-    if (sim.state.seed !== this.seed || sim.biome !== this.biome || sim.season !== this.season) {
+    if (sim.state.seed !== this.seed || sim.biome !== this.biome || sim.season !== this.season || sim.terrain.pnwGen !== this.pnwGen) {
       this.disposeStatic();
       this.seed = sim.state.seed;
       this.biome = sim.biome;
       this.season = sim.season;
+      this.pnwGen = sim.terrain.pnwGen;
       this.dayNight.setBiome(sim.biome);
       this.sky = new SkyView(sim.state.seed, sim.biome === 'desert' ? 5 : sim.biome === 'island' ? 22 : 32);
       if (sim.biome === 'pnw') {
@@ -157,11 +163,12 @@ export class GameView {
         this.fogKeys = ISLAND_FOG;
         this.scene.add(this.islandTerrain.group, this.water.group, this.islandFeatures.group, this.sky.group);
       } else {
-        this.terrainMesh = buildTerrainMesh(sim.terrain, sim.season);
+        if (sim.terrain.pnw) this.forestTerrain = new ChunkedTerrain(sim.terrain, sim.season);
+        else this.terrainMesh = buildTerrainMesh(sim.terrain, sim.season);
         this.water = new WaterView(sim.terrain);
         this.water.setFrozen(sim.frozen);
         this.fogKeys = FOG;
-        this.scene.add(this.terrainMesh, this.water.group, this.sky.group);
+        this.scene.add(this.forestTerrain?.group ?? this.terrainMesh!, this.water.group, this.sky.group);
       }
     }
     this.disposeDynamic();
@@ -174,12 +181,21 @@ export class GameView {
     this.ghost = new GhostView(sim.terrain);
     this.scene.add(this.nature.group, this.entities.group, this.ghost.group);
     this.nature.sync(sim.state, false);
+    if (sim.biome === 'pnw') {
+      this.ambience = new PnwAmbience(sim.terrain, sim.gen, this.nature.flowerPerches, sim.colliders);
+      this.scene.add(this.ambience.group);
+    }
     this.entities.sync(sim.state);
     this.worldVersion = sim.worldVersion;
     this.renderer.compile(this.scene, this.camera);
   }
 
   private disposeDynamic(): void {
+    if (this.ambience) {
+      this.scene.remove(this.ambience.group);
+      this.ambience.dispose();
+      this.ambience = null;
+    }
     if (this.nature) {
       this.scene.remove(this.nature.group);
       this.nature.dispose();
@@ -205,6 +221,11 @@ export class GameView {
       this.terrainMesh.geometry.dispose();
       (this.terrainMesh.material as THREE.Material).dispose();
       this.terrainMesh = null;
+    }
+    if (this.forestTerrain) {
+      this.scene.remove(this.forestTerrain.group);
+      this.forestTerrain.dispose();
+      this.forestTerrain = null;
     }
     if (this.islandTerrain) {
       this.scene.remove(this.islandTerrain.group);
@@ -287,6 +308,7 @@ export class GameView {
       this.fog.far = look.far * (1 - dn.night * 0.35);
     }
     this.islandTerrain?.cull(pose.x, pose.z, this.fog.far + 15);
+    this.forestTerrain?.cull(pose.x, pose.z, this.fog.far + 15);
     windUniforms.uTime.value = time;
     windUniforms.uWind.value = 0.8 + 0.4 * Math.sin(time * 0.07);
 
@@ -310,6 +332,7 @@ export class GameView {
       // Past about 90% fog the island's jungle is only a haze, so its trees stop a little short of the fog's end.
       this.nature.update(dt, pose.x, pose.z, this.fog.far + (this.islandTerrain ? -25 : 15), sim.state);
       this.entities.update(sim, dt, time, pose.x, pose.z);
+      this.ambience?.update(dt, time, pose.x, pose.z, sim.state, pose.yaw);
       this.ghost.update(sim.placement, time);
       for (const f of this.entities.fires) {
         const dx = f.x - pose.x;
@@ -318,7 +341,7 @@ export class GameView {
       }
     }
     this.fireflyT -= dt;
-    if (dn.night > 0.6 && this.fireflyT <= 0 && this.biome !== 'desert' && !sim.frozen) {
+    if (dn.night > 0.6 && this.fireflyT <= 0 && this.biome === 'island') {
       this.fireflyT = 0.12;
       const a = Math.random() * Math.PI * 2;
       const r = 4 + Math.random() * 22;

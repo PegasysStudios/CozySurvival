@@ -2,6 +2,7 @@ import { box, circle, overlaps, raySphere, rayCylinder } from '../core/geom2d';
 import { clamp, damp, lerp } from '../core/math';
 import { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
+import { FISHING_CATCHES, type FishingCatch } from '../data/fishing';
 import { biomeDef, DEFAULT_BIOME, speciesName, type BiomeDef, type BiomeId } from '../data/biomes';
 import { ITEMS, TOOLS, TOOL_ORDER, itemName, setDisplayBiome, type ItemId, type ToolId } from '../data/items';
 import { forageForResource, forageForTree, FORAGE_BY_ID, type ForageId } from '../data/forage';
@@ -11,7 +12,7 @@ import { RECIPE_BY_ID, recipeOnMap } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
 import { LEVEL_NUMERALS, nextTier, tierCost, tierLine, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type PestSpecies, type SpeciesId } from '../data/species';
-import { burrowed, createAnimal, damageAnimal, findSpawnPoint, hostile, isHabitable, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
+import { animalHidden, burrowed, createAnimal, damageAnimal, findSpawnPoint, hostile, isHabitable, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
 import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
 import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
@@ -27,8 +28,10 @@ import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type P
 import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
 import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, skinChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
 import { carcassStep, hidesOn } from './carcass';
+import { PNW_GENERATION, type PnwGeneration } from './pnw';
 import { STATE_VERSION, type AnimalState, type CarcassState, type DamageSource, type DropState, type GameState, type PlayerState, type ResourceDyn, type SkillId, type StructureState, type TreeDyn, type Wear } from './state';
-import { getTerrain, holdsFish, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
+import { getTerrain, isDrinkable, WATER_LEVEL, type Lake, type Terrain } from './terrain';
+import { chooseFishingCatch, fishingPoolAt } from './fishing';
 import { advanceHours, ambientWarmth, canSleepAt, dayOf, hourOf, isNight, nextDayStart } from './time';
 import { crownPosition, freshTree, logTop, rockTop, TRUNK_AXIS_LIFT, trunkBox, trunkSpan, trunkTop, type TrunkSpan } from './trunks';
 import { getWorldGen, type WorldGen } from './worldgen';
@@ -109,6 +112,8 @@ export interface FishingLine {
   z: number;
   /** Seconds after the lure settles until a fish bites. */
   biteAt: number;
+  /** Chosen from the lure's habitat when the fish bites; kept through the strike. */
+  catch?: FishingCatch;
 }
 
 /** `solo` is single-player. In multiplayer the host's simulation owns the world and guests follow it. */
@@ -198,7 +203,7 @@ function waterName(lake: Lake | null, knowsAlkali: boolean, terrain: Terrain, x:
   }
 }
 
-/** What a fish from the water at (x, z) is called in messages: trout, or on the island a parrotfish or a goby. */
+/** Swimming fish retain the existing trout/reef/stream identities; rod catches use their own habitat pool. */
 function fishWord(terrain: Terrain, x: number, z: number): string {
   if (!terrain.island) return 'trout';
   return terrain.island.waterAt(x, z).kind === 'sea' ? 'parrotfish' : 'stream goby';
@@ -234,9 +239,9 @@ export function spawnPlayer(terrain: Terrain): PlayerState {
   return createPlayer(sx, terrain.heightAt(sx, sz), sz, Math.atan2(-shore.dx, -shore.dz));
 }
 
-export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): GameState {
-  const terrain = getTerrain(seed, biome);
-  const gen = getWorldGen(seed, biome);
+export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME, pnwGen: PnwGeneration = PNW_GENERATION): GameState {
+  const terrain = getTerrain(seed, biome, pnwGen);
+  const gen = getWorldGen(seed, biome, pnwGen);
   const rng = new Rng(seed ^ 0x3c6ef372);
   const sx = terrain.spawn.x;
   const sz = terrain.spawn.z;
@@ -244,6 +249,7 @@ export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): Ga
     version: STATE_VERSION,
     seed,
     ...(biome === DEFAULT_BIOME ? {} : { biome }),
+    ...(biome === 'pnw' && pnwGen === 2 ? { pnwGen } : {}),
     runId: makeRunId(),
     totalHours: START_HOURS,
     ...(biome === 'pnw' ? { season: parseSeason(null, START_HOURS) } : {}),
@@ -284,7 +290,12 @@ export function createNewState(seed: number, biome: BiomeId = DEFAULT_BIOME): Ga
     }
   };
   const b = biomeDef(biome);
-  for (const p of b.prey) populate(p.species, p.count, p.minDist);
+  for (const p of b.prey) {
+    // Squirrels are seeded beside standing, unobstructed trees after the collider index is built.
+    // Legacy saved forests keep their original wildlife population and RNG sequence.
+    if (p.species === 'squirrel') continue;
+    populate(p.species, p.count, p.minDist);
+  }
   const targets = b.predatorTargets(1);
   for (const p of b.predators) populate(p.species, targets[p.species] ?? 0, p.minDist);
   state.rng = rng.s;
@@ -365,8 +376,8 @@ export class Simulation {
       delete state.weather;
     }
     setDisplayBiome(this.biome);
-    this.terrain = getTerrain(state.seed, this.biome);
-    this.gen = getWorldGen(state.seed, this.biome);
+    this.terrain = getTerrain(state.seed, this.biome, state.pnwGen ?? 1);
+    this.gen = getWorldGen(state.seed, this.biome, state.pnwGen ?? 1);
     this.rng = new Rng(state.rng);
     this.wasNight = isNight(this.hour);
     this.buildColliders();
@@ -374,6 +385,11 @@ export class Simulation {
     const self = this;
     this.moveEnv = { terrain: this.terrain, query, get frozen() { return self.frozen; } };
     this.animalEnv = {
+      tree(ref) {
+        const tr = self.gen.trees[ref];
+        if (!tr || self.state.trees[ref]?.felled) return null;
+        return { x: tr.x, z: tr.z, radius: tr.trunkR, height: TREES[tr.species].height * tr.scale };
+      },
       terrain: this.terrain,
       rng: this.rng,
       query,
@@ -406,10 +422,59 @@ export class Simulation {
     };
     this.refreshLitFires();
     this.applySeasonEnvironment();
+    // Historical legacy templates stay reproducible; RunManager activates wildlife when those runs are opened.
+    if (this.terrain.pnw) this.initializePnwWildlife();
   }
 
-  static newGame(seed: number, biome: BiomeId = DEFAULT_BIOME): Simulation {
-    return new Simulation(createNewState(seed, biome));
+  /** Run activation also gives legacy PNW saves their requested wildlife without regenerating the map. */
+  initializePnwWildlife(): void {
+    if (this.biome === 'pnw' && this.state.pnwWildlife !== 1) this.seedPnwSquirrels();
+  }
+
+  /** One-time density correction, independent of the saved map generation. */
+  private seedPnwSquirrels(): void {
+    const s = this.state, t = this.terrain, p = s.player;
+    const count = this.biomeDef.prey.find((o) => o.species === 'squirrel')!.count;
+    const target = t.pnw ? count : count / 4;
+    const squirrels = s.animals.filter((a) => a.species === 'squirrel');
+    // Migration must not move existing animals or consume the saved gameplay RNG stream.
+    const rng = new Rng(s.seed ^ 0x7371726c);
+    const trees = this.gen.trees.filter((tr, i) => !s.trees[i].felled && TREES[tr.species].height * tr.scale >= 5
+      && t.inPlayBounds(tr.x, tr.z, 10) && t.heightAt(tr.x, tr.z) > 0.2);
+    const cells = new Map<string, number>();
+    const key = (x: number, z: number) => Math.floor(x / 48) + ',' + Math.floor(z / 48);
+    for (const a of squirrels) cells.set(key(a.x, a.z), (cells.get(key(a.x, a.z)) ?? 0) + 1);
+    const add = (tr: WorldGen['trees'][number], local: boolean): boolean => {
+      const angle = rng.range(0, Math.PI * 2), radius = tr.trunkR + rng.range(1.5, 3.5);
+      const x = tr.x + Math.sin(angle) * radius, z = tr.z + Math.cos(angle) * radius;
+      const distance = Math.hypot(x - p.x, z - p.z);
+      if (distance < 8 || (local ? distance > 20 : distance < 20)
+        || !t.inPlayBounds(x, z, 10) || t.slopeAt(x, z) > 0.5 || !isHabitable(t, 'squirrel', x, z)) return false;
+      if (squirrels.some((a) => Math.hypot(x - a.x, z - a.z) < 4)) return false;
+      const body = circle(x, z, SPECIES.squirrel.radius + 0.1);
+      this.colliders.query(x, z, body.r, this.tmpColliders);
+      if (this.tmpColliders.some((c) => c.body && overlaps(body, c.body))) return false;
+      const a = createAnimal(s.nextId++, 'squirrel', x, z, rng, t);
+      s.animals.push(a); squirrels.push(a);
+      cells.set(key(x, z), (cells.get(key(x, z)) ?? 0) + 1);
+      return true;
+    };
+    // A small starting encounter exists beside nearby forest trees, outside the squirrel's fear radius.
+    const close = trees.filter((tr) => Math.hypot(tr.x - p.x, tr.z - p.z) <= 22);
+    let local = squirrels.filter((a) => Math.hypot(a.x - p.x, a.z - p.z) <= 20).length;
+    for (let i = 0; i < 240 && close.length && local < 3 && squirrels.length < target; i++) {
+      if (add(rng.pick(close), true)) local++;
+    }
+    // Balance the rest across forest cells rather than clustering uniform random samples in a few regions.
+    for (let i = 0; i < target * 40 && trees.length && squirrels.length < target; i++) {
+      const a = rng.pick(trees), b = rng.pick(trees);
+      add((cells.get(key(a.x, a.z)) ?? 0) <= (cells.get(key(b.x, b.z)) ?? 0) ? a : b, false);
+    }
+    s.pnwWildlife = 1;
+  }
+
+  static newGame(seed: number, biome: BiomeId = DEFAULT_BIOME, pnwGen: PnwGeneration = PNW_GENERATION): Simulation {
+    return new Simulation(createNewState(seed, biome, pnwGen));
   }
 
   // ------------------------------------------------------------------ accessors
@@ -1002,6 +1067,7 @@ export class Simulation {
       }
     }
     for (const a of s.animals) {
+      if (animalHidden(a)) continue;
       if (this.frozen && a.species === 'fish') continue;
       if (Math.abs(a.x - ex) > reach + 2 || Math.abs(a.z - ez) > reach + 2) continue;
       const def = SPECIES[a.species];
@@ -1243,8 +1309,7 @@ export class Simulation {
   fishableAt(x: number, z: number): boolean {
     if (this.frozen) return false;
     if (!this.terrain.inPlayBounds(x, z) || this.terrain.heightAt(x, z) >= WATER_LEVEL - BALANCE.fishing.minDepth) return false;
-    const lake = this.terrain.lakeAt(x, z);
-    return !lake || holdsFish(lake);
+    return fishingPoolAt(this.terrain, x, z).length > 0;
   }
 
   private updateFishing(dt: number): void {
@@ -1263,8 +1328,11 @@ export class Simulation {
       const water = this.fishableAt(f.x, f.z);
       this.emit({ type: 'lureLanded', x: f.x, z: f.z, water });
       if (!water) {
-        const barren = this.terrain.heightAt(f.x, f.z) < WATER_LEVEL && this.biome !== DEFAULT_BIOME;
-        this.message(barren ? 'No fish live in this pool. Trout only live in the spring.' : 'The lure landed on dry ground. Cast out over open water.', 'warn');
+        const wet = this.terrain.heightAt(f.x, f.z) < WATER_LEVEL;
+        const text = !wet ? 'The lure landed on dry ground. Cast out over open water.'
+          : this.biome === 'pnw' ? 'This water is too small or shallow to fish. Try a larger lake or deeper water.'
+          : 'No fish live in this pool. Trout only live in the spring.';
+        this.message(text, 'warn');
         this.fishing = null;
         return;
       }
@@ -1275,6 +1343,7 @@ export class Simulation {
       if (f.t < f.biteAt) return;
       f.phase = 'bite';
       f.t = 0;
+      f.catch = chooseFishingCatch(fishingPoolAt(this.terrain, f.x, f.z), this.rng) ?? undefined;
       this.emit({ type: 'fishBite', x: f.x, z: f.z });
     } else if (f.t > F.biteWindow) {
       this.message('It got away. Click as soon as the float dips.');
@@ -1284,20 +1353,27 @@ export class Simulation {
 
   /** Strike a biting fish: the fishing skill decides whether it's landed or slips the hook. */
   private strike(f: FishingLine): void {
+    const pool = fishingPoolAt(this.terrain, f.x, f.z);
+    if (!this.fishableAt(f.x, f.z) || (f.catch && !pool.includes(f.catch))) {
+      this.endFishing('reeled');
+      return;
+    }
+    const caught = f.catch ?? chooseFishingCatch(pool, this.rng);
+    if (!caught) { this.endFishing('reeled'); return; }
+    const fish = FISHING_CATCHES[caught];
     const s = this.state;
     const xp = BALANCE.skills.xp;
     spendEnergy(s.needs, BALANCE.needs.energy.hookCost);
     this.emit({ type: 'swing', tool: 'rod', hit: true });
     if (this.rng.chance(landChance(s))) {
       s.stats.events.fishCaught = (s.stats.events.fishCaught ?? 0) + 1;
-      const added = this.give('rawFish', 1, f.x, WATER_LEVEL + 0.2, f.z, 'fishing');
-      if (added === 0) this.dropAt('rawFish', 1, s.player.x, s.player.z);
-      const fish = fishWord(this.terrain, f.x, f.z);
-      this.message(added ? `You landed a ${fish}!` : `You landed a ${fish}! No room in your pack, so it is at your feet.`, 'good');
+      const added = this.give(fish.item, 1, f.x, WATER_LEVEL + 0.2, f.z, 'fishing');
+      if (added === 0) this.dropAt(fish.item, 1, s.player.x, s.player.z);
+      this.message(added ? `You landed a ${fish.word}!` : `You landed a ${fish.word}! No room in your pack, so it is at your feet.`, 'good');
       this.gainXp('fishing', xp.catch);
       this.endFishing('caught');
     } else {
-      this.message(`The ${fishWord(this.terrain, f.x, f.z)} slipped the hook. Your fishing is improving.`);
+      this.message(`The ${fish.word} slipped the hook. Your fishing is improving.`);
       this.gainXp('fishing', xp.slip);
       this.endFishing('slipped');
     }
@@ -1860,6 +1936,7 @@ export class Simulation {
 
   /** The player's hit on an animal with `tool`: the hunting skill and the weapon's upgrades add damage. */
   hitAnimal(a: AnimalState, damage: number, tool: ToolId = this.state.activeTool): void {
+    if (animalHidden(a)) return;
     const dmg = damage * weaponDamageMultiplier(this.state, tool);
     if (this.authority === 'guest') {
       // The host owns the animals: it applies the hit and reports any kill back.
@@ -1915,7 +1992,16 @@ export class Simulation {
       this.progress();
       return;
     }
-    s.carcasses.push({ id: s.nextId++, species: a.species, x: a.x, y: a.y, z: a.z, rot: a.heading, remaining, expiresAt: s.totalHours + 24 });
+    let x = a.x, z = a.z;
+    if (a.species === 'squirrel' && a.tree !== undefined) {
+      const tr = this.gen.trees[a.tree];
+      if (tr) {
+        const heading = Math.atan2(x - tr.x, z - tr.z);
+        x = tr.x + Math.sin(heading) * (tr.trunkR + 0.4);
+        z = tr.z + Math.cos(heading) * (tr.trunkR + 0.4);
+      }
+    }
+    s.carcasses.push({ id: s.nextId++, species: a.species, x, y: a.species === 'squirrel' ? this.terrain.heightAt(x, z) : a.y, z, rot: a.heading, remaining, expiresAt: s.totalHours + 24 });
     this.worldVersion++;
     this.progress();
   }
@@ -1954,6 +2040,7 @@ export class Simulation {
         const dy = pr.vy / sp;
         const dz = pr.vz / sp;
         for (const a of this.state.animals) {
+          if (animalHidden(a)) continue;
           if (this.frozen && a.species === 'fish') continue;
           if (Math.abs(a.x - pr.x) > len + 2 || Math.abs(a.z - pr.z) > len + 2) continue;
           const def = SPECIES[a.species];
@@ -2181,7 +2268,9 @@ export class Simulation {
     }
     for (const st of s.structures) avoidPred.push({ x: st.x, z: st.z, minDist: 35 });
     for (const { species: id, count } of this.biomeDef.prey) {
-      if ((counts[id] ?? 0) < count) {
+      if (id === 'squirrel' && !this.terrain.pnw && s.pnwWildlife !== 1) continue;
+      const target = id === 'squirrel' && !this.terrain.pnw ? count / 4 : count;
+      if ((counts[id] ?? 0) < target) {
         const pt = findSpawnPoint(this.terrain, this.rng, id, SPECIES[id].habitat === 'water' ? [] : avoidPrey);
         if (pt) s.animals.push(createAnimal(s.nextId++, id, pt.x, pt.z, this.rng, this.terrain));
       }
@@ -2894,7 +2983,7 @@ export class Simulation {
   /** Host: a remote player's hit on an animal (damage already includes their hunting skill). */
   applyRemoteHit(pid: string, id: number, damage: number, fromX: number, fromZ: number, tool: ToolId | null = null): void {
     const a = this.state.animals.find((x) => x.id === id);
-    if (!a) return;
+    if (!a || animalHidden(a)) return;
     this.animalEnv.playerX = fromX;
     this.animalEnv.playerZ = fromZ;
     if (damageAnimal(a, damage, this.animalEnv)) this.killAnimal(a, pid, tool);

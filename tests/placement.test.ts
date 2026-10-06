@@ -101,7 +101,7 @@ describe('placement in the real world', () => {
     expect(sim.state.structures).toHaveLength(0);
 
     // valid spot near spawn
-    teleport(sim, 0, 0);
+    teleport(sim, sim.terrain.spawn.x, sim.terrain.spawn.z);
     const spot = findValidSpot(sim, 'campfire');
     sim.setPlacementAt(spot.x, spot.z);
     expect(sim.placement!.valid).toBe(true);
@@ -122,7 +122,7 @@ describe('placement in the real world', () => {
   it('gathered-out (hidden) plants and piles stop blocking, and do not regrow under a structure', () => {
     const sim = quietSim();
     const i = sim.gen.resources.findIndex((r, k) => {
-      if (r.kind !== 'stickPile' || Math.hypot(r.x, r.z) > 30) return false;
+      if (r.kind !== 'stickPile' || Math.hypot(r.x - sim.terrain.spawn.x, r.z - sim.terrain.spawn.z) > 30) return false;
       const env = { ...sim.placementEnv(), playerX: r.x + 3, playerZ: r.z };
       sim.state.resources[k].charges = 0;
       const clear = checkPlacement(env, 'campfire', r.x, r.z, 0).valid;

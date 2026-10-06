@@ -71,9 +71,9 @@ describe('desert stones are gatherable (round 9)', () => {
     expect(sim.state.resources[far].charges).toBe(0);
   });
 
-  it('the Pacific Northwest keeps its stone piles where they were', () => {
+  it('legacy Pacific Northwest worlds keep their original stone piles', () => {
     for (const seed of SEEDS.slice(0, 3)) {
-      const stones = stonesOf(getWorldGen(seed, 'pnw'));
+      const stones = stonesOf(getWorldGen(seed, 'pnw', 1));
       expect(stones.length, `seed ${seed}`).toBeGreaterThan(20);
       expect(stones.length, `seed ${seed}`).toBeLessThan(80);
     }

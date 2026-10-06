@@ -12,7 +12,7 @@ import { Rng } from '../core/rng';
  * into its plunge pool.
  */
 
-/** Side of the island world square in metres (the other maps are 320). */
+/** Side of the island world square in metres (desert and legacy forests are 320). */
 export const ISLAND_WORLD_SIZE = 960;
 const HALF = ISLAND_WORLD_SIZE / 2;
 /** Mean coast radius before the headlands, bays and harmonics. */

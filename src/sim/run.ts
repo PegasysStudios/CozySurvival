@@ -4,6 +4,7 @@ import { BIOME_IDS, BIOMES, DEFAULT_BIOME, isBiomeId, type BiomeId } from '../da
 import type { SimEvent } from './events';
 import { deserializeState, serializeState } from './save';
 import { Simulation } from './simulation';
+import { PNW_GENERATION, type PnwGeneration } from './pnw';
 import type { GameState } from './state';
 import { hoursSurvived } from './time';
 
@@ -250,20 +251,24 @@ export class RunManager {
 
   loadCurrent(biome: BiomeId = this.biome): Simulation | null {
     const s = this.loadState(biome, 'save');
-    return s ? new Simulation(s) : null;
+    if (!s) return null;
+    const sim = new Simulation(s);
+    sim.initializePnwWildlife();
+    return sim;
   }
 
   loadOrNew(): Simulation {
     return this.loadCurrent() ?? this.newRun();
   }
 
-  newRun(seed: number = this.record.worldSeed): Simulation {
+  newRun(seed: number = this.record.worldSeed, pnwGen: PnwGeneration = PNW_GENERATION): Simulation {
     const rec = this.record;
     if (seed !== rec.worldSeed) {
       rec.worldSeed = seed;
       this.saveMeta();
     }
-    const sim = Simulation.newGame(seed, this.biome);
+    const sim = Simulation.newGame(seed, this.biome, pnwGen);
+    sim.initializePnwWildlife();
     this.writeSnapshot(sim);
     this.save(sim);
     return sim;
@@ -317,7 +322,8 @@ export class RunManager {
 
   /** New run in the same world; best record kept. */
   restartFromDay1(): Simulation {
-    return this.newRun(this.record.worldSeed);
+    const current = this.loadState(this.biome, 'save') ?? this.loadState(this.biome, 'snapshot');
+    return this.newRun(this.record.worldSeed, current ? current.pnwGen ?? 1 : PNW_GENERATION);
   }
 
   /**
@@ -347,6 +353,7 @@ export class RunManager {
     snap.dead = false;
     snap.deathCause = null;
     const sim = new Simulation(snap);
+    sim.initializePnwWildlife();
     this.save(sim);
     return sim;
   }

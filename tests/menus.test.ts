@@ -503,7 +503,7 @@ describe('Upgrades tab polish (round 9)', () => {
   it('works on the nearest shelter when there are several', () => {
     const sim = quietSim();
     const lean = placeShelter(sim, 'leanTo');
-    teleport(sim, lean.x + 40, lean.z);
+    teleport(sim, sim.terrain.pnw!.meadow.x, sim.terrain.pnw!.meadow.z);
     const hut = placeShelter(sim, 'barkHut');
     expect(Math.hypot(hut.x - lean.x, hut.z - lean.z)).toBeGreaterThan(20);
     expect(upgradesTab(sim).lit('l:shelter')).toBe(2);

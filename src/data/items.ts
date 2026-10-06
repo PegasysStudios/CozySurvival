@@ -13,11 +13,15 @@ export type ItemId =
   | 'cordage'
   | 'rawMeat'
   | 'rawFish'
+  | 'rawBass'
+  | 'rawSalmon'
   | 'hide'
   | 'lakeWater'
   | 'boiledWater'
   | 'cookedMeat'
   | 'grilledTrout'
+  | 'grilledBass'
+  | 'grilledSalmon'
   | 'skewer'
   | 'forageSkewer'
   | 'berryTea'
@@ -101,11 +105,15 @@ export const ITEMS: Record<ItemId, ItemDef> = {
   cordage: { id: 'cordage', name: 'Cordage', plural: 'Cordage', stack: 10, color: '#c9b27a', description: 'Twisted fern fiber. Strong enough to lash tools.' },
   rawMeat: { id: 'rawMeat', name: 'Raw Meat', plural: 'Raw Meat', stack: 6, color: '#c8574f', description: 'Should really be cooked.', food: { hunger: 6, health: -6 } },
   rawFish: { id: 'rawFish', name: 'Raw Trout', plural: 'Raw Trout', stack: 6, color: '#8fb3c9', description: 'A speckled lake trout.', food: { hunger: 5, thirst: 1, health: -4 } },
+  rawBass: { id: 'rawBass', name: 'Raw Bass', plural: 'Raw Bass', stack: 6, color: '#819b61', description: 'A freshwater bass from the large forest lake. Grill it over a campfire.', food: { hunger: 5, thirst: 1, health: -4 } },
+  rawSalmon: { id: 'rawSalmon', name: 'Raw Salmon', plural: 'Raw Salmon', stack: 6, color: '#c68d87', description: 'A salmon from the large forest lake. Grill it over a campfire.', food: { hunger: 5, thirst: 1, health: -4 } },
   hide: { id: 'hide', name: 'Hide', plural: 'Hides', stack: 6, color: '#b98a5a', description: 'Warm animal hide for packs and tents.' },
   lakeWater: { id: 'lakeWater', name: 'Lake Water', plural: 'Lake Water', stack: 4, color: '#6fb3d6', water: true, canteen: true, description: 'Cold and a little cloudy.', food: { thirst: 18, warmth: -3 } },
   boiledWater: { id: 'boiledWater', name: 'Boiled Water', plural: 'Boiled Water', stack: 4, color: '#a9dcef', water: true, canteen: true, description: 'Clean and warm. A base for teas and stews.', food: { thirst: 28, warmth: 6, energy: 3 } },
   cookedMeat: { id: 'cookedMeat', name: 'Roast Meat', plural: 'Roast Meat', stack: 6, color: '#9c5a36', meal: true, description: 'Charred over the fire.', food: { hunger: 24, warmth: 4, health: 4, energy: 6 } },
   grilledTrout: { id: 'grilledTrout', name: 'Grilled Trout', plural: 'Grilled Trout', stack: 6, color: '#d9a56b', meal: true, description: 'Flaky and smoky.', food: { hunger: 20, thirst: 2, warmth: 4, health: 4, energy: 6 } },
+  grilledBass: { id: 'grilledBass', name: 'Grilled Bass', plural: 'Grilled Bass', stack: 6, color: '#d9a56b', meal: true, description: 'Bass grilled over the campfire. Flaky and smoky.', food: { hunger: 20, thirst: 2, warmth: 4, health: 4, energy: 6 } },
+  grilledSalmon: { id: 'grilledSalmon', name: 'Grilled Salmon', plural: 'Grilled Salmon', stack: 6, color: '#d99580', meal: true, description: 'Salmon grilled over the campfire. Tender and smoky.', food: { hunger: 20, thirst: 2, warmth: 4, health: 4, energy: 6 } },
   skewer: { id: 'skewer', name: 'Mushroom Skewer', plural: 'Mushroom Skewers', stack: 6, color: '#d99a3c', meal: true, description: 'Chanterelles and wild onion, fire-roasted on a stick.', food: { hunger: 20, warmth: 5, health: 3, energy: 8 } },
   forageSkewer: { id: 'forageSkewer', name: "Forager's Skewer", plural: "Forager's Skewers", stack: 6, color: '#e07a4a', meal: true, description: 'Salmonberries and wild onion roasted on a stick. Nothing but what the forest gives.', food: { hunger: 16, thirst: 4, warmth: 4, health: 2, energy: 6 } },
   berryTea: { id: 'berryTea', name: 'Salmonberry Tea', plural: 'Salmonberry Tea', stack: 4, color: '#e0664d', water: true, meal: true, description: 'A warm mug that tastes like summer.', food: { hunger: 4, thirst: 30, warmth: 16, health: 2, energy: 12 } },

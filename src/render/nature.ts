@@ -62,6 +62,8 @@ export function makeNatureMaterials(): NatureMaterials {
 
 export class NatureView {
   readonly group = new THREE.Group();
+  /** Exact bloom positions and instance transforms, for non-interactive nectar visitors. */
+  readonly flowerPerches: { x: number; y: number; z: number; rootX: number; rootZ: number; rot: number; scale: number }[] = [];
   onImpact: ((x: number, y: number, z: number, dirX: number, dirZ: number, species: TreeSpecies) => void) | null = null;
 
   private readonly terrain: Terrain;
@@ -438,12 +440,13 @@ export class NatureView {
   private buildGround(): void {
     const t = this.terrain;
     const rng = new Rng(this.gen.seed ^ 0x6a55);
+    const areaScale = (t.playHalf / PLAY_HALF) ** 2;
     const grassSpecs: InstanceSpec[][] = [[], [], []];
     const flowerSpecs: InstanceSpec[][] = [[], [], [], []];
     const grassIdx: { set: number; local: number; x: number; z: number }[] = [];
-    for (let i = 0; i < 20000; i++) {
-      const x = rng.range(-PLAY_HALF, PLAY_HALF);
-      const z = rng.range(-PLAY_HALF, PLAY_HALF);
+    for (let i = 0; i < 20000 * areaScale; i++) {
+      const x = rng.range(-t.playHalf, t.playHalf);
+      const z = rng.range(-t.playHalf, t.playHalf);
       const h = t.heightAt(x, z);
       if (h < 0.55 || h > 17) continue;
       if (t.slopeAt(x, z) > 0.62) continue;
@@ -455,11 +458,11 @@ export class NatureView {
       grassIdx.push({ set: v, local: grassSpecs[v].length, x, z });
       grassSpecs[v].push({ matrix: tf(x, h - 0.03, z, 0, rng.range(0, 6.28), 0, s, s * rng.range(0.8, 1.2), s) });
     }
-    const flowerCount = this.season === 'winter' ? 0 : this.season === 'spring' ? 6800 : this.season === 'fall' ? 450 : 1700;
-    const flowerAttempts = this.season === 'spring' ? 20000 : 10000;
+    const flowerCount = areaScale * (this.season === 'winter' ? 0 : this.season === 'spring' ? 6800 : this.season === 'fall' ? 450 : 1700);
+    const flowerAttempts = areaScale * (this.season === 'spring' ? 20000 : 10000);
     for (let i = 0; i < flowerAttempts && flowerSpecs.reduce((a, b) => a + b.length, 0) < flowerCount; i++) {
-      const x = rng.range(-PLAY_HALF, PLAY_HALF);
-      const z = rng.range(-PLAY_HALF, PLAY_HALF);
+      const x = rng.range(-t.playHalf, t.playHalf);
+      const z = rng.range(-t.playHalf, t.playHalf);
       const h = t.heightAt(x, z);
       if (h < 0.9 || h > 14 || t.slopeAt(x, z) > 0.5) continue;
       if (t.field(x, z, 1) > 0.45) continue;
@@ -475,7 +478,15 @@ export class NatureView {
     });
     flowerSpecs.forEach((specs, v) => {
       if (!specs.length) return;
-      const inst = new ChunkedInstances(this.own(flowerGeometry(v)), this.mats.plant, specs, { chunkSize: 40, name: 'flowers' });
+      const geo = this.own(flowerGeometry(v));
+      const bloom = geo.userData.blooms[0] as [number, number, number];
+      const point = new THREE.Vector3();
+      for (const spec of specs) {
+        point.set(...bloom).applyMatrix4(spec.matrix);
+        const m = spec.matrix.elements;
+        this.flowerPerches.push({ x: point.x, y: point.y, z: point.z, rootX: m[12], rootZ: m[14], rot: Math.atan2(m[8], m[0]), scale: Math.hypot(m[0], m[2]) });
+      }
+      const inst = new ChunkedInstances(geo, this.mats.plant, specs, { chunkSize: 40, name: 'flowers' });
       this.flowers.push(inst);
       this.group.add(inst.group);
     });

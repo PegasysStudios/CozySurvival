@@ -71,6 +71,7 @@ const COPY: Record<BiomeId, { start: string; dawn: string; dawnLater: string; ni
 };
 
 const FUR: Partial<Record<SpeciesId, string>> = {
+  squirrel: '#8b7d64',
   bear: '#2a2420', wolf: '#8e8a83', fish: '#cfe6f2', cougar: '#b48d5f', javelina: '#4a4039', jackrabbit: '#a58d6c',
   quail: '#6e6a6a', roadrunner: '#6b5843', lizard: '#a8946a', snake: '#9a8360', scorpion: '#c9a45c',
   boar: '#3a302a', goat: '#e6e0d4', junglefowl: '#a84a2a', crab: '#c8402a', viper: '#7a6a44',
