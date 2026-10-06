@@ -1,3 +1,5 @@
+import { STRUCTURE_LEVELS } from '../src/data/progression';
+import { xpForLevel } from '../src/sim/skills';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
 import { ITEMS, type ItemId } from '../src/data/items';
@@ -10,7 +12,7 @@ import type { SimEvent } from '../src/sim/events';
 import type { MoveEnv } from '../src/sim/movement';
 import { checkPlacement } from '../src/sim/placement';
 import { IDLE_INPUT, Simulation, type SimInput } from '../src/sim/simulation';
-import type { DamageSource, StructureState } from '../src/sim/state';
+import type { DamageSource, SkillId, StructureState } from '../src/sim/state';
 import { PLAY_HALF, type Terrain } from '../src/sim/terrain';
 
 export const SEED = 42;
@@ -103,8 +105,22 @@ export function recipeInputs(recipe: string): Partial<Record<ItemId, number>> {
   return out;
 }
 
-/** Give exactly what `recipe` needs. */
+/** Train a fixture to a specific level. Progression tests use untrained characters instead. */
+export function trainSkill(sim: Simulation, skill: SkillId, level: number): void {
+  sim.state.skills[skill] = Math.max(sim.state.skills[skill], xpForLevel(level));
+}
+
+/** Fix the gather roll in tests about depletion, regrowth or presentation rather than probability. */
+export function gatherOutcome(sim: Simulation, success = true): void {
+  const rng = (sim as unknown as { rng: Rng }).rng;
+  const original = rng.chance.bind(rng);
+  rng.chance = (chance) => chance >= 0.6 && chance <= 0.9 ? success : original(chance);
+}
+
+/** Give a recipe's materials and its minimum skill level for an unlocked recipe fixture. */
 export function giveRecipe(sim: Simulation, recipe: string): void {
+  const r = RECIPE_BY_ID[recipe];
+  trainSkill(sim, r.category === 'cooking' ? 'cooking' : 'crafting', r.requiredLevel);
   give(sim, recipeInputs(recipe));
 }
 
@@ -170,6 +186,7 @@ export function placeShelter(sim: Simulation, tier: PrefabId): StructureState {
     if (!next) throw new Error(`${tier} is not a shelter tier`);
     inv.slots.fill(null);
     give(sim, Object.fromEntries(SHELTER_UPGRADES[next]!.map((i) => [i.item, i.count])));
+    trainSkill(sim, 'crafting', STRUCTURE_LEVELS[next]);
     const res = sim.upgradeStructure(st.id);
     if (!res.ok) throw new Error(`could not upgrade to ${next}: ${res.reason}`);
   }

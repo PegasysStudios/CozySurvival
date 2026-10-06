@@ -108,7 +108,7 @@ describe('live have/need counts on the checklist (round 9)', () => {
     sim.togglePin('campfire');
     sim.togglePin('spear');
     give(sim, { stone: 12, stick: 20 });
-    expect(rows(sim)).toEqual(['Stones 12/30', 'Sticks 20/35', 'Plant Fiber 0/5', 'Cordage 0/5']);
+    expect(rows(sim)).toEqual(['Stones 12/30', 'Sticks 20/35', 'Plant Fiber 0/5', 'Cordage 0/5', 'Crafting Lv 3 1/3']);
   });
 
   it('counts canteen water, and a cooked recipe adds a lit campfire nearby row', () => {

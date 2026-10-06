@@ -4,12 +4,16 @@ import { RECIPE_BY_ID, type Recipe } from '../data/recipes';
 import { addItem, cloneInventory, removeItem, roomFor, setCapacity } from './inventory';
 import { canteenCapacity, canteenRoom, canteenUse, fillCanteen, hasItems, haveItem, inCanteen, takeItems } from './canteen';
 import type { GameState } from './state';
+import { meetsSkill, skillRequirementText } from './skills';
+
+export const recipeSkill = (recipe: Recipe) => recipe.category === 'cooking' ? 'cooking' as const : 'crafting' as const;
+export const recipeRequirementText = (recipe: Recipe) => skillRequirementText(recipeSkill(recipe), recipe.requiredLevel);
 
 export interface CraftContext {
   nearFire: boolean;
 }
 
-export type CraftFailure = 'unknown' | 'missing' | 'station' | 'noRoom' | 'owned' | 'noCanteen' | 'canteenFull' | 'tomorrow';
+export type CraftFailure = 'unknown' | 'missing' | 'station' | 'noRoom' | 'owned' | 'noCanteen' | 'canteenFull' | 'tomorrow' | 'skill';
 
 export interface CraftCheck {
   ok: boolean;
@@ -25,6 +29,7 @@ export const CRAFT_FAILURE_TEXT: Record<CraftFailure, string> = {
   noCanteen: 'You need a canteen to carry water.',
   canteenFull: 'Your canteen is full.',
   tomorrow: 'Unlocks tomorrow.',
+  skill: 'Your skill level is too low.',
 };
 
 export function slotsFor(state: GameState): number {
@@ -41,6 +46,7 @@ export function canCraft(state: GameState, recipe: Recipe, ctx: CraftContext): C
   if (out.kind === 'tool' && state.tools.includes(out.tool)) return fail('owned');
   if (out.kind === 'gear' && state.gear.includes(out.gear)) return fail('owned');
   if (lockedToday(state, recipe.id)) return fail('tomorrow');
+  if (!meetsSkill(state, recipeSkill(recipe), recipe.requiredLevel)) return fail('skill');
   if (!hasItems(state, recipe.inputs)) return fail('missing');
   if (recipe.station === 'fire' && !ctx.nearFire) return fail('station');
   if (out.kind === 'item') {

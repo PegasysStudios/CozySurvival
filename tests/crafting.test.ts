@@ -11,7 +11,10 @@ import type { GameState } from '../src/sim/state';
 import { giveRecipe, quietSim } from './helpers';
 
 function fresh(): GameState {
-  return createNewState(42);
+  const s = createNewState(42);
+  s.skills.crafting = BALANCE.skills.thresholds.at(-1)!;
+  s.skills.cooking = BALANCE.skills.thresholds.at(-1)!;
+  return s;
 }
 
 function stock(s: GameState, items: Partial<Record<ItemId, number>>) {
@@ -43,8 +46,8 @@ describe('recipe data', () => {
   });
 });
 
-describe('every recipe is available from the start (round 6)', () => {
-  it('a brand-new character can make anything it has the materials for', () => {
+describe('every recipe stays visible and trained characters can craft it', () => {
+  it('a trained character can make recipes with the required materials', () => {
     for (const r of RECIPES) {
       const s = fresh();
       s.gear.push('basket', 'backpack', 'canteen');

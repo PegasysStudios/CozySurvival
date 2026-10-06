@@ -1,3 +1,4 @@
+import { gatherOutcome, aimAt, buildFresh, drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, quietSim, run, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
@@ -10,7 +11,6 @@ import { lookDir } from '../src/sim/movement';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { createNewState, nearestShore, Simulation, SPAWN_SHORE_DIST } from '../src/sim/simulation';
 import { getTerrain, WATER_LEVEL } from '../src/sim/terrain';
-import { aimAt, buildFresh, drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, quietSim, run, teleport } from './helpers';
 import { dayOneLimit } from './setup';
 
 const F = BALANCE.fishing;
@@ -75,9 +75,10 @@ describe('onboarding track', () => {
     expect(RECIPE_BY_ID.forageSkewer.station).toBe('fire');
   });
 
-  it('walks through all eleven steps with real actions, in order, with the day-1 limit on', () => {
+  it('walks through all eleven steps with practiced crafting fixtures, in order, with the day-1 limit on', () => {
     dayOneLimit(true);
     const sim = quietSim();
+    gatherOutcome(sim);
     teleport(sim, sim.terrain.spawn.x, sim.terrain.spawn.z);
     sim.state.gear.push('basket', 'backpack');
     sim.state.inventory.slots.length = 0;
@@ -99,8 +100,8 @@ describe('onboarding track', () => {
     const fire = buildFresh(sim, 'campfire');
     expectStep(2);
 
-    // 3. forage food: salmonberries pick two at a time
-    for (let k = 0; k < 2; k++) {
+    // 3. forage food: three successful one-berry harvests
+    for (let k = 0; k < 3; k++) {
       const i = nearestResource(sim, 'berryBush');
       sim.state.resources[i].charges = Math.max(1, sim.state.resources[i].charges);
       sim.perform({ kind: 'resource', index: i, dist: 1 });
@@ -124,8 +125,8 @@ describe('onboarding track', () => {
     craftFresh(sim, 'axe');
     expectStep(5);
     sim.selectTool('axe');
-    const tree = nearestTree(sim, 'fir');
-    for (let k = 0; k < TREES.fir.hp + TREES.fir.logs * BALANCE.trees.cutsPerLog && !sim.state.stats.gathered.log; k++) {
+    const tree = nearestTree(sim, 'birch');
+    for (let k = 0; k < TREES.birch.hp + TREES.birch.logs * BALANCE.trees.cutsPerLog && !sim.state.stats.gathered.log; k++) {
       keepAlive(sim);
       sim.perform({ kind: 'tree', index: tree, dist: 1 });
     }

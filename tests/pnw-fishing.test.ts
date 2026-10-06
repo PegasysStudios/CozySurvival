@@ -1,10 +1,11 @@
+import { trainSkill, buildFresh, drain, give, keepAlive, run, teleport } from './helpers';
+import { RECIPE_BY_ID, recipesFor } from '../src/data/recipes';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
 import { FISHING_CATCHES, type FishingCatch } from '../src/data/fishing';
 import { ITEMS, type ItemId } from '../src/data/items';
 import { OBJECTIVES } from '../src/data/objectives';
-import { recipesFor } from '../src/data/recipes';
 import { WorldTracker, applyState, stateFromSnapshot, takeSnapshot } from '../src/net/worldSync';
 import { chooseFishingCatch, fishingPoolAt } from '../src/sim/fishing';
 import { countItem } from '../src/sim/inventory';
@@ -13,7 +14,6 @@ import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
 import { PNW_MIN_FISHABLE_LAKE_RADIUS, pnwLakeHoldsFish, Terrain } from '../src/sim/terrain';
 import { itemIcon } from '../src/ui/icons';
-import { buildFresh, drain, give, keepAlive, run, teleport } from './helpers';
 
 const F = BALANCE.fishing;
 const SEEDS = [0, 1, 2, 3, 7, 11, 42, 99, 777, 2024, 31337, 20260929, 0x7fffffff, 0xffffffff];
@@ -179,6 +179,7 @@ describe('PNW rod catches, rewards and cooking', () => {
     const sim = Simulation.newGame(42);
     give(sim, { [raw]: 1 });
     sim.state.stats.crafted.rod = 1;
+    trainSkill(sim, 'cooking', RECIPE_BY_ID[grilled].requiredLevel);
     expect(sim.canCraft(grilled)).toEqual({ ok: false, reason: 'station' });
     buildFresh(sim, 'campfire');
     expect(sim.craft(grilled).ok).toBe(true);

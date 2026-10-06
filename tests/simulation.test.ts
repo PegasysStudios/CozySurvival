@@ -1,3 +1,4 @@
+import { gatherOutcome, trainSkill, buildFresh, drain, give, giveRecipe, quietSim, run, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
@@ -7,7 +8,6 @@ import { createAnimal } from '../src/sim/animals';
 import { countItem } from '../src/sim/inventory';
 import { lookDir } from '../src/sim/movement';
 import type { Simulation } from '../src/sim/simulation';
-import { buildFresh, drain, give, giveRecipe, quietSim, run, teleport } from './helpers';
 
 function nearestResource(sim: Simulation, kind: keyof typeof RESOURCES): number {
   const p = sim.state.player;
@@ -60,6 +60,7 @@ function aimAt(sim: Simulation, x: number, y: number, z: number) {
 describe('gathering by hand', () => {
   it('gathers a resource, depletes it, and it regrows later', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     const i = nearestResource(sim, 'stickPile');
     const def = RESOURCES.stickPile;
     for (let k = 0; k < def.charges; k++) sim.perform({ kind: 'resource', index: i, dist: 1 });
@@ -91,6 +92,7 @@ describe('gathering by hand', () => {
 
   it('a full pack blocks gathering without wasting the resource', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     const fill = ['stone', 'berries', 'onion', 'mushroom', 'bark', 'cordage'] as const;
     for (const it of fill) sim.state.inventory.slots[fill.indexOf(it)] = { item: it, count: 1 };
     const i = nearestResource(sim, 'fern');
@@ -99,18 +101,15 @@ describe('gathering by hand', () => {
     expect(sim.state.resources[i].charges).toBe(RESOURCES.fern.charges);
   });
 
-  it('partial fits drop the overflow on the ground to pick up later', () => {
+  it('a one-item harvest fits into the last space without overflow', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     for (let k = 0; k < 6; k++) sim.state.inventory.slots[k] = { item: 'stone', count: 10 };
-    // stick and stone piles give one per harvest, so use a fern (two fiber) to get a partial fit
+    // All base harvests give one item, which fits into the last stacking space.
     sim.state.inventory.slots[5] = { item: 'fiber', count: ITEMS.fiber.stack - 1 };
     const i = nearestResource(sim, 'fern');
     sim.perform({ kind: 'resource', index: i, dist: 1 });
     expect(countItem(sim.state.inventory, 'fiber')).toBe(ITEMS.fiber.stack);
-    expect(sim.state.drops).toHaveLength(1);
-    expect(sim.state.drops[0]).toMatchObject({ item: 'fiber', count: 1 });
-    sim.state.inventory.slots[0] = null;
-    sim.perform({ kind: 'drop', id: sim.state.drops[0].id, dist: 1 });
     expect(sim.state.drops).toHaveLength(0);
   });
 });
@@ -118,6 +117,8 @@ describe('gathering by hand', () => {
 describe('trees', () => {
   it('cannot be chopped by hand; birch bark can be peeled', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
+    trainSkill(sim, 'gathering', 5);
     const fir = nearestTree(sim, 'fir');
     sim.perform({ kind: 'tree', index: fir, dist: 1 });
     expect(drain(sim).some((e) => e.type === 'needTool')).toBe(true);
@@ -129,6 +130,8 @@ describe('trees', () => {
 
   it('with an axe, several swings fell the tree, then chopping up the trunk gives logs and leaves a stump', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
+    trainSkill(sim, 'gathering', 5);
     sim.state.tools.push('axe');
     sim.selectTool('axe');
     const i = nearestTree(sim, 'fir');
@@ -157,6 +160,8 @@ describe('trees', () => {
 
   it('chopping costs energy', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
+    trainSkill(sim, 'gathering', 5);
     sim.state.tools.push('axe');
     sim.selectTool('axe');
     const e0 = sim.state.needs.energy;
@@ -170,6 +175,8 @@ describe('task energy', () => {
 
   it('chopping, gathering, crafting and building each cost their share of energy', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
+    trainSkill(sim, 'gathering', 5);
     sim.state.needs.energy = 50;
     sim.state.tools.push('axe');
     sim.selectTool('axe');
@@ -382,6 +389,7 @@ describe('hunting', () => {
 
   it('a fully drawn arrow flies true and hits a deer at range', () => {
     const sim = quietSim();
+    trainSkill(sim, 'hunting', 5);
     sim.state.tools.push('bow');
     sim.selectTool('bow');
     give(sim, { arrow: 4 });

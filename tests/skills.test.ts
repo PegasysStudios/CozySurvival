@@ -1,3 +1,4 @@
+import { gatherOutcome, drain, give, giveRecipe, keepAlive, nearestResource, placeStructure, quietSim } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
@@ -9,20 +10,19 @@ import {
   addSkillXp, burnChance, durabilityMultiplier, gatherBonusChance, huntDamageMultiplier, MAX_SKILL_LEVEL,
   skillEffect, skillFactor, skillLevel, skillProgress, SKILL_IDS,
 } from '../src/sim/skills';
-import { drain, give, giveRecipe, keepAlive, nearestResource, placeStructure, quietSim } from './helpers';
 
 const K = BALANCE.skills;
 const MAX_XP = K.thresholds[K.thresholds.length - 1];
 
 describe('skill levels', () => {
-  it('start at level 1 and climb through the thresholds to level 10', () => {
+  it('start at level 1 and climb through the thresholds to level 50', () => {
     expect(skillLevel(0)).toBe(1);
     expect(skillLevel(K.thresholds[0] - 0.01)).toBe(1);
     expect(skillLevel(K.thresholds[0])).toBe(2);
     expect(skillLevel(K.thresholds[1])).toBe(3);
     expect(skillLevel(MAX_XP)).toBe(MAX_SKILL_LEVEL);
     expect(skillLevel(MAX_XP * 10)).toBe(MAX_SKILL_LEVEL);
-    expect(MAX_SKILL_LEVEL).toBe(10);
+    expect(MAX_SKILL_LEVEL).toBe(50);
   });
 
   it('report progress toward the next level and are full at max', () => {
@@ -34,9 +34,9 @@ describe('skill levels', () => {
     expect(skillFactor(MAX_XP)).toBe(1);
   });
 
-  it('effects scale gently from level 1 to level 10', () => {
+  it('effects scale gently from level 1 to level 50', () => {
     expect(gatherBonusChance(0)).toBe(0);
-    expect(gatherBonusChance(MAX_XP)).toBeCloseTo(0.4);
+    expect(gatherBonusChance(MAX_XP)).toBeCloseTo(0.1);
     expect(huntDamageMultiplier(0)).toBe(1);
     expect(huntDamageMultiplier(MAX_XP)).toBeCloseTo(1.4);
     expect(burnChance(0)).toBeCloseTo(0.2);
@@ -74,12 +74,13 @@ function gatherOnce(sim: Simulation, kind: keyof typeof RESOURCES): number {
 describe('gathering skill', () => {
   it('improves by gathering and announces each new level', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     const events = [];
-    for (let k = 0; k < K.thresholds[0]; k++) {
+    for (let k = 0; k < K.thresholds[0] / K.xp.gather; k++) {
       gatherOnce(sim, 'stonePile');
       events.push(...drain(sim));
     }
-    expect(sim.state.skills.gathering).toBe(K.thresholds[0] * K.xp.gather);
+    expect(sim.state.skills.gathering).toBe(K.thresholds[0]);
     const ups = events.filter((e) => e.type === 'skillUp');
     expect(ups).toEqual([{ type: 'skillUp', skill: 'gathering', level: 2 }]);
     expect(events.some((e) => e.type === 'message' && /Gathering is now level 2/.test(e.text))).toBe(true);
@@ -88,6 +89,7 @@ describe('gathering skill', () => {
   it('never finds a bonus at level 1, and sometimes does when skilled', () => {
     const y = RESOURCES.stonePile.yield;
     const novice = quietSim();
+    gatherOutcome(novice);
     let got = 0;
     for (let k = 0; k < 40; k++) {
       novice.state.skills.gathering = 0;
@@ -96,10 +98,11 @@ describe('gathering skill', () => {
     expect(got).toBe(40 * y);
 
     const expert = quietSim();
+    gatherOutcome(expert);
     expert.state.skills.gathering = MAX_XP;
     let bonus = 0;
     for (let k = 0; k < 40; k++) bonus += gatherOnce(expert, 'stonePile') - y;
-    expect(bonus).toBeGreaterThan(4);
+    expect(bonus).toBeGreaterThan(0);
     expect(bonus).toBeLessThan(30);
   });
 });
@@ -108,8 +111,9 @@ describe('hunting skill', () => {
   it('adds damage to your hits on animals', () => {
     const sim = quietSim();
     const p = sim.state.player;
-    const a = createAnimal(900, 'deer', p.x + 2, p.z, new Rng(1), sim.terrain);
-    const b = createAnimal(901, 'deer', p.x - 2, p.z, new Rng(2), sim.terrain);
+    const a = createAnimal(900, 'rabbit', p.x + 2, p.z, new Rng(1), sim.terrain);
+    const b = createAnimal(901, 'rabbit', p.x - 2, p.z, new Rng(2), sim.terrain);
+    a.health = b.health = 3;
     sim.state.animals.push(a, b);
     sim.hitAnimal(a, 1);
     expect(a.health).toBeCloseTo(2);
@@ -213,7 +217,7 @@ describe('cooking skill and burnt meals', () => {
     sim.state.gear.push('canteen');
     expect(cookMany(sim, 'cookedMeat', { rawMeat: 1 }, 40, MAX_XP)).toBe(0);
     expect(cookMany(sim, 'boilWater', { lakeWater: 1 }, 30, 0)).toBe(0);
-    expect(cookMany(sim, 'berryTea', { boiledWater: 1, berries: 2 }, 30, 0)).toBe(0);
+    expect(cookMany(sim, 'berryTea', { boiledWater: 1, berries: 2 }, 30, K.thresholds[0])).toBe(0);
   });
 
   it('cooking raises the cooking skill; crafting and building raise crafting', () => {
@@ -225,6 +229,6 @@ describe('cooking skill and burnt meals', () => {
     sim.craft('cookedMeat');
     expect(sim.state.skills.cooking).toBe(K.xp.cook);
     sim.craft('axe');
-    expect(sim.state.skills.crafting).toBe(K.xp.build + K.xp.craft);
+    expect(sim.state.skills.crafting).toBe(K.xp.build + K.xp.equipment);
   });
 });

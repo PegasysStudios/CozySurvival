@@ -1,10 +1,11 @@
+import { gatherOutcome, trainSkill, aimAt, drain, run, teleport } from './helpers';
+import { xpForLevel } from '../src/sim/skills';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { RESOURCES, type ResourceKind } from '../src/data/resources';
 import type { SimEvent } from '../src/sim/events';
 import { Simulation } from '../src/sim/simulation';
 import { getWorldGen } from '../src/sim/worldgen';
-import { aimAt, drain, run, teleport } from './helpers';
 import { countItem } from '../src/sim/inventory';
 import { ITEMS } from '../src/data/items';
 
@@ -13,6 +14,8 @@ const P = BALANCE.player;
 
 function quietDesert(): Simulation {
   const sim = Simulation.newGame(42, 'desert');
+    gatherOutcome(sim);
+    trainSkill(sim, 'gathering', 8);
   sim.state.animals.length = 0;
   sim.state.spawnCheckAt = Infinity;
   return sim;
@@ -151,14 +154,14 @@ describe('cactus and yucca spines (round 9)', () => {
     expect(sim.spinyPlantTouching()).toBeNull();
   });
 
-  it('cutting an agave heart sometimes frees a little fiber: less often and less of it than a yucca gives', () => {
+  it('cutting an agave heart sometimes frees a little fiber: less often than the fiber from a successful yucca harvest', () => {
     const bonus = RESOURCES.agave.bonus!;
     expect(bonus.item).toBe('fiber');
     expect(bonus.chance).toBeGreaterThan(0);
     expect(bonus.chance).toBeLessThan(1);
-    // A yucca harvest always gives its fiber; an agave harvest gives less, and only sometimes.
+    // A successful yucca harvest gives fiber; successful agave harvests only sometimes do.
     expect(RESOURCES.yucca.item).toBe('fiber');
-    expect(bonus.count).toBeLessThan(RESOURCES.yucca.yield);
+    expect(bonus.count).toBeLessThanOrEqual(RESOURCES.yucca.yield);
     expect(bonus.chance * bonus.count).toBeLessThan(RESOURCES.yucca.yield);
 
     const sim = quietDesert();
@@ -173,8 +176,8 @@ describe('cactus and yucca spines (round 9)', () => {
       sim.state.inventory.slots.fill(null);
       sim.state.resources[i] = { charges: RESOURCES.agave.charges, respawnAt: 0 };
       sim.state.needs.health = 100;
-      // A new gatherer every time: a skilled one sometimes gets an extra heart.
-      sim.state.skills.gathering = 0;
+      // Start each attempt at agave's unlock level, allowing occasional bonus hearts.
+      sim.state.skills.gathering = xpForLevel(8);
       sim.perform({ kind: 'resource', index: i, dist: 1.2 });
       drain(sim);
       const got = countItem(sim.state.inventory, 'fiber');
@@ -182,7 +185,8 @@ describe('cactus and yucca spines (round 9)', () => {
       if (got > 0) lucky++;
       hearts += countItem(sim.state.inventory, 'agaveHeart');
     }
-    expect(hearts).toBe(n);
+    expect(hearts).toBeGreaterThanOrEqual(n);
+    expect(hearts).toBeLessThan(n * 1.05);
     expect(lucky / n).toBeGreaterThan(bonus.chance - 0.04);
     expect(lucky / n).toBeLessThan(bonus.chance + 0.04);
     expect(fiber).toBe(lucky * bonus.count);

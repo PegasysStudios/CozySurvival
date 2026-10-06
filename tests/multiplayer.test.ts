@@ -1,3 +1,6 @@
+import { gatherOutcome, trainSkill, drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
+import { ANIMAL_LEVELS, TREE_LEVELS } from '../src/data/progression';
+import { chopPower } from '../src/sim/upgrades';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { MAX_PLAYERS } from '../src/net/config';
@@ -10,7 +13,6 @@ import { LocalTransport, MemoryHub } from '../src/net/transport';
 import { IDLE_INPUT, Simulation, spawnPlayer } from '../src/sim/simulation';
 import { hourOf } from '../src/sim/time';
 import { countItem } from '../src/sim/inventory';
-import { drain, give, giveRecipe, keepAlive, nearestResource, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 import { dayOneLimit } from './setup';
 import type { ItemId } from '../src/data/items';
 import { killKey, OBJECTIVES } from '../src/data/objectives';
@@ -90,6 +92,7 @@ function guestSim(g: GuestSession): Simulation {
 }
 
 function chopDown(sim: Simulation, index: number): void {
+  trainSkill(sim, 'gathering', TREE_LEVELS[sim.gen.trees[index].species].fell);
   if (!sim.state.tools.includes('axe')) sim.state.tools.push('axe');
   sim.state.activeTool = 'axe';
   for (let k = 0; k < 20 && !sim.state.trees[index].felled; k++) sim.perform({ kind: 'tree', index, dist: 1 });
@@ -296,6 +299,33 @@ describe('multiplayer: late join', () => {
 });
 
 describe('multiplayer: shared world', () => {
+  it('a trained host does not unlock guest crafts, harvests, upgrades or hunts', async () => {
+    const w = await new World().open(), host = w.host.sim;
+    trainSkill(host, 'crafting', 30);
+    trainSkill(host, 'gathering', 30);
+    trainSkill(host, 'hunting', 30);
+    const ben = await w.join('Ben'), b = guestSim(ben);
+    expect(b.state.skills).toEqual({ gathering: 0, crafting: 0, hunting: 0, cooking: 0, fishing: 0, skinning: 0 });
+    b.state.inventory.slots = Array(20).fill(null);
+    give(b, { stick: 15, cordage: 10 });
+    const inventory = JSON.stringify(b.state.inventory);
+    expect(b.craft('bow').reason).toBe('skill');
+    expect(JSON.stringify(b.state.inventory)).toBe(inventory);
+    b.state.tools.push('axe');
+    give(b, Object.fromEntries(TOOL_UPGRADES.axe[0].inputs.map((i) => [i.item, i.count])));
+    expect(b.upgradeTool('axe').reason).toBe('skill');
+    const mushroom = nearestResource(b, 'mushroom'), charges = host.state.resources[mushroom].charges;
+    b.perform({ kind: 'resource', index: mushroom, dist: 1 });
+    const deer = host.devSpawn('deer', 4)!;
+    w.pump(0.5);
+    b.hitAnimal(b.state.animals.find((a) => a.id === deer.id)!, 999);
+    w.pump(0.5);
+    expect(host.state.resources[mushroom].charges).toBe(charges);
+    expect(deer.health).toBe(SPECIES.deer.maxHealth);
+    expect(b.state.skills.gathering).toBe(0);
+    expect(b.state.skills.hunting).toBe(0);
+  });
+
   it('gathering, chopping and building by a guest reach the host and the other guests', async () => {
     const w = await new World().open();
     const ben = await w.join('Ben');
@@ -304,6 +334,7 @@ describe('multiplayer: shared world', () => {
     const b = guestSim(ben);
     const c = guestSim(cleo);
 
+    gatherOutcome(b);
     const bush = nearestResource(b, 'berryBush');
     const before = host.state.resources[bush].charges;
     b.perform({ kind: 'resource', index: bush, dist: 1 });
@@ -333,6 +364,7 @@ describe('multiplayer: shared world', () => {
     const b = guestSim(ben);
     const tree = nearestTree(host, 'fir');
     for (const sim of [host, b]) {
+      trainSkill(sim, 'gathering', 5);
       sim.state.tools.push('axe');
       sim.state.activeTool = 'axe';
     }
@@ -340,8 +372,8 @@ describe('multiplayer: shared world', () => {
     host.perform({ kind: 'tree', index: tree, dist: 1 });
     b.perform({ kind: 'tree', index: tree, dist: 1 });
     w.pump(0.6);
-    expect(host.state.trees[tree].hp).toBe(hp - 2);
-    expect(b.state.trees[tree].hp).toBe(hp - 2);
+    expect(host.state.trees[tree].hp).toBeCloseTo(hp - chopPower(host.state) - chopPower(b.state), 5);
+    expect(b.state.trees[tree].hp).toBeCloseTo(host.state.trees[tree].hp, 5);
   });
 
   it('never takes more from a patch than it holds, even when players grab at the same moment', async () => {
@@ -583,6 +615,7 @@ describe('multiplayer: round 5', () => {
     w.pump(0.6);
     expect(host.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('leanTo');
     roomy(b);
+    trainSkill(b, 'crafting', 8);
     give(b, asGive(SHELTER_UPGRADES.aFrame!));
     expect(b.upgradeStructure(hut.id).ok).toBe(true);
     w.pump(0.6);
@@ -603,6 +636,7 @@ describe('multiplayer: round 5', () => {
     w.pump(0.6);
     expect(b.state.structures.find((s) => s.id === hut.id)?.prefab).toBe('barkHut');
     roomy(host);
+    trainSkill(host, 'crafting', 28);
     give(host, asGive(SHELTER_UPGRADES.hideTent!));
     expect(host.upgradeStructure(hut.id).ok).toBe(true);
     w.pump(0.6);
@@ -619,6 +653,7 @@ describe('multiplayer: round 5', () => {
     w.pump(0.6);
     for (const sim of [host, b]) {
       roomy(sim);
+      trainSkill(sim, 'crafting', 8);
       give(sim, asGive(SHELTER_UPGRADES.aFrame!));
       expect(sim.upgradeStructure(hut.id).ok).toBe(true);
     }
@@ -633,8 +668,10 @@ describe('multiplayer: round 5', () => {
     const host = w.host.sim;
     const b = guestSim(ben);
     b.state.tools.push('axe');
+    trainSkill(b, 'crafting', 6);
     give(b, asGive(TOOL_UPGRADES.axe[0].inputs));
     expect(b.upgradeTool('axe').ok).toBe(true);
+    gatherOutcome(b);
     const bush = nearestResource(b, 'berryBush');
     b.perform({ kind: 'resource', index: bush, dist: 1 });
     w.pump(1);
@@ -760,6 +797,7 @@ describe('multiplayer: round 8', () => {
     teleport(b, bin.x - 6, bin.z);
     teleport(c, bin.x, bin.z + 6);
     b.state.inventory.slots.fill(null);
+    trainSkill(b, 'crafting', 10);
     give(b, Object.fromEntries(BIN_UPGRADES.storageCrate!.map((i) => [i.item, i.count])));
     expect(b.upgradeStructure(bin.id).ok).toBe(true);
     w.pump(0.6);
@@ -940,6 +978,7 @@ describe('multiplayer: round 10', () => {
   /** A host-side kill of `species` a few metres in front of the host, synced out; returns its carcass id. */
   function hostKill(w: World, species: SpeciesId): number {
     const host = w.host.sim;
+    trainSkill(host, 'hunting', ANIMAL_LEVELS[species].hunt);
     const a = host.devSpawn(species, 4)!;
     expect(a).toBeTruthy();
     host.hitAnimal(a, 999, 'spear');
@@ -959,6 +998,8 @@ describe('multiplayer: round 10', () => {
     const b = guestSim(ben);
     const c = guestSim(cleo);
     const id = hostKill(w, 'deer');
+    trainSkill(b, 'skinning', 5);
+    trainSkill(b, 'hunting', 5);
     for (const sim of [b, c]) expect(carcassOn(sim, id)).toMatchObject({ species: 'deer' });
     expect(carcassOn(c, id)!.skinned).toBeFalsy();
 

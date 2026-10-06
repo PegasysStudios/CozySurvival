@@ -10,11 +10,12 @@ import { OBJECTIVES, advanceObjectives, killKey, objectiveText, type ObjectiveNe
 import { PLACE_MAX_DIST, PREFABS, type PrefabId } from '../data/prefabs';
 import { RECIPE_BY_ID, recipeOnMap } from '../data/recipes';
 import { RESOURCES, TREES } from '../data/resources';
+import { ANIMAL_LEVELS, FISH_LEVELS, RESOURCE_LEVELS, STRUCTURE_LEVELS, TREE_LEVELS } from '../data/progression';
 import { LEVEL_NUMERALS, nextTier, tierCost, tierLine, TOOL_UPGRADES, isUpgradable } from '../data/upgrades';
 import { PREDATOR_MIN_SPAWN_DIST, PREY_MIN_SPAWN_DIST, SPECIES, type PestSpecies, type SpeciesId } from '../data/species';
 import { animalHidden, burrowed, createAnimal, damageAnimal, findSpawnPoint, hostile, isHabitable, updateAnimal, type AnimalEnv, type AvoidPoint } from './animals';
 import { ColliderIndex, makeCollider, type Collider } from './colliders';
-import { canCraft, craft as craftRecipe, slotsFor, type CraftCheck } from './crafting';
+import { canCraft, craft as craftRecipe, recipeRequirementText, slotsFor, type CraftCheck } from './crafting';
 import { canteenCapacity, canteenRoom, emptyCanteen, fillCanteen, hasItems, inCanteen, nextServing, takeItems } from './canteen';
 import { togglePin, unpin, unpinsWhenMade } from './checklist';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction, type WearingTool, type WearResult } from './durability';
@@ -25,7 +26,7 @@ import { canRepair, repairCost, repairSeconds, type RepairCheck } from './repair
 import { addToStore, cloneStore, ensureStore } from './storage';
 import { applyDamage, applyFood, applySleep, createNeeds, restWhileWaiting, spendEnergy, updateNeeds, type Activity, type SleepClimate, type SleepResult } from './needs';
 import { checkPlacement, checkUpgradeRoom, colliderShape, footprintShape, type PlacementEnv, type PlacementReason } from './placement';
-import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, SKILL_INFO } from './skills';
+import { addSkillXp, burnChance, butcherBonusChance, createSkills, gatherBonusChance, gatherSuccessChance, meetsSkill, practiceXp, skillRequirementText, SKILL_INFO } from './skills';
 import { arrowSpeedMultiplier, canUpgradeTool, chopPower, landChance, skinChance, toolLevel, torchBurnMultiplier, torchWarmth, upgradeTool as applyToolUpgrade, weaponDamageMultiplier, type UpgradeCheck } from './upgrades';
 import { carcassStep, hidesOn } from './carcass';
 import { PNW_GENERATION, type PnwGeneration } from './pnw';
@@ -1109,17 +1110,26 @@ export class Simulation {
         const dyn = s.trees[t.index];
         if (dyn.felled) {
           const name = `Fallen ${def.name}`;
+          const lock = this.skillLock('gathering', TREE_LEVELS[g.species].fell);
+          if (s.activeTool === 'axe' && lock) return { name, action: lock, enabled: false };
           if (s.activeTool === 'axe') return { name, action: `Chop up (${dyn.logs} ${dyn.logs === 1 ? 'log' : 'logs'} left)`, enabled: true };
           return { name, action: s.tools.includes('axe') ? 'Equip axe [2] to chop up' : 'Needs an axe', enabled: false };
         }
-        if (s.activeTool === 'axe') return { name: def.name, action: 'Chop down', enabled: true };
+        if (s.activeTool === 'axe') {
+          const lock = this.skillLock('gathering', TREE_LEVELS[g.species].fell);
+          return { name: def.name, action: lock ?? 'Chop down', enabled: !lock };
+        }
         if (def.crown) {
+          const lock = this.skillLock('gathering', TREE_LEVELS[g.species].harvest);
+          if (lock) return { name: def.name, action: lock, enabled: false };
           if (dyn.bark <= 0) return { name: def.name, action: def.peelRegrowing ?? 'Nothing up there', enabled: false };
           const n = `${dyn.bark} coconut${dyn.bark === 1 ? '' : 's'} up top`;
           if (s.activeTool === 'bow') return { name: def.name, action: `${n}: aim at the crown and shoot`, enabled: true };
           return { name: def.name, action: s.tools.includes('bow') ? `${n}: equip the bow [${TOOLS.bow.slot}] to shoot them down` : `${n}: too high to reach, knock them down with a bow`, enabled: false };
         }
         if (def.bark > 0 && s.activeTool === 'hands') {
+          const lock = this.skillLock('gathering', TREE_LEVELS[g.species].harvest);
+          if (lock) return { name: def.name, action: lock, enabled: false };
           return dyn.bark > 0
             ? { name: def.name, action: def.peelVerb ?? 'Peel bark', enabled: true }
             : { name: def.name, action: def.peelRegrowing ?? 'Bark regrowing', enabled: false };
@@ -1132,7 +1142,8 @@ export class Simulation {
         const dyn = s.resources[t.index];
         if (g.snow && (!this.forageAvailable(t.index) || snowCovered(g, s))) return { name: def.name, action: 'Snow has melted', enabled: false };
         if (dyn.charges <= 0) return { name: def.name, action: 'Regrowing', enabled: false };
-        return { name: def.name, action: def.verb, enabled: true };
+        const lock = this.skillLock('gathering', RESOURCE_LEVELS[g.kind]);
+        return { name: def.name, action: lock ?? def.verb, enabled: !lock };
       }
       case 'drop': {
         const dr = s.drops.find((d) => d.id === t.id);
@@ -1143,6 +1154,8 @@ export class Simulation {
         if (!c) return null;
         const name = `${speciesName(c.species, this.biome)}${c.skinned ? ' · skinned' : ''}`;
         const step = carcassStep(c);
+        const lock = step === 'skin' ? this.skillLock('skinning', ANIMAL_LEVELS[c.species].skin) : this.skillLock('hunting', ANIMAL_LEVELS[c.species].hunt);
+        if (lock) return { name, action: lock, enabled: false };
         if (s.activeTool === 'knife') return { name, action: step === 'skin' ? 'Skin' : 'Butcher', enabled: true };
         return { name, action: s.tools.includes('knife') ? `Equip knife [${TOOLS.knife.slot}] to ${step}` : 'Needs a knife', enabled: false };
       }
@@ -1163,6 +1176,12 @@ export class Simulation {
         if (!a) return null;
         const name = speciesName(a.species, this.biome);
         if (s.activeTool === 'rod') return { name, action: '', enabled: false };
+        const lock = this.skillLock('hunting', ANIMAL_LEVELS[a.species].hunt);
+        if (lock) {
+          const defend = this.canDefend(a.species);
+          const reward = SPECIES[a.species].drops.length ? 'harvesting' : 'Hunting XP';
+          return { name, action: defend ? `Defend · ${skillRequirementText('hunting', ANIMAL_LEVELS[a.species].hunt)} for ${reward}` : lock, enabled: defend };
+        }
         const armed = s.activeTool !== 'hands' && s.activeTool !== 'bow';
         return { name, action: armed ? 'Attack' : s.activeTool === 'bow' ? 'Shoot' : 'Punch', enabled: true };
       }
@@ -1183,6 +1202,39 @@ export class Simulation {
         return { name, action: 'Drink', enabled: s.needs.thirst < 99.5 };
       }
     }
+  }
+
+  /** A skill lock is checked before any item, energy, wear or XP mutation. */
+  private skillLock(skill: SkillId, level: number): string | null {
+    return meetsSkill(this.state, skill, level) ? null : `Requires ${skillRequirementText(skill, level)}.`;
+  }
+
+  private denySkill(skill: SkillId, level: number): boolean {
+    const reason = this.skillLock(skill, level);
+    if (!reason) return false;
+    this.actionCooldown = BALANCE.gather.cooldown;
+    this.message(reason, 'warn');
+    return true;
+  }
+
+  /** One charge is one attempt, including misses. Limited charges prevent retrying until every find succeeds. */
+  private gatherAttempt(level: number): boolean {
+    spendEnergy(this.state.needs, BALANCE.needs.energy.gatherCost);
+    this.emit({ type: 'swing', tool: 'hands', hit: true });
+    const success = this.roll(gatherSuccessChance(this.state.skills.gathering));
+    this.gainXp('gathering', practiceXp(success ? BALANCE.skills.xp.gather : BALANCE.skills.xp.gatherFail, level));
+    if (!success) this.message('Nothing usable found.');
+    return success;
+  }
+
+  private canHunt(species: SpeciesId): boolean {
+    return meetsSkill(this.state, 'hunting', ANIMAL_LEVELS[species].hunt);
+  }
+
+  /** Dangerous wildlife can always be fought off; its harvest and full XP still require training. */
+  private canDefend(species: SpeciesId): boolean {
+    const def = SPECIES[species];
+    return def.kind !== 'prey' || !!def.strike || !!def.territory || !!def.drift;
   }
 
   // ------------------------------------------------------------------ actions
@@ -1312,6 +1364,10 @@ export class Simulation {
     return fishingPoolAt(this.terrain, x, z).length > 0;
   }
 
+  private unlockedFishingPool(x: number, z: number): readonly FishingCatch[] {
+    return fishingPoolAt(this.terrain, x, z).filter((fish) => meetsSkill(this.state, 'fishing', FISH_LEVELS[fish]));
+  }
+
   private updateFishing(dt: number): void {
     const f = this.fishing;
     if (!f || f.phase === 'charging') return;
@@ -1343,17 +1399,18 @@ export class Simulation {
       if (f.t < f.biteAt) return;
       f.phase = 'bite';
       f.t = 0;
-      f.catch = chooseFishingCatch(fishingPoolAt(this.terrain, f.x, f.z), this.rng) ?? undefined;
+      f.catch = chooseFishingCatch(this.unlockedFishingPool(f.x, f.z), this.rng) ?? undefined;
       this.emit({ type: 'fishBite', x: f.x, z: f.z });
     } else if (f.t > F.biteWindow) {
-      this.message('It got away. Click as soon as the float dips.');
+      this.gainXp('fishing', BALANCE.skills.xp.missedBite);
+      this.message('It got away. You gained a little Fishing XP; click as soon as the float dips.');
       this.endFishing('escaped');
     }
   }
 
   /** Strike a biting fish: the fishing skill decides whether it's landed or slips the hook. */
   private strike(f: FishingLine): void {
-    const pool = fishingPoolAt(this.terrain, f.x, f.z);
+    const pool = this.unlockedFishingPool(f.x, f.z);
     if (!this.fishableAt(f.x, f.z) || (f.catch && !pool.includes(f.catch))) {
       this.endFishing('reeled');
       return;
@@ -1370,11 +1427,11 @@ export class Simulation {
       const added = this.give(fish.item, 1, f.x, WATER_LEVEL + 0.2, f.z, 'fishing');
       if (added === 0) this.dropAt(fish.item, 1, s.player.x, s.player.z);
       this.message(added ? `You landed a ${fish.word}!` : `You landed a ${fish.word}! No room in your pack, so it is at your feet.`, 'good');
-      this.gainXp('fishing', xp.catch);
+      this.gainXp('fishing', practiceXp(xp.catch, FISH_LEVELS[caught]));
       this.endFishing('caught');
     } else {
       this.message(`The ${fish.word} slipped the hook. Your fishing is improving.`);
-      this.gainXp('fishing', xp.slip);
+      this.gainXp('fishing', practiceXp(xp.slip, FISH_LEVELS[caught]));
       this.endFishing('slipped');
     }
   }
@@ -1463,6 +1520,7 @@ export class Simulation {
     }
     const gy = this.terrain.heightAt(g.x, g.z);
     if (s.activeTool === 'axe') {
+      if (this.denySkill('gathering', TREE_LEVELS[g.species].fell)) return;
       this.actionCooldown = BALANCE.combat.axe.cooldown;
       spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
       dyn.hp = Math.max(0, round3(dyn.hp - chopPower(s)));
@@ -1480,16 +1538,18 @@ export class Simulation {
     if (def.bark > 0 && s.activeTool === 'hands') {
       this.actionCooldown = BALANCE.gather.cooldown;
       if (dyn.bark <= 0) return;
-      const added = this.give(def.peelItem ?? 'bark', 1, g.x, gy + 1.1, g.z, 'bark');
+      const level = TREE_LEVELS[g.species].harvest;
+      if (this.denySkill('gathering', level)) return;
+      const item = def.peelItem ?? 'bark';
+      if (roomFor(s.inventory, item) <= 0) { this.message('Your pack is full.', 'warn'); return; }
+      dyn.bark -= 1;
+      if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
+      this.worldVersion++;
+      if (!this.gatherAttempt(level)) return;
+      const added = this.give(item, 1, g.x, gy + 1.1, g.z, 'bark');
       if (added > 0) {
         const entry = forageForTree(g.species);
         if (entry) this.discoverForage(entry);
-        dyn.bark -= 1;
-        if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
-        spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
-        this.emit({ type: 'swing', tool: 'hands', hit: true });
-        this.gainXp('gathering', BALANCE.skills.xp.gather);
-        this.worldVersion++;
       }
       return;
     }
@@ -1516,7 +1576,7 @@ export class Simulation {
     dyn.cuts = 0;
     this.syncTrunkCollider(index);
     this.emit({ type: 'treeFell', tree: index, dirX: dx / d, dirZ: dz / d });
-    this.gainXp('gathering', BALANCE.skills.xp.fell);
+    this.gainXp('gathering', practiceXp(BALANCE.skills.xp.fell, TREE_LEVELS[g.species].fell));
     this.worldVersion++;
   }
 
@@ -1536,6 +1596,7 @@ export class Simulation {
       this.emit({ type: 'needTool', message: s.tools.includes('axe') ? 'Equip your Stone Axe [2] to cut up the trunk.' : 'You need an axe to cut up the trunk.' });
       return;
     }
+    if (this.denySkill('gathering', TREE_LEVELS[g.species].fell)) return;
     this.actionCooldown = BALANCE.combat.axe.cooldown;
     spendEnergy(s.needs, BALANCE.needs.energy.swingCost);
     const p = s.player;
@@ -1559,7 +1620,7 @@ export class Simulation {
         this.dropAt('stick', def.sticks - this.give('stick', def.sticks, span.x1, cy, span.z1, 'tree'), span.x1, span.z1);
         this.message(`The ${def.name.toLowerCase()} is all cut up.`, 'good');
       }
-      this.gainXp('gathering', BALANCE.skills.xp.log);
+      this.gainXp('gathering', practiceXp(BALANCE.skills.xp.log, TREE_LEVELS[g.species].fell));
       this.syncTrunkCollider(index);
       this.worldVersion++;
     }
@@ -1573,28 +1634,32 @@ export class Simulation {
     const dyn = s.resources[index];
     this.actionCooldown = BALANCE.gather.cooldown;
     if (dyn.charges <= 0 || !this.forageAvailable(index) || (g.snow && snowCovered(g, s))) return;
-    const gy = g.y ?? this.terrain.heightAt(g.x, g.z);
-    const added = this.give(def.item, def.yield, g.x, gy + def.hitHeight, g.z, g.kind);
-    if (added === 0) {
+    const level = RESOURCE_LEVELS[g.kind];
+    if (this.denySkill('gathering', level)) return;
+    if (roomFor(s.inventory, def.item) <= 0) {
+      s.stats.events.packFull = (s.stats.events.packFull ?? 0) + 1;
+      this.emit({ type: 'packFull', item: def.item });
       this.message('Your pack is full.', 'warn');
       return;
     }
+    const gy = g.y ?? this.terrain.heightAt(g.x, g.z);
+    const bonusChance = gatherBonusChance(s.skills.gathering);
     dyn.charges -= 1;
     if (dyn.charges <= 0) dyn.respawnAt = s.totalHours + def.respawnHours;
-    const plant = forageForResource(g.kind);
-    if (plant) this.discoverForage(plant);
-    if (added < def.yield) this.dropAt(def.item, def.yield - added, g.x + 0.4, g.z + 0.4);
-    else if (this.roll(gatherBonusChance(s.skills.gathering)) && roomFor(s.inventory, def.item) > 0) {
-      this.give(def.item, 1, g.x, gy + def.hitHeight, g.z, g.kind);
+    const success = this.gatherAttempt(level);
+    if (success) {
+      this.give(def.item, def.yield, g.x, gy + def.hitHeight, g.z, g.kind);
+      const plant = forageForResource(g.kind);
+      if (plant) this.discoverForage(plant);
+      if (this.roll(bonusChance) && roomFor(s.inventory, def.item) > 0) {
+        this.give(def.item, 1, g.x, gy + def.hitHeight, g.z, g.kind);
+      }
+      if (def.bonus && this.roll(def.bonus.chance)) {
+        const { item, count } = def.bonus;
+        const got = this.give(item, count, g.x, gy + def.hitHeight, g.z, g.kind);
+        if (got < count) this.dropAt(item, count - got, g.x + 0.4, g.z - 0.4);
+      }
     }
-    if (def.bonus && this.roll(def.bonus.chance)) {
-      const { item, count } = def.bonus;
-      const got = this.give(item, count, g.x, gy + def.hitHeight, g.z, g.kind);
-      if (got < count) this.dropAt(item, count - got, g.x + 0.4, g.z - 0.4);
-    }
-    spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
-    this.emit({ type: 'swing', tool: 'hands', hit: true });
-    this.gainXp('gathering', BALANCE.skills.xp.gather);
     if (g.kind === 'stonePile' && this.biome === 'desert' && !dyn.scorpion && this.roll(BALANCE.scorpion.chance)) {
       dyn.scorpion = true;
       this.uncoverScorpion(index, g.x, g.z);
@@ -1755,6 +1820,8 @@ export class Simulation {
       this.emit({ type: 'needTool', message: owned ? `Equip your Stone Knife [${TOOLS.knife.slot}] to skin and butcher.` : 'Needs a knife. Craft a Stone Knife (Crafting > Tools) to skin and butcher your kill.' });
       return;
     }
+    const step = carcassStep(c);
+    if (step === 'skin' ? this.denySkill('skinning', ANIMAL_LEVELS[c.species].skin) : this.denySkill('hunting', ANIMAL_LEVELS[c.species].hunt)) return;
     this.actionCooldown = BALANCE.gather.cooldown;
     spendEnergy(s.needs, BALANCE.needs.energy.gatherCost);
     this.emit({ type: 'swing', tool: 'knife', hit: true });
@@ -1781,7 +1848,7 @@ export class Simulation {
     }
     s.stats.events.skinned = (s.stats.events.skinned ?? 0) + 1;
     if (whole) s.stats.events.hidesWhole = (s.stats.events.hidesWhole ?? 0) + 1;
-    this.gainXp('skinning', whole ? xp.skin : xp.skinFail);
+    this.gainXp('skinning', practiceXp(whole ? xp.skin : xp.skinFail, ANIMAL_LEVELS[c.species].skin));
     this.emit({ type: 'skinned', id: c.id, species: c.species, hides: whole ? hides : 0, x: c.x, y: c.y, z: c.z });
     if (!whole) this.message(`The hide tore. The ${name} is skinned, but there's no hide to keep. Cut again to butcher it.`, 'warn');
     else if (got < hides) this.message(`You skinned the ${name}. No room in your pack, so the hide is on the ground.`, 'good');
@@ -1802,7 +1869,7 @@ export class Simulation {
     }
     s.carcasses.splice(i, 1);
     s.stats.events.butchered = (s.stats.events.butchered ?? 0) + 1;
-    this.gainXp('hunting', BALANCE.skills.xp.butcher);
+    this.gainXp('hunting', practiceXp(BALANCE.skills.xp.butcher, ANIMAL_LEVELS[c.species].hunt));
     this.emit({ type: 'butchered', id: c.id, species: c.species, x: c.x, y: c.y, z: c.z });
     if (spilled) this.message('Your pack is full, so the rest of the meat is on the ground.', 'warn');
   }
@@ -1920,6 +1987,7 @@ export class Simulation {
     const s = this.state;
     const a = s.animals.find((x) => x.id === id);
     if (!a) return;
+    if (!this.canHunt(a.species) && !this.canDefend(a.species)) { this.denySkill('hunting', ANIMAL_LEVELS[a.species].hunt); return; }
     const c = BALANCE.combat;
     const stats = s.activeTool === 'axe' ? c.axe : s.activeTool === 'spear' ? c.spear : s.activeTool === 'torch' ? c.torch : s.activeTool === 'knife' ? c.knife : c.hand;
     this.actionCooldown = stats.cooldown;
@@ -1937,19 +2005,21 @@ export class Simulation {
   /** The player's hit on an animal with `tool`: the hunting skill and the weapon's upgrades add damage. */
   hitAnimal(a: AnimalState, damage: number, tool: ToolId = this.state.activeTool): void {
     if (animalHidden(a)) return;
+    const trained = this.canHunt(a.species);
+    if (!trained && !this.canDefend(a.species)) { this.denySkill('hunting', ANIMAL_LEVELS[a.species].hunt); return; }
     const dmg = damage * weaponDamageMultiplier(this.state, tool);
     if (this.authority === 'guest') {
       // The host owns the animals: it applies the hit and reports any kill back.
       a.hurt = 0.35;
       this.netOut.push({ k: 'hit', id: a.id, dmg, t: TOOL_ORDER.indexOf(tool) });
       this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + SPECIES[a.species].hitHeight, z: a.z, killed: false });
-      this.gainXp('hunting', BALANCE.skills.xp.hit);
+      if (trained) this.gainXp('hunting', practiceXp(BALANCE.skills.xp.hit, ANIMAL_LEVELS[a.species].hunt));
       return;
     }
     const killed = damageAnimal(a, dmg, this.animalEnv);
     const def = SPECIES[a.species];
     this.emit({ type: 'animalHit', id: a.id, species: a.species, x: a.x, y: a.y + def.hitHeight, z: a.z, killed });
-    this.gainXp('hunting', BALANCE.skills.xp.hit);
+    if (trained) this.gainXp('hunting', practiceXp(BALANCE.skills.xp.hit, ANIMAL_LEVELS[a.species].hunt));
     if (killed) this.killAnimal(a, null, tool);
   }
 
@@ -1969,7 +2039,7 @@ export class Simulation {
     if (i >= 0) s.animals.splice(i, 1);
     if (by === null) {
       this.recordKill(a.species, tool);
-      this.gainXp('hunting', BALANCE.skills.xp.kill);
+      if (this.canHunt(a.species)) this.gainXp('hunting', practiceXp(BALANCE.skills.xp.kill, ANIMAL_LEVELS[a.species].hunt));
     } else {
       this.remoteKills.push({ pid: by, species: a.species, tool });
     }
@@ -2107,6 +2177,8 @@ export class Simulation {
       const cp = crownPosition(g, this.terrain.heightAt(g.x, g.z))!;
       const t = raySphere(pr.x, pr.y, pr.z, dx, dy, dz, cp.x, cp.y, cp.z, cp.r);
       if (t < 0 || t > len) continue;
+      if (this.denySkill('gathering', TREE_LEVELS[g.species].harvest)) return true;
+      this.gainXp('gathering', practiceXp(BALANCE.skills.xp.gather, TREE_LEVELS[g.species].harvest));
       dyn.bark -= 1;
       if (dyn.bark <= 0) dyn.barkAt = s.totalHours + def.barkRespawnHours;
       // It lands on the sand between the trunk and the crown, never in the water.
@@ -2339,7 +2411,9 @@ export class Simulation {
       this.checkOff(recipeId);
       if (out.kind === 'tool') this.selectTool(out.tool);
       if (item) this.emit({ type: 'gathered', item, count, x: s.player.x, y: s.player.y + 1.2, z: s.player.z, source: 'craft' });
-      this.gainXp(cooking ? 'cooking' : 'crafting', cooking ? BALANCE.skills.xp.cook : BALANCE.skills.xp.craft);
+      const xp = cooking ? item === 'charredMeal' ? BALANCE.skills.xp.cookFail : BALANCE.skills.xp.cook
+        : out.kind === 'item' ? BALANCE.skills.xp.craft : BALANCE.skills.xp.equipment;
+      this.gainXp(cooking ? 'cooking' : 'crafting', practiceXp(xp, recipe.requiredLevel));
       this.progress();
     }
     return res;
@@ -2456,6 +2530,12 @@ export class Simulation {
     const pl = this.placement;
     if (!pl) return false;
     const recipe = RECIPE_BY_ID[pl.recipeId];
+    const check = this.canCraft(pl.recipeId);
+    if (!check.ok) {
+      this.message(check.reason === 'skill' ? `Requires ${recipeRequirementText(recipe)}.` : 'Cannot build this yet.', 'warn');
+      this.placement = null;
+      return false;
+    }
     const res = checkPlacement(this.placementEnv(), pl.prefab, pl.x, pl.z, pl.rot);
     if (!res.valid) {
       this.emit({ type: 'placeFailed', reason: res.reason! });
@@ -2481,7 +2561,7 @@ export class Simulation {
     this.worldVersion++;
     this.emit({ type: 'placed', structure: st.id, prefab: st.prefab });
     this.checkOff(recipe.id);
-    this.gainXp('crafting', BALANCE.skills.xp.build);
+    this.gainXp('crafting', practiceXp(BALANCE.skills.xp.build, STRUCTURE_LEVELS[st.prefab]));
     this.progress();
     return true;
   }
@@ -2801,7 +2881,7 @@ export class Simulation {
     s.stats.events.toolUpgrades = (s.stats.events.toolUpgrades ?? 0) + 1;
     this.emit({ type: 'upgraded', tool, level });
     this.message(`${TOOLS[tool].name} upgraded to ${LEVEL_NUMERALS[level]}: ${TOOL_UPGRADES[tool][level - 1].name}.`, 'good');
-    this.gainXp('crafting', BALANCE.skills.xp.craft);
+    this.gainXp('crafting', practiceXp(BALANCE.skills.xp.equipment, TOOL_UPGRADES[tool][level - 1].requiredLevel));
     this.progress();
     return res;
   }
@@ -2814,6 +2894,7 @@ export class Simulation {
     if (!tierLine(st.prefab)) return fail('fixed');
     const next = nextTier(st.prefab);
     if (!next) return fail('maxed');
+    if (!meetsSkill(this.state, 'crafting', STRUCTURE_LEVELS[next])) return fail('skill');
     if (!hasAll(this.state.inventory, tierCost(next)!)) return fail('missing');
     if (checkUpgradeRoom(this.placementEnv(), next, st.x, st.z, st.rot, st.id)) return fail('blocked');
     return { ok: true, reason: null };
@@ -2847,7 +2928,7 @@ export class Simulation {
     else s.stats.events.storageUpgrades = (s.stats.events.storageUpgrades ?? 0) + 1;
     spendEnergy(s.needs, BALANCE.needs.energy.buildCost);
     this.emit({ type: 'upgraded', structure: st.id, from, prefab: next });
-    this.gainXp('crafting', BALANCE.skills.xp.build);
+    this.gainXp('crafting', practiceXp(BALANCE.skills.xp.build, STRUCTURE_LEVELS[st.prefab]));
     this.progress();
     return check;
   }
@@ -2972,7 +3053,7 @@ export class Simulation {
   creditKill(species: SpeciesId, tool: ToolId | null = null): void {
     const s = this.state;
     this.recordKill(species, tool);
-    this.gainXp('hunting', BALANCE.skills.xp.kill);
+    if (this.canHunt(species)) this.gainXp('hunting', practiceXp(BALANCE.skills.xp.kill, ANIMAL_LEVELS[species].hunt));
     const def = SPECIES[species];
     if (def.habitat === 'water' && def.drops.length > 0 && this.give('rawFish', 1, s.player.x, s.player.y + 1, s.player.z, 'carcass') > 0) {
       this.message(`Caught a ${species === 'fish' ? fishWord(this.terrain, s.player.x, s.player.z) : speciesName(species, this.biome).toLowerCase()}!`, 'good');

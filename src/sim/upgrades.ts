@@ -4,12 +4,12 @@ import type { ToolId } from '../data/items';
 import { isUpgradable, MAX_TOOL_LEVEL, TOOL_UPGRADES, type ToolUpgrade } from '../data/upgrades';
 import { newToolWear, toolWears } from './durability';
 import { hasAll, removeAll } from './inventory';
-import { catchBonus, chopPowerBonus, huntDamageBonus, skinBonus } from './skills';
+import { catchBonus, chopPowerBonus, huntDamageBonus, skinBonus, meetsSkill } from './skills';
 import type { GameState } from './state';
 
 const U = BALANCE.upgrades;
 
-export type UpgradeFailure = 'notOwned' | 'fixed' | 'maxed' | 'missing' | 'gone' | 'blocked';
+export type UpgradeFailure = 'notOwned' | 'fixed' | 'maxed' | 'missing' | 'gone' | 'blocked' | 'skill';
 
 export interface UpgradeCheck {
   ok: boolean;
@@ -23,6 +23,7 @@ export const UPGRADE_FAILURE_TEXT: Record<UpgradeFailure, string> = {
   missing: 'Missing materials.',
   gone: 'That shelter is gone.',
   blocked: 'Not enough room around it to build bigger.',
+  skill: 'Your Crafting level is too low.',
 };
 
 export function toolLevel(s: GameState, tool: ToolId): number {
@@ -47,6 +48,7 @@ export function canUpgradeTool(s: GameState, tool: ToolId): UpgradeCheck {
   if (!s.tools.includes(tool)) return fail('notOwned');
   const up = nextToolUpgrade(s, tool);
   if (!up) return fail('maxed');
+  if (!meetsSkill(s, 'crafting', up.requiredLevel)) return fail('skill');
   if (!hasAll(s.inventory, up.inputs)) return fail('missing');
   return { ok: true, reason: null };
 }

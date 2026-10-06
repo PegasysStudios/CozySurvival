@@ -1,3 +1,4 @@
+import { trainSkill, drain, give, giveRecipe, keepAlive, placeStructure, quietSim, run } from './helpers';
 import { existsSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
@@ -11,7 +12,6 @@ import { countItem } from '../src/sim/inventory';
 import { repairCost, repairSeconds } from '../src/sim/repair';
 import { skinChance, toolLevel, weaponDamageMultiplier } from '../src/sim/upgrades';
 import { toolIcon } from '../src/ui/icons';
-import { drain, give, giveRecipe, keepAlive, placeStructure, quietSim, run } from './helpers';
 
 const C = BALANCE.combat;
 const asGive = (inputs: { item: string; count: number }[]) => Object.fromEntries(inputs.map((i) => [i.item, i.count]));
@@ -84,6 +84,7 @@ describe('knife upgrades (round 10)', () => {
     sim.state.gear.push('basket');
     while (sim.state.inventory.slots.length < BALANCE.carry.baseSlots + BALANCE.carry.basketSlots) sim.state.inventory.slots.push(null);
     for (let lv = 0; lv < MAX_TOOL_LEVEL; lv++) {
+      trainSkill(sim, 'crafting', TOOL_UPGRADES.knife[lv].requiredLevel);
       sim.state.inventory.slots.fill(null);
       expect(sim.upgradeTool('knife')).toEqual({ ok: false, reason: 'missing' });
       give(sim, asGive(TOOL_UPGRADES.knife[lv].inputs));

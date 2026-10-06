@@ -39,28 +39,28 @@ export interface ResourceDef {
  * Ferns grow on 48% of their scatter spots (1.2x the earlier 40%), since fiber feeds cordage and most recipes.
  * Desert plants mirror the PNW roles: yucca is the fiber plant, prickly pear the berry bush, cholla buds the
  * cook-me-first mushroom; agave hearts are big meals that take days to regrow, and cutting one sometimes frees a
- * little leaf fiber (a 30% chance of 1, against the yucca's sure 2 per harvest).
+ * little leaf fiber (a 30% chance of 1, against a yucca's one fiber on a successful attempt).
  */
 export const RESOURCES: Record<ResourceKind, ResourceDef> = {
   snowClump: { kind: 'snowClump', name: 'Snow Clump', verb: 'Gather snow', item: 'snowClump', yield: 1, charges: 3, respawnHours: 24, hitRadius: 0.75, hitHeight: 0.18, blockRadius: 0, starter: 0, scatter: 0 },
   stickPile: { kind: 'stickPile', name: 'Fallen Branches', verb: 'Gather sticks', item: 'stick', yield: 1, charges: 3, respawnHours: 12, hitRadius: 0.6, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
   stonePile: { kind: 'stonePile', name: 'Loose Stones', verb: 'Pick up stones', item: 'stone', yield: 1, charges: 3, respawnHours: 30, hitRadius: 0.55, hitHeight: 0.15, blockRadius: 0.5, starter: 2, scatter: 0.4 },
-  berryBush: { kind: 'berryBush', name: 'Salmonberry Bush', verb: 'Pick berries', item: 'berries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.6, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
-  fern: { kind: 'fern', name: 'Sword Fern', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.35, blockRadius: 0.55, persistent: true, starter: 2, scatter: 0.48 },
+  berryBush: { kind: 'berryBush', name: 'Salmonberry Bush', verb: 'Pick berries', item: 'berries', yield: 1, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.6, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
+  fern: { kind: 'fern', name: 'Sword Fern', verb: 'Strip fiber', item: 'fiber', yield: 1, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.35, blockRadius: 0.55, persistent: true, starter: 2, scatter: 0.48 },
   mushroom: { kind: 'mushroom', name: 'Chanterelles', verb: 'Pick mushrooms', item: 'mushroom', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.1, blockRadius: 0.35, starter: 1, scatter: 0.5 },
   onion: { kind: 'onion', name: 'Nodding Onion', verb: 'Pull onions', item: 'onion', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.15, blockRadius: 0.35, starter: 1, scatter: 0.5 },
-  yucca: { kind: 'yucca', name: 'Banana Yucca', verb: 'Strip fiber', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.4, blockRadius: 0.6, persistent: true, spines: { radius: 0.3, damage: 2, ripeOnly: true }, starter: 2, scatter: 0.5 },
-  pricklyPear: { kind: 'pricklyPear', name: 'Prickly Pear', verb: 'Pick fruit', item: 'pricklyPear', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.75, persistent: true, spines: { radius: 0.45, damage: 3 }, starter: 2, scatter: 0.5 },
+  yucca: { kind: 'yucca', name: 'Banana Yucca', verb: 'Strip fiber', item: 'fiber', yield: 1, charges: 2, respawnHours: 16, hitRadius: 0.7, hitHeight: 0.4, blockRadius: 0.6, persistent: true, spines: { radius: 0.3, damage: 2, ripeOnly: true }, starter: 2, scatter: 0.5 },
+  pricklyPear: { kind: 'pricklyPear', name: 'Prickly Pear', verb: 'Pick fruit', item: 'pricklyPear', yield: 1, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.75, persistent: true, spines: { radius: 0.45, damage: 3 }, starter: 2, scatter: 0.5 },
   cholla: { kind: 'cholla', name: 'Buckhorn Cholla', verb: 'Pick buds', item: 'chollaBuds', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.6, hitHeight: 0.8, blockRadius: 0.6, persistent: true, spines: { radius: 0.4, damage: 5 }, starter: 1, scatter: 0.45 },
   agave: { kind: 'agave', name: "Parry's Agave", verb: 'Cut the heart', item: 'agaveHeart', yield: 1, charges: 1, respawnHours: 72, hitRadius: 0.75, hitHeight: 0.35, blockRadius: 0.7, spines: { radius: 0.4, damage: 3 }, bonus: { item: 'fiber', chance: 0.3, count: 1 }, starter: 0, scatter: 0.4 },
   chia: { kind: 'chia', name: 'Desert Chia', verb: 'Shake seeds', item: 'chiaSeeds', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.45, hitHeight: 0.18, blockRadius: 0.35, starter: 0, scatter: 0.5 },
-  wolfberry: { kind: 'wolfberry', name: 'Wolfberry', verb: 'Pick berries', item: 'wolfberries', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.7, persistent: true, starter: 1, scatter: 0.5 },
+  wolfberry: { kind: 'wolfberry', name: 'Wolfberry', verb: 'Pick berries', item: 'wolfberries', yield: 1, charges: 3, respawnHours: 20, hitRadius: 0.8, hitHeight: 0.55, blockRadius: 0.7, persistent: true, starter: 1, scatter: 0.5 },
   // Island plants take the same roles: sea grape is the berry bush, pandanus the fiber plant, taro the cook-me-first
   // root, purslane the small herb, and bananas a big, slow-to-return bunch. Fallen coconuts lie under the palms.
-  seaGrape: { kind: 'seaGrape', name: 'Sea Grape', verb: 'Pick sea grapes', item: 'seaGrapes', yield: 2, charges: 3, respawnHours: 20, hitRadius: 0.85, hitHeight: 0.65, blockRadius: 0.75, persistent: true, starter: 2, scatter: 0.5 },
-  pandanus: { kind: 'pandanus', name: 'Pandanus', verb: 'Strip leaves', item: 'fiber', yield: 2, charges: 2, respawnHours: 16, hitRadius: 0.8, hitHeight: 0.9, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
+  seaGrape: { kind: 'seaGrape', name: 'Sea Grape', verb: 'Pick sea grapes', item: 'seaGrapes', yield: 1, charges: 3, respawnHours: 20, hitRadius: 0.85, hitHeight: 0.65, blockRadius: 0.75, persistent: true, starter: 2, scatter: 0.5 },
+  pandanus: { kind: 'pandanus', name: 'Pandanus', verb: 'Strip leaves', item: 'fiber', yield: 1, charges: 2, respawnHours: 16, hitRadius: 0.8, hitHeight: 0.9, blockRadius: 0.7, persistent: true, starter: 2, scatter: 0.5 },
   taro: { kind: 'taro', name: 'Wild Taro', verb: 'Pull taro', item: 'taro', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.6, hitHeight: 0.45, blockRadius: 0.5, starter: 1, scatter: 0.5 },
-  banana: { kind: 'banana', name: 'Wild Banana', verb: 'Cut bananas', item: 'banana', yield: 2, charges: 2, respawnHours: 36, hitRadius: 0.85, hitHeight: 1.4, blockRadius: 0.6, persistent: true, starter: 0, scatter: 0.45 },
+  banana: { kind: 'banana', name: 'Wild Banana', verb: 'Cut bananas', item: 'banana', yield: 1, charges: 2, respawnHours: 36, hitRadius: 0.85, hitHeight: 1.4, blockRadius: 0.6, persistent: true, starter: 0, scatter: 0.45 },
   purslane: { kind: 'purslane', name: 'Beach Purslane', verb: 'Pick purslane', item: 'purslane', yield: 1, charges: 2, respawnHours: 24, hitRadius: 0.55, hitHeight: 0.16, blockRadius: 0.4, starter: 3, scatter: 0.8 },
   coconut: { kind: 'coconut', name: 'Fallen Coconut', verb: 'Pick up the coconut', item: 'coconut', yield: 1, charges: 1, respawnHours: 36, hitRadius: 0.42, hitHeight: 0.16, blockRadius: 0.3, starter: 1, scatter: 0.35 },
 };

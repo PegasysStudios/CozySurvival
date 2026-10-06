@@ -1,5 +1,6 @@
 import { haveItem } from '../sim/canteen';
 import { countItem } from '../sim/inventory';
+import { skillLevel, skillRequirementText } from '../sim/skills';
 import { dayOf } from '../sim/time';
 import { BALANCE } from './balance';
 import type { BiomeId } from './biomes';
@@ -62,7 +63,12 @@ const goal = (label: string, icon: IconId, have: number, need = 1): ObjectiveNee
 export function recipeNeeds(s: GameState, recipes: readonly string[]): ObjectiveNeed[] {
   const total = new Map<ItemId, number>();
   for (const id of recipes) for (const i of RECIPE_BY_ID[id].inputs) total.set(i.item, (total.get(i.item) ?? 0) + i.count);
-  return [...total].map(([item, n]) => goal(itemName(item, n), item, haveItem(s, item), n));
+  const rows = [...total].map(([item, n]) => goal(itemName(item, n), item, haveItem(s, item), n));
+  for (const skill of ['crafting', 'cooking'] as const) {
+    const level = Math.max(1, ...recipes.map((id) => RECIPE_BY_ID[id]).filter((r) => (r.category === 'cooking' ? 'cooking' : 'crafting') === skill).map((r) => r.requiredLevel));
+    if (level > 1) rows.push(goal(skillRequirementText(skill, level), skill === 'cooking' ? 'cookedMeat' : 'cordage', skillLevel(s.skills[skill]), level));
+  }
+  return rows;
 }
 
 /** The step's recipes that haven't been made yet. */
@@ -143,9 +149,9 @@ export const OBJECTIVES: Objective[] = [
   },
   {
     id: 'night', title: 'Survive the night',
-    hint: 'Night is coming. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. The rest of your crafting unlocks tomorrow.',
-    desert: { hint: 'Desert nights turn cold fast. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. The rest of your crafting unlocks tomorrow.' },
-    island: { hint: 'The night is warm, but the heat makes you thirsty. Keep the fire fed, eat and drink, then sleep in a lean-to or by the fire. The rest of your crafting unlocks tomorrow.' },
+    hint: 'Night is coming. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. More crafting opens tomorrow as your skills grow.',
+    desert: { hint: 'Desert nights turn cold fast. Keep the fire fed, eat, drink and stay warm, then sleep in a lean-to or wait it out by the fire. More crafting opens tomorrow as your skills grow.' },
+    island: { hint: 'The night is warm, but the heat makes you thirsty. Keep the fire fed, eat and drink, then sleep in a lean-to or by the fire. More crafting opens tomorrow as your skills grow.' },
     unlocks: ['cordage', 'leanTo', 'torch'],
     start: (s) => {
       if (nightFrom(s) <= 0) s.stats.events[NIGHT_FROM] = dayOf(s.totalHours);
@@ -184,9 +190,9 @@ export const OBJECTIVES: Objective[] = [
   },
   {
     id: 'bow', title: 'Craft a bow and arrows, then hunt with the bow',
-    hint: 'Hold left-click to draw and release to shoot. Deer spook from far away, so a bow is the way to reach them.',
-    desert: { hint: 'Hold left-click to draw and release to shoot. Javelina and roadrunners bolt early, so a bow is the way to reach them.' },
-    island: { hint: 'Hold left-click to draw and release to shoot. Feral goats spook from far off on the grassland, so a bow is the way to reach them. Shoot at a palm\'s crown to knock down a coconut.' },
+    hint: 'Hold left-click to draw and release to shoot. Deer spook from far away; Hunting and Skinning Lv 5 are needed to harvest them. Practice on hares or squirrels first.',
+    desert: { hint: 'Hold left-click to draw and release to shoot. Practice on jackrabbits and quail first. Javelina need Hunting and Skinning Lv 5 to harvest.' },
+    island: { hint: 'Hold left-click to draw and release to shoot. Goats are your first hide source. Boars need Hunting and Skinning Lv 8 to harvest. Shoot at a palm\'s crown to knock down a coconut.' },
     unlocks: ['bow', 'arrows', 'cookedMeat'],
     done: (s) => made(s, 'bow') >= 1 && made(s, 'arrows') >= 1 && ev(s, killKey('bow')) >= 1,
     needs: (s) => [

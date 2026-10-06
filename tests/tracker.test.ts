@@ -78,7 +78,7 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
 
   it('8. fishing pole ingredients, the pole, a fish and a cooked fish', () => {
     const s = state({ stick: 12, cordage: 2 });
-    expect(rows('fish', s)).toEqual(['Sticks 10/10', 'Stones 0/5', 'Cordage 2/5', 'Fishing Pole crafted 0/1', 'Fish caught 0/1', 'Fish cooked 0/1']);
+    expect(rows('fish', s)).toEqual(['Sticks 10/10', 'Stones 0/5', 'Cordage 2/5', 'Crafting Lv 2 1/2', 'Fishing Pole crafted 0/1', 'Fish caught 0/1', 'Fish cooked 0/1']);
     s.stats.crafted.rod = 1;
     s.stats.gathered.rawFish = 1;
     s.stats.crafted.smokedTrout = 1;
@@ -87,7 +87,7 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
 
   it('9. spear ingredients, the spear, then a hare killed with it', () => {
     const s = state({ stone: 5 });
-    expect(rows('spear', s)).toEqual(['Sticks 0/15', 'Stones 5/5', 'Cordage 0/5', 'Spear crafted 0/1', 'Hare hunted with the spear 0/1']);
+    expect(rows('spear', s)).toEqual(['Sticks 0/15', 'Stones 5/5', 'Cordage 0/5', 'Crafting Lv 3 1/3', 'Spear crafted 0/1', 'Hare hunted with the spear 0/1']);
     s.stats.crafted.spear = 1;
     s.stats.events[killKey('spear', 'deer')] = 1;
     expect(rows('spear', s)).toEqual(['Spear crafted 1/1', 'Hare hunted with the spear 0/1']);
@@ -97,9 +97,9 @@ describe('quest tracker rows for each onboarding step (round 6)', () => {
 
   it('10. bow and arrow ingredients summed, then only what is still to make', () => {
     const s = state({ stick: 16, cordage: 10 });
-    expect(rows('bow', s)).toEqual(['Sticks 16/17', 'Cordage 10/10', 'Stone 0/1', 'Plant Fiber 0/1', 'Bow crafted 0/1', 'Arrows made 0/1', 'Kill with the bow 0/1']);
+    expect(rows('bow', s)).toEqual(['Sticks 16/17', 'Cordage 10/10', 'Stone 0/1', 'Plant Fiber 0/1', 'Crafting Lv 5 1/5', 'Bow crafted 0/1', 'Arrows made 0/1', 'Kill with the bow 0/1']);
     s.stats.crafted.bow = 1;
-    expect(rows('bow', s)).toEqual(['Sticks 2/2', 'Stone 0/1', 'Plant Fiber 0/1', 'Bow crafted 1/1', 'Arrows made 0/1', 'Kill with the bow 0/1']);
+    expect(rows('bow', s)).toEqual(['Sticks 2/2', 'Stone 0/1', 'Plant Fiber 0/1', 'Crafting Lv 2 1/2', 'Bow crafted 1/1', 'Arrows made 0/1', 'Kill with the bow 0/1']);
     s.stats.crafted.arrows = 1;
     s.stats.events[killKey('bow')] = 1;
     expect(rows('bow', s)).toEqual(['Bow crafted 1/1', 'Arrows made 1/1', 'Kill with the bow 1/1']);

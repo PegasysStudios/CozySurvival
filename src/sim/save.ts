@@ -14,7 +14,7 @@ import { newStructureWear, prefabWears, toolWears } from './durability';
 import { addItem } from './inventory';
 import { seatHeight } from './placement';
 import { parseStore } from './storage';
-import { createSkills, SKILL_IDS } from './skills';
+import { createSkills, migrateSkillXp, SKILL_IDS, xpForLevel, MAX_SKILL_LEVEL } from './skills';
 import { STATE_VERSION, type CarcassState, type GameState, type RepairState, type ResourceDyn, type StructureState, type TreeDyn, type Wear } from './state';
 import { freshTree } from './trunks';
 import { getTerrain } from './terrain';
@@ -82,6 +82,7 @@ function parseWear(v: unknown): Wear | null {
  * Version 5 saves (before round 10) come forward too: their onboarding position moves past the new "Survive the
  * night" step (a finished track lands on the new knife step), a save already past day 1 counts its night as survived,
  * and carcasses whose hide was already taken count as skinned.
+ * Versions 1..6 retain their earned skill levels/progress on the slower level-50 curve.
  */
 export function deserializeState(json: string | null): GameState | null {
   if (!json) return null;
@@ -93,7 +94,7 @@ export function deserializeState(json: string | null): GameState | null {
   }
   if (!isObj(raw) || raw.format !== SAVE_FORMAT) return null;
   const version = raw.version;
-  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== STATE_VERSION) return null;
+  if (version !== 1 && version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== STATE_VERSION) return null;
   if (typeof raw.seed !== 'number' || typeof raw.totalHours !== 'number') return null;
   for (const k of REQUIRED_OBJECTS) if (!isObj(raw[k])) return null;
   for (const k of REQUIRED_ARRAYS) if (!Array.isArray(raw[k])) return null;
@@ -137,7 +138,10 @@ export function deserializeState(json: string | null): GameState | null {
     resources[i] = scorpion === 1 && gen.resources[i].kind === 'stonePile' ? { charges, respawnAt, scorpion: true } : { charges, respawnAt };
   }
   const skills = createSkills();
-  if (isObj(raw.skills)) for (const id of SKILL_IDS) skills[id] = Math.max(0, num(raw.skills[id], 0));
+  if (isObj(raw.skills)) for (const id of SKILL_IDS) {
+    const xp = Math.max(0, num(raw.skills[id], 0));
+    skills[id] = Math.min(xpForLevel(MAX_SKILL_LEVEL), version < 7 ? migrateSkillXp(xp) : xp);
+  }
   const toolWear: GameState['toolWear'] = {};
   if (isObj(raw.toolWear)) {
     for (const [tool, w] of Object.entries(raw.toolWear)) {

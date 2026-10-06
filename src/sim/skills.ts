@@ -32,7 +32,23 @@ export function skillProgress(xp: number): number {
   if (level >= MAX_SKILL_LEVEL) return 1;
   const lo = level === 1 ? 0 : K.thresholds[level - 2];
   const hi = K.thresholds[level - 1];
-  return (xp - lo) / (hi - lo);
+  return Math.max(0, Math.min(1, (xp - lo) / (hi - lo)));
+}
+
+export const xpForLevel = (level: number): number => level <= 1 ? 0 : K.thresholds[Math.min(MAX_SKILL_LEVEL, Math.floor(level)) - 2];
+export const skillRequirementText = (id: SkillId, level: number): string => `${SKILL_INFO[id].name} Lv ${level}`;
+export const meetsSkill = (s: GameState, id: SkillId, level: number): boolean => skillLevel(s.skills[id]) >= level;
+/** Harder unlocked work teaches more, without rewarding locked actions or empty clicks. */
+export const practiceXp = (base: number, requiredLevel: number): number => base * (1 + Math.floor(requiredLevel / 5));
+
+/** Preserve levels and fractional progress from the previous level-10 curve, once on load. */
+export function migrateSkillXp(xp: number): number {
+  const old = [0, 10, 25, 45, 70, 100, 140, 190, 250, 320];
+  let i = 0;
+  while (i < old.length - 1 && xp >= old[i + 1]) i++;
+  const lo = xpForLevel(i + 1);
+  if (i === old.length - 1) return lo;
+  return lo + (xp - old[i]) / (old[i + 1] - old[i]) * (xpForLevel(i + 2) - lo);
 }
 
 /** 0 at level 1, 1 at max level. */
@@ -43,6 +59,7 @@ export function skillFactor(xp: number): number {
 const curve = (range: readonly number[], xp: number) => lerp(range[0], range[1], skillFactor(xp));
 
 export const gatherBonusChance = (xp: number) => curve(K.gatherBonusChance, xp);
+export const gatherSuccessChance = (xp: number) => curve(K.gatherSuccessChance, xp);
 /** Added to the axe's chop power (base 1), alongside the axe upgrade bonus. */
 export const chopPowerBonus = (xp: number) => curve(K.chopPowerBonus, xp);
 /** Added to weapon damage (base ×1), alongside the spear or bow upgrade bonus. */
@@ -65,7 +82,7 @@ export function skillEffect(id: SkillId, xp: number): string {
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   switch (id) {
     case 'gathering':
-      return `${pct(gatherBonusChance(xp))} chance of a bonus find · +${pct(chopPowerBonus(xp))} chop power`;
+      return `${pct(gatherSuccessChance(xp))} gather success · ${pct(gatherBonusChance(xp))} chance of a bonus find · +${pct(chopPowerBonus(xp))} chop power`;
     case 'hunting':
       return `+${pct(huntDamageBonus(xp))} weapon damage · ${pct(butcherBonusChance(xp))} chance of extra meat`;
     case 'cooking':
@@ -81,8 +98,9 @@ export function skillEffect(id: SkillId, xp: number): string {
 
 /** Adds XP and returns the new level if it went up, otherwise null. */
 export function addSkillXp(state: GameState, id: SkillId, amount: number): number | null {
+  if (!Number.isFinite(amount) || amount <= 0) return null;
   const before = skillLevel(state.skills[id]);
-  state.skills[id] += amount;
+  state.skills[id] = Math.min(xpForLevel(MAX_SKILL_LEVEL), Math.round((state.skills[id] + amount) * 1000) / 1000);
   const after = skillLevel(state.skills[id]);
   return after > before ? after : null;
 }

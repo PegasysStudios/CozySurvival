@@ -1,3 +1,4 @@
+import { trainSkill, gatherOutcome, aimAt, input, placeStructure, quietSim, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { ITEMS } from '../src/data/items';
 import { RESOURCES } from '../src/data/resources';
@@ -7,10 +8,10 @@ import { deserializeState, serializeState } from '../src/sim/save';
 import { snowAmount, snowScale, snowSurface } from '../src/sim/snow';
 import { Simulation } from '../src/sim/simulation';
 import { generateWorld } from '../src/sim/worldgen';
-import { aimAt, input, placeStructure, quietSim, teleport } from './helpers';
 
 const nodes = (sim: Simulation) => sim.gen.resources.map((r, i) => ({ r, i })).filter(({ r }) => r.snow);
-const winter = () => { const sim = quietSim(); sim.devSetSeason('winter'); return sim; };
+const winter = () => { const sim = quietSim();
+    gatherOutcome(sim); sim.devSetSeason('winter'); return sim; };
 function spring(sim: Simulation, day = 1) {
   sim.state.totalHours = (100 + day - 1) * 24;
   sim.followSeason({ id: 'spring', startDay: 101 });
@@ -193,6 +194,7 @@ describe('snow to drinking water', () => {
     sim.devGive('snowClump', 1);
     sim.craft('meltSnow');
     sim.devGive('berries', 2);
+    trainSkill(sim, 'cooking', 2);
     expect(sim.craft('berryTea').ok).toBe(true);
     expect(sim.state.canteen.boiledWater).toBe(0);
   });

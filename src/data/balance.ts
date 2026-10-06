@@ -92,15 +92,16 @@ export const BALANCE = {
     trunkOffset: 0.4,
   },
   skills: {
-    /** Total XP needed to reach level 2, 3, ... 10. */
-    thresholds: [10, 25, 45, 70, 100, 140, 190, 250, 320],
-    xp: { gather: 1, fell: 2, log: 1, hit: 2, kill: 5, butcher: 1, cook: 3, craft: 3, build: 5, catch: 4, slip: 1, skin: 5, skinFail: 2 },
+    /** Total XP for levels 2..50. A gentle power curve gives increasingly long mastery goals. */
+    thresholds: Array.from({ length: 49 }, (_, i) => Math.round(60 * (i + 1) ** 1.6)),
+    xp: { gather: 0.25, gatherFail: 0.1, fell: 0.6, log: 0.25, hit: 0.5, kill: 5, butcher: 1, cook: 4, cookFail: 1, craft: 3, equipment: 8, build: 12, catch: 4, slip: 1, missedBite: 0.5, skin: 5, skinFail: 2 },
     /**
-     * Values at level 1 -> level 10 (linear in between). Tool bonuses (`chopPowerBonus`, `huntDamageBonus`,
+     * Values at level 1 -> level 50 (linear in between). Tool bonuses (`chopPowerBonus`, `huntDamageBonus`,
      * `catchBonus`) add to the matching tool upgrade's bonus on the same base, so a maxed skill and a fully upgraded
      * tool each carry about half of the combined effect (see `upgrades` below).
      */
-    gatherBonusChance: [0, 0.4],
+    gatherSuccessChance: [0.6, 0.9],
+    gatherBonusChance: [0, 0.1],
     /** Extra chop power (tree hits and trunk cuts per axe swing), from Gathering. */
     chopPowerBonus: [0, 0.5],
     huntDamageBonus: [0, 0.4],

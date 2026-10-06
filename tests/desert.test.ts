@@ -1,3 +1,4 @@
+import { trainSkill, animalEnv, drain, fakeTerrain, placeStructure, run, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
@@ -11,7 +12,6 @@ import type { AnimalMode, AnimalState } from '../src/sim/state';
 import { getTerrain, isDrinkable, type Lake } from '../src/sim/terrain';
 import { ambientWarmth } from '../src/sim/time';
 import { getWorldGen } from '../src/sim/worldgen';
-import { animalEnv, drain, fakeTerrain, placeStructure, run, teleport } from './helpers';
 
 const SEEDS = Array.from({ length: 40 }, (_, i) => (Math.imul(i + 1, 2654435761) ^ 0x9e3779b9) >>> 0);
 const WORLD_SEEDS = SEEDS.slice(0, 8);
@@ -187,6 +187,7 @@ describe('desert wood', () => {
   });
 
   function logsFrom(sim: Simulation, species: TreeSpecies): number {
+    trainSkill(sim, 'gathering', 8);
     const i = sim.gen.trees.findIndex((t) => t.species === species);
     expect(i, species).toBeGreaterThanOrEqual(0);
     const t = sim.gen.trees[i];

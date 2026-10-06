@@ -1,3 +1,4 @@
+import { trainSkill, drain, give, keepAlive, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
@@ -15,7 +16,6 @@ import { newToolWear, toolWear, wearFraction } from '../src/sim/durability';
 import { chopPowerBonus, huntDamageBonus, skillLevel } from '../src/sim/skills';
 import { arrowSpeedMultiplier, chopPower, landChance, toolBreakdown, toolLevel, torchBurnMultiplier, weaponDamageMultiplier } from '../src/sim/upgrades';
 import { shelterMenu, slotsNeeded } from '../src/ui/structure';
-import { drain, give, keepAlive, nearestTree, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 
 const K = BALANCE.skills;
 const MAX_XP = K.thresholds[K.thresholds.length - 1];
@@ -80,6 +80,7 @@ describe('shelter tiers', () => {
 
   it('clicking a shelter opens its menu instead of sleeping straight away', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     const hut = placeStructure(sim, 'leanTo');
     sim.devSetHour(21);
     drain(sim);
@@ -91,6 +92,7 @@ describe('shelter tiers', () => {
 
   it('upgrades in place, tier by tier, needing every material, up to the hide tent', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     roomyPack(sim);
     keepAlive(sim);
     const hut = placeStructure(sim, 'leanTo');
@@ -126,6 +128,7 @@ describe('shelter tiers', () => {
 
   it('swaps the collider for the new shape', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     const tent = placeShelter(sim, 'leanTo');
     expect(structureCollider(sim, tent.id).body).toMatchObject({ type: 'box', hw: PREFABS.leanTo.collider.type === 'box' ? PREFABS.leanTo.collider.hw : 0 });
     const t2 = placeShelter(sim, 'hideTent');
@@ -135,6 +138,7 @@ describe('shelter tiers', () => {
   it('sleeping in a better shelter keeps you warmer and heals more', () => {
     const rest = (tier: (typeof SHELTER_TIERS)[number]) => {
       const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
       const st = placeShelter(sim, tier);
       teleport(sim, st.x + 30, st.z + 30);
       sim.devSetHour(21);
@@ -148,6 +152,7 @@ describe('shelter tiers', () => {
 
   it('needs room to grow: a blocked spot, or you standing where the bigger shelter goes, stops the upgrade', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     roomyPack(sim);
     const hut = placeShelter(sim, 'barkHut');
     give(sim, asGive(SHELTER_UPGRADES.hideTent!));
@@ -163,6 +168,7 @@ describe('shelter tiers', () => {
 
   it('the menu says when the pack is too small to carry the next tier at once', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     const hut = placeShelter(sim, 'leanTo');
     expect(shelterMenu(sim, hut.id)!.next!.room).toMatch(/Grass Basket/);
     roomyPack(sim);
@@ -171,6 +177,7 @@ describe('shelter tiers', () => {
 
   it('old saves keep their lean-tos and hide tents as the first and last tiers', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     const a = placeShelter(sim, 'leanTo');
     const raw = JSON.parse(serializeState(sim.state));
     raw.version = 2;
@@ -210,6 +217,7 @@ describe('tool upgrades', () => {
 
   it('gates on owning the tool, having every material, and the level cap', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     roomyPack(sim);
     expect(sim.canUpgradeTool('axe')).toEqual({ ok: false, reason: 'notOwned' });
     expect(sim.canUpgradeTool('hands')).toEqual({ ok: false, reason: 'fixed' });
@@ -242,6 +250,7 @@ describe('tool upgrades', () => {
       for (const tool of wearing) {
         sim.state.tools.push(tool);
         for (let lv = 0; lv < MAX_TOOL_LEVEL; lv++) {
+          trainSkill(sim, 'crafting', TOOL_UPGRADES[tool][lv].requiredLevel);
           const w = toolWear(sim.state, tool)!;
           // Well worn (nearly broken on the last level) before each upgrade.
           w.dur = lv === MAX_TOOL_LEVEL - 1 ? 1 : w.max * 0.3;
@@ -272,6 +281,7 @@ describe('tool upgrades', () => {
 
   it('upgrades are personal and survive save and load; old tools start at level 0', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     sim.state.tools.push('bow', 'rod');
     sim.state.toolLevels = { bow: 2, rod: 1 };
     const loaded = deserializeState(serializeState(sim.state))!;
@@ -285,11 +295,12 @@ describe('tool upgrades', () => {
 describe('skill and upgrade bonuses add up on the same base', () => {
   it('axe: chop power = 1 + Gathering bonus + axe bonus', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     const s = sim.state;
     expect(chopPower(s)).toBe(1);
     s.skills.gathering = LV5_XP;
     const g5 = chopPowerBonus(LV5_XP);
-    expect(g5).toBeCloseTo(0.22, 2);
+    expect(g5).toBeCloseTo(0.5 * 4 / 49, 5);
     expect(chopPower(s, 2)).toBeCloseTo(1 + g5 + U.axe.chopPower[1], 2);
     s.skills.gathering = MAX_XP;
     expect(chopPower(s, 0)).toBe(1.5);
@@ -297,9 +308,10 @@ describe('skill and upgrade bonuses add up on the same base', () => {
     expect(toolBreakdown(s, 'axe')).toBe('1 base + 0.50 Gathering + 0.00 upgrade');
   });
 
-  it('axe: a fir that takes 6 swings takes 4 at Gathering Lv 5 with a level II axe, and 3 when both are maxed', () => {
+  it('axe: a fir unlocks at Gathering Lv 5, takes 5 swings with a level II axe, and 3 when both are maxed', () => {
     const swings = (xp: number, level: number) => {
       const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
       teleport(sim, sim.terrain.spawn.x, sim.terrain.spawn.z);
       keepAlive(sim);
       sim.state.tools.push('axe');
@@ -315,8 +327,9 @@ describe('skill and upgrade bonuses add up on the same base', () => {
       return n;
     };
     expect(TREES.fir.hp).toBe(6);
-    expect(swings(0, 0)).toBe(6);
-    expect(swings(LV5_XP, 2)).toBe(4);
+    expect(swings(0, 0)).toBe(20);
+    expect(swings(LV5_XP, 0)).toBe(6);
+    expect(swings(LV5_XP, 2)).toBe(5);
     expect(swings(MAX_XP, 3)).toBe(3);
   });
 
@@ -335,6 +348,7 @@ describe('skill and upgrade bonuses add up on the same base', () => {
 
   it('a maxed spear hits harder in the game', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     sim.state.tools.push('spear');
     sim.selectTool('spear');
     const p = sim.state.player;
@@ -360,6 +374,7 @@ describe('skill and upgrade bonuses add up on the same base', () => {
 
   it('torch: no skill, upgrades make it burn slower and warmer', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 30);
     const s = sim.state;
     expect(torchBurnMultiplier(s, 0)).toBe(1);
     expect(torchBurnMultiplier(s, 3)).toBeCloseTo(0.4);

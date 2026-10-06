@@ -1,3 +1,4 @@
+import { gatherOutcome, drain, teleport } from './helpers';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { RESOURCES } from '../src/data/resources';
@@ -7,7 +8,6 @@ import { countItem } from '../src/sim/inventory';
 import { Simulation } from '../src/sim/simulation';
 import { getTerrain } from '../src/sim/terrain';
 import { getWorldGen, MIN_DESERT_BOULDER, type WorldGen } from '../src/sim/worldgen';
-import { drain, teleport } from './helpers';
 
 const SEEDS = Array.from({ length: 8 }, (_, i) => (Math.imul(i + 1, 2654435761) ^ 0x9e3779b9) >>> 0);
 const stonesOf = (g: WorldGen) => g.resources.filter((r) => r.kind === 'stonePile');
@@ -58,6 +58,7 @@ describe('desert stones are gatherable (round 9)', () => {
       }
     }
     const sim = Simulation.newGame(42, 'desert');
+    gatherOutcome(sim);
     sim.state.animals.length = 0;
     const g = sim.gen;
     const far = g.resources.findIndex((r) => r.kind === 'stonePile' && Math.hypot(r.x - sim.terrain.spawn.x, r.z - sim.terrain.spawn.z) > 60);

@@ -1,9 +1,9 @@
+import { trainSkill, drain, giveRecipe, keepAlive, nearestTree, placeStructure, quietSim, run } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { applyWear, newStructureWear, newToolWear, prefabWears, toolWear, toolWears, wearFraction } from '../src/sim/durability';
 import { checkPlacement } from '../src/sim/placement';
 import type { Simulation } from '../src/sim/simulation';
-import { drain, giveRecipe, keepAlive, nearestTree, placeStructure, quietSim, run } from './helpers';
 
 const D = BALANCE.durability;
 const MAX_XP = BALANCE.skills.thresholds[BALANCE.skills.thresholds.length - 1];
@@ -49,6 +49,7 @@ function withAxe(sim: Simulation) {
 describe('tool durability', () => {
   it('a crafted axe gets durability from your crafting skill and wears one per chop', () => {
     const sim = quietSim();
+    trainSkill(sim, 'gathering', 8);
     withAxe(sim);
     expect(sim.state.toolWear.axe).toEqual({ dur: D.tools.axe.uses, max: D.tools.axe.uses });
     sim.perform({ kind: 'tree', index: nearestTree(sim), dist: 1 });
@@ -62,6 +63,7 @@ describe('tool durability', () => {
 
   it('warns when worn, and a broken axe is gone until you craft a new one', () => {
     const sim = quietSim();
+    trainSkill(sim, 'gathering', 8);
     withAxe(sim);
     const tree = nearestTree(sim);
     const w = sim.state.toolWear.axe!;

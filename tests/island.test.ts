@@ -1,3 +1,4 @@
+import { trainSkill, aimAt, drain, give, input, keepAlive, run, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
 import { BALANCE } from '../src/data/balance';
@@ -25,7 +26,6 @@ import { LobbyWatcher, type ServerInfo } from '../src/net/lobby';
 import { LocalTransport, MemoryHub } from '../src/net/transport';
 import { takeSnapshot } from '../src/net/worldSync';
 import { dayOneLimit } from './setup';
-import { aimAt, drain, give, input, keepAlive, run, teleport } from './helpers';
 
 const SEEDS = [1, 7, 42, 777, 2024, 31337, 20260929, 99991];
 /** The Pacific Northwest and desert play square, 296 m a side. */
@@ -719,6 +719,8 @@ describe('island food, fishing and the round 10 systems', () => {
     sim.state.tools.push('knife');
     sim.selectTool('knife');
     const p = sim.state.player;
+    trainSkill(sim, 'hunting', 8);
+    trainSkill(sim, 'skinning', 8);
     for (const species of ['boar', 'goat', 'junglefowl', 'crab', 'viper'] as SpeciesId[]) {
       const c = { id: sim.state.nextId++, species, x: p.x + 1, y: p.y, z: p.z, rot: 0, remaining: SPECIES[species].drops.map((d) => ({ ...d })), expiresAt: sim.state.totalHours + 24 };
       sim.state.carcasses.push(c);
@@ -735,6 +737,7 @@ describe('island food, fishing and the round 10 systems', () => {
     }
     const s2 = island();
     s2.state.carcasses.push({ id: 5000, species: 'boar', x: s2.state.player.x + 1, y: 1, z: s2.state.player.z, rot: 0, remaining: [{ item: 'rawMeat', count: 3 }, { item: 'hide', count: 2 }], expiresAt: 99 });
+    trainSkill(s2, 'skinning', 8);
     s2.target = { kind: 'carcass', id: 5000, dist: 1 };
     expect(s2.describeTarget()).toMatchObject({ enabled: false, action: 'Needs a knife' });
   });

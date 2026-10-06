@@ -1,3 +1,4 @@
+import { gatherOutcome, trainSkill, aimAt, drain, nearestTree, quietSim, run, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { TREES } from '../src/data/resources';
@@ -7,12 +8,13 @@ import { checkPlacement } from '../src/sim/placement';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
 import { barkStripped, TRUNK_AXIS_LIFT } from '../src/sim/trunks';
-import { aimAt, drain, nearestTree, quietSim, run, teleport } from './helpers';
 
 const CUTS = BALANCE.trees.cutsPerLog;
 
 function felledFir() {
   const sim = quietSim();
+  gatherOutcome(sim);
+  trainSkill(sim, 'gathering', 5);
   teleport(sim, sim.terrain.spawn.x, sim.terrain.spawn.z);
   sim.state.tools.push('axe');
   sim.selectTool('axe');
@@ -58,7 +60,7 @@ describe('two-step trees', () => {
     expect(countItem(sim.state.inventory, 'log')).toBe(0);
     sim.perform({ kind: 'tree', index: i, dist: 1 });
     expect(countItem(sim.state.inventory, 'log')).toBe(1);
-    expect(sim.state.trees[i]).toMatchObject({ logs: TREES.fir.logs - 1, cuts: 0 });
+    expect(sim.state.trees[i]).toMatchObject({ logs: TREES.fir.logs - 1, cuts: 0.08 });
     const after = sim.trunk(i)!;
     expect(after.len).toBeCloseTo(before.len - piece);
     expect(after.x1).toBeCloseTo(before.x1);
@@ -129,7 +131,7 @@ describe('two-step trees', () => {
     for (let k = 0; k < CUTS + 1; k++) sim.perform({ kind: 'tree', index: i, dist: 1 });
     const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
     expect(loaded.state.trees[i]).toEqual(sim.state.trees[i]);
-    expect(loaded.state.trees[i]).toMatchObject({ logs: TREES.fir.logs - 1, cuts: 1 });
+    expect(loaded.state.trees[i]).toMatchObject({ logs: TREES.fir.logs - 1, cuts: 1.12 });
     expect(loaded.trunk(i)).toEqual(sim.trunk(i));
     expect(trunkColliders(loaded, i)).toHaveLength(1);
     loaded.selectTool('axe');
@@ -141,6 +143,8 @@ describe('two-step trees', () => {
 describe('stripped birch', () => {
   function peeledBirch() {
     const sim = quietSim();
+    gatherOutcome(sim);
+    trainSkill(sim, 'gathering', 5);
     sim.selectTool('hands');
     const i = nearestTree(sim, 'birch');
     const t = sim.gen.trees[i];

@@ -1,3 +1,4 @@
+import { trainSkill, buildFresh, drain, give, keepAlive, quietSim, run, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { lerp } from '../src/core/math';
 import { BALANCE } from '../src/data/balance';
@@ -7,7 +8,6 @@ import type { SimEvent } from '../src/sim/events';
 import { countItem } from '../src/sim/inventory';
 import type { Simulation } from '../src/sim/simulation';
 import { catchChance, skillLevel } from '../src/sim/skills';
-import { buildFresh, drain, give, keepAlive, quietSim, run, teleport } from './helpers';
 
 const F = BALANCE.fishing;
 const E = BALANCE.needs.energy;
@@ -59,8 +59,10 @@ describe('fishing pole', () => {
     expect(TOOL_ORDER.slice(0, 6)).toEqual(['hands', 'axe', 'spear', 'bow', 'torch', 'rod']);
   });
 
-  it('is available from the start and crafts from sticks, stone and cordage', () => {
+  it('unlocks at Crafting level 2 and crafts from sticks, stone and cordage', () => {
     const sim = quietSim();
+    expect(sim.canCraft('rod').reason).toBe('skill');
+    trainSkill(sim, 'crafting', 2);
     expect(sim.canCraft('rod').reason).toBe('missing');
     give(sim, { stick: 10, stone: 5, cordage: 5 });
     expect(sim.craft('rod').ok).toBe(true);
@@ -163,7 +165,7 @@ describe('bites and strikes', () => {
     const ev = run(sim, F.biteWindow + 0.1);
     expect(ev.find((e) => e.type === 'fishDone')).toMatchObject({ result: 'escaped' });
     expect(countItem(sim.state.inventory, 'rawFish')).toBe(0);
-    expect(sim.state.skills.fishing).toBe(0);
+    expect(sim.state.skills.fishing).toBe(K.xp.missedBite);
   });
 
   it('clicking before a bite just reels in', () => {
@@ -243,9 +245,9 @@ describe('fishing skill', () => {
     expect(angler).toBeLessThan(0.97);
   });
 
-  it('a few dozen bites are enough to see the skill improve', () => {
+  it('sustained practice improves fishing over several dozen bites', () => {
     const { sim } = atTheLake();
-    for (let k = 0; k < 30; k++) {
+    for (let k = 0; k < 60; k++) {
       const p = sim.state.player;
       sim.fishing = { phase: 'bite', t: 0, power: 1, fromX: p.x, fromZ: p.z, x: p.x - F.maxCast, z: p.z, biteAt: 0 };
       click(sim);

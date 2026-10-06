@@ -30,13 +30,15 @@ export function desertFingerprint(seed: number): Record<string, string> {
   const heights: number[] = [];
   for (let i = 0; i < t.heights.length; i += 7) heights.push(t.heights[i]);
   const sim = Simulation.newGame(seed, 'desert');
-  const start = { ...sim.state, runId: '' };
+  // Ignore the progression save-version bump while checking the historical landscape/early movement.
+  const start = { ...sim.state, version: 6, runId: '' };
   run(sim, 20, { moveZ: -1 });
   run(sim, 20, { moveX: 1, sprint: true });
   sim.state.totalHours = Math.floor(sim.state.totalHours / 24) * 24 + 16.5;
   run(sim, 40);
   const after = JSON.parse(serializeState(sim.state)) as Record<string, unknown>;
   after.runId = '';
+  after.version = 6;
   return {
     heights: hash(stable(heights)),
     pools: hash(stable(t.lakes)),

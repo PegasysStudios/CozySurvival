@@ -35,9 +35,9 @@ New PNW runs have a **592 × 592 m movement area**, exactly four times the origi
 
 Each seed places an irregular large lake targeting **19% of the playable area**, one or two smaller ponds, a meandering freshwater stream joining the lake to a pond, and a shallow ford. The player starts on dry, gentle ground within a short walk of the main lake, with the starter supplies and birches nearby. A broad grassy meadow stays open in the forest; wildflowers bloom abundantly in spring and summer, thin out in fall, and disappear in winter. Lakes, ponds and streams share the existing drinking, fishing and winter ice rules.
 
-Existing saves retain their original landscape and indexed tree/resource states. **Continue**, **Retry the day**, and **Restart from day 1** preserve the saved generation; **New Run** and **Start from scratch** create expanded forests. New saves and multiplayer snapshots carry `pnwGen: 2`; missing markers select the original generator. Desert and Island generation remain unchanged. Multiplayer protocol 13 supports the distinct fish items, squirrel climbing elevation and seeded layout version; hosts and guests must use matching versions.
+Existing saves retain their original landscape and indexed tree/resource states. **Continue**, **Retry the day**, and **Restart from day 1** preserve the saved generation; **New Run** and **Start from scratch** create expanded forests. New saves and multiplayer snapshots carry `pnwGen: 2`; missing markers select the original generator. Desert and Island generation remain unchanged. Multiplayer protocol 14 supports skill requirements alongside the distinct fish items, squirrel climbing elevation and seeded layout version; hosts and guests must use matching versions.
 
-The main PNW lake yields Trout, Bass and Salmon with equal species odds on each bite. Other freshwater lakes and the connected stream yield Trout only. A PNW lake needs a nominal radius of at least 12 m (24 m diameter, about 452 m²) to hold fish, and the lure still needs more than 0.35 m of unfrozen water. Both forest generators already guarantee at least two lakes above this minimum, with water reachable by a normal cast from shore. Bass and Salmon have separate raw inventory items using the existing icons, and separate campfire recipes: one Raw Bass makes one Grilled Bass, and one Raw Salmon makes one Grilled Salmon. All three species satisfy the fishing objective. These fishing rules also work in saved forests without regenerating their landscape; Desert and Island fishing remain unchanged.
+The main PNW lake yields Trout at Fishing 1, adds Bass at Fishing 5 and Salmon at Fishing 10, with equal odds among unlocked species on each bite. Other freshwater lakes and the connected stream yield Trout only. A PNW lake needs a nominal radius of at least 12 m (24 m diameter, about 452 m²) to hold fish, and the lure still needs more than 0.35 m of unfrozen water. Both forest generators already guarantee at least two lakes above this minimum, with water reachable by a normal cast from shore. Bass and Salmon have separate raw inventory items using the existing icons, and separate campfire recipes: one Raw Bass makes one Grilled Bass, and one Raw Salmon makes one Grilled Salmon. All three species satisfy the fishing objective. These fishing rules also work in saved forests without regenerating their landscape; Desert and Island fishing remain unchanged.
 
 PNW runs also include huntable Douglas's squirrels, with population density scaled to their saved map size. Previously saved forests receive missing squirrels once when opened, preserving their landscape and existing progress. PNW butterflies and dragonflies flutter, feed, patrol and perch at their natural scale, appearing only on sunlit nonwinter days. Nearby encounter placement keeps these small animals within the player's view. Up to two subtle wisps float through forest habitat by day and night. [Wildlife behavior, research and validation](docs/pnw-wildlife.md) describes the implementation.
 
@@ -112,20 +112,20 @@ Today's weather and its remaining seasonal schedule survive saving, reloading an
   - Cold can't kill you during the first two nights, awake or asleep: freezing still hurts, but stops at 1 health. From night 3 on it can take health to zero. Empty hunger and thirst can wear health to zero at any time.
   - Within range of a burning campfire (5.5 m) the cold never lowers your warmth, even at the edge of the firelight or while wading.
   - Sleeping through the night with no burning campfire in range costs 30 of your 100 warmth (`sleep.coldWarmthCost` in `balance.ts`). Beside a burning fire you wake at least as warm as you lay down, and a shelter can still warm you up. Energy is a real resource: walking drains a little (0.1/s), running drains 0.8/s (about two minutes from full), and every task and tool action costs energy: swinging an axe, spear or torch or loosing an arrow 1, gathering 0.5, casting a line 1.2, striking a fish 0.4, crafting 3, building 6, swimming 0.2/s. Standing still or sitting on a bench restores it, food and drink speed up recovery, and sleep refills it.
-- **Skills.** Gathering, hunting, cooking, crafting, fishing and skinning each rise from level 1 to 10 as you do them. You can see levels, progress and current effects in the Skills tab at the top of Crafting (C). The effects are gentle:
-  - gathering: a growing chance of a bonus find (up to 40%), and up to +0.5 chop power with the axe
+- **Skills.** Gathering, hunting, cooking, crafting, fishing and skinning each rise from level 1 to 50 as you practice, with a slower curve and success/failure XP. Each skill gates its relevant recipes or harvests; [skill and gear progression](docs/progression.md) lists the milestones and design rationale. You can see levels, progress and current effects in the Skills tab at the top of Crafting (C). The effects are gentle:
+  - gathering: 60% gather success at level 1, rising to 90% at level 50; one base item per successful attempt, up to 10% chance of a bonus find, and up to +0.5 chop power with the axe
   - hunting: up to 40% more damage to animals and a chance of extra meat when you butcher
-  - cooking: a novice sometimes chars a meal (20% at level 1, never at level 10). The first time you cook a dish it always comes out right, drinks never burn, and a Charred Meal is still edible.
+  - cooking: a novice sometimes chars a meal (20% at level 1, never at level 50). The first time you cook a dish it always comes out right, drinks never burn, and a Charred Meal is still edible.
   - crafting: tools and shelters you make last longer (up to 4×)
-  - fishing: the chance to land a hooked fish, from 35% at level 1 (a few tries per fish) to 70% at level 10 (90% with a fully upgraded pole)
-  - skinning: the chance a skinning cut takes the hide whole, on the same curve as fishing: 35% at level 1 to 70% at level 10 (90% with a fully upgraded knife). A whole hide gives 5 XP and a torn one 2.
+  - fishing: the chance to land a hooked fish, from 35% at level 1 (a few tries per fish) to 70% at level 50 (90% with a fully upgraded pole)
+  - skinning: the chance a skinning cut takes the hide whole, on the same curve as fishing: 35% at level 1 to 70% at level 50 (90% with a fully upgraded knife). A whole hide gives 5 XP and a torn one 2.
   - Tool skills and tool upgrades add their bonuses on the same base, so neither alone reaches the top: see **Tool and weapon upgrades** below.
 - **Durability.** Crafted tools, shelters and benches wear out.
   - Tools lose a point per use and a little over time, and a lit torch burns down while you hold it. The HUD shows a bar under each tool, and the bow's slot shows how many arrows you carry (red at zero).
   - Shelters weather slowly and wear a little each night you sleep in them. Benches wear a little each time you sit.
   - You get a warning at 25%. At zero the item breaks: a tool is gone, a structure falls apart. Craft or build a new one.
   - Campfires, gear (basket, backpack, canteen) and bare hands don't wear.
-- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Every recipe and upgrade is visible from the start, greyed out until your pack holds the materials. An 11-step onboarding track leads through the basics, and the tracker lists each step's ingredients and goals in a column with have/need counts:
+- **Gradual progression.** Day 1 starts with bare hands and a 6-slot pack, a short walk from a lake (new worlds put you within about 14 m of the shore, facing it). Every recipe and upgrade is visible from the start, greyed out until you meet its skill and material requirements. An 11-step onboarding track leads through the basics, and the tracker lists each step's ingredients and goals in a column with have/need counts:
   1. Drink from the lake.
   2. Build a campfire.
   3. Forage food (3 berries, onions or chanterelles).
@@ -138,7 +138,7 @@ Today's weather and its remaining seasonal schedule survive saving, reloading an
   10. Craft a bow and arrows and make a kill with the bow.
   11. Craft a knife, then skin and butcher a kill. That completes onboarding; the goal becomes surviving and upgrading.
 
-  **Day-1 crafting limit.** On day 1 you can only craft what the onboarding steps you've reached ask for (and what goes into it). Everything else stays visible, greyed with a lock and "Unlocks tomorrow", and the Crafting tab says so. From the morning of day 2 every recipe opens. In multiplayer it follows the host's day. What each step opens:
+  **Day-1 crafting limit.** On day 1 you can only craft what the onboarding steps you've reached ask for (and what goes into it). Everything else stays visible, greyed with a lock and "Unlocks tomorrow", and the Crafting tab says so. From the morning of day 2 the onboarding restriction ends; each recipe still requires its skill level, ingredients and station. In multiplayer it follows the host's day. What each step opens:
 
   | Step | Opens on day 1 |
   |---|---|
@@ -260,7 +260,7 @@ Every difference lives in one biome config (`src/data/biomes.ts`) plus biome bra
 - **Plants.** Creosote fills the low flats at about 300 bushes per hectare, with sagebrush, bunchgrass and boulders around them (about 32 boulders of 1 m or more per world against 116). Harvestable plants: prickly pear, banana yucca (fiber), cholla, agave, desert chia and wolfberry, plus mesquite and pinyon trees. Each has a Foraging guide page.
 - **Stones.** About 1,500 gatherable stone piles per world, thickest on slickrock, in washes and on talus, thinner by the water and in the high country. There are no purely decorative small stones.
 - **Spines.** Walking into a prickly pear (3 damage), cholla (5), agave (3) or the core of a yucca that's ready to harvest (2), or pressing right up against a saguaro (4), pricks you, at most once every 1.1 s, with a small knockback and a one-time warning per plant. A picked or regrowing yucca is harmless, even stood on. The agave uses the cactus hitbox (0.4 m, like the cholla) and pricks while it has a heart to cut. The hitbox sits well inside picking reach, so gathering never hurts.
-- **Fiber.** A yucca gives a sure 2 fiber per harvest (two harvests before it regrows). Cutting an agave heart also has a 30% chance of 1 fiber, so about 0.3 fiber per heart against the yucca's 2.
+- **Fiber.** A successful yucca attempt gives 1 fiber (two attempts before regrowth). Agave requires Gathering 8; each successful heart harvest also has a 30% chance of 1 fiber. Failed attempts consume a charge and give reduced Gathering XP.
 - **Edibles.**
 
   | Food | Source | Raw effect |
@@ -457,7 +457,7 @@ Rendering is built for 60 fps:
 - the Pacific Northwest map unchanged (`tests/pnw-unchanged.test.ts`): a golden fingerprint of the terrain, world gen, starting state and early play on several seeds
 
 - inventory stacking and carry limits
-- crafting, every recipe available from the start, and ingredients consumed only on success
+- crafting, every recipe visible from the start, skill requirements, and ingredients consumed only on success
 - round 6 menus: every recipe and upgrade shown with the right greyed state, the tile tooltip, the icon mapping and fallback, the tracker rows for each onboarding step, and the fern share
 - round 4 costs: the 5× rule against the round 3 table, the listed exceptions, unchanged arrows, fuel and food, and every recipe fitting a 6-slot pack
 - round 5 shelters: the tier order, upgrading in place with every material, refusals for missing materials, a blocked spot or the top tier, collider swaps, better sleep per tier, and old saves keeping their shelters
@@ -470,7 +470,7 @@ Rendering is built for 60 fps:
 - needs, energy drain for movement, swimming, tasks and every tool action, regen and sleep restore
 - stripped birches: the bare-trunk state, its survival through save and load, and regrowth
 - day-cycle timing (24-minute days) at 1× and scaled time
-- skills: levels, XP from each activity, gathering bonuses, hunting damage and extra meat, burn chance, beginner's luck
+- skills: levels through 50, XP from each activity and outcome, harvest and recipe requirements, gathering probabilities and bonuses, hunting damage and extra meat, burn chance, beginner's luck
 - durability: skill-scaled tools and structures, wear per use and over time, torch burn, low warnings, breaking and re-crafting
 - two-step trees: trunk collider and targeting, logs cut from the stump end, full-pack drops, save/load mid-trunk
 - boulders and trunks you can stand on, rocks too tall to climb, swimming in and out of deep water, splashes
@@ -505,7 +505,7 @@ It also switches the title to the desert through Settings (checking the cross-fa
 
 ## Menus and icons (round 6)
 
-- **Grid menus.** Crafting, the campfire, Upgrades and the Pack (owned tools and gear) are square icon tiles like the pack slots. Foraging and Skills have their own tabs at the top of Crafting. Hovering a tile fades in its name; selecting one shows its materials and the Craft, Cook or Upgrade button. Greyed tiles need more materials.
+- **Grid menus.** Crafting, the campfire, Upgrades and the Pack (owned tools and gear) are square icon tiles like the pack slots. Foraging and Skills have their own tabs at the top of Crafting. Hovering a tile fades in its name; selecting one shows its materials and the Craft, Cook or Upgrade button. Greyed tiles need skills or materials.
 - **Upgrade-only tiers.** The A-frame, bark hut and hide tent appear in the Build and Upgrades tabs with how to reach them (upgrade the tier below in place). Every tool's three upgrade levels are listed with their costs, even before the tool is made.
 - **Jon's icons.** Hand-made 64×64 PNGs live in `public/icons/jon/`. `src/data/icons.ts` holds the only mapping from item id and tier to file (tool tier = upgrade level + 1); anything unmapped keeps its built-in SVG. The first upload lost its filenames, so the mapping is a best guess until named files arrive.
 - **Ferns.** Sword ferns grow on 48% of their map-wide spots (was 40%), so fiber is a little easier to find.
@@ -554,7 +554,7 @@ It also switches the title to the desert through Settings (checking the cross-fa
 
 - **Fewer scorpions.** 9% per desert stone gather (was 18%), and each stone pile hides at most one scorpion, ever. The pile remembers it in saves and multiplayer, and the host ignores a second request for a spent pile.
 - **Harvested yuccas are safe.** Only a yucca that's ready to harvest pricks; picked or regrowing, it's harmless.
-- **Agave.** Its spines prick like the cactus, with the same tight hitbox, and it's still gatherable. Cutting its heart has a 30% chance of 1 plant fiber:
+- **Agave (original round-10 balance).** Its spines prick like the cactus. The historical harvest table below is superseded by the one-item, skill-dependent attempts in [skill and gear progression](docs/progression.md):
 
   | Plant | Fiber per harvest | Chance | Average per harvest |
   |---|---|---|---|
@@ -572,7 +572,7 @@ It also switches the title to the desert through Settings (checking the cross-fa
 
   Repairs cost 3 / 4 / 5 / 6 items at levels 0 / I / II / III (2 stone and 1 stick; then 2 stone, 1 stick, 1 cordage; 3, 1, 1; 3, 2, 1).
 
-  The first cut on a carcass skins it. The new **Skinning** skill (in the Pack's skill list) decides whether the hide comes off whole: a torn hide still leaves the skinned carcass, just with no hide. The second cut butchers it for the meat and the carcass disappears. Quail, roadrunners, lizards and snakes have no hide and go straight to butchering. Skinning chance by level, with a plain knife and each upgrade:
+  The first cut on a carcass skins it. The new **Skinning** skill (in the Pack's skill list) decides whether the hide comes off whole: a torn hide still leaves the skinned carcass, just with no hide. The second cut butchers it for the meat and the carcass disappears. Quail, roadrunners, lizards and snakes have no hide and go straight to butchering. Original round-10 Skinning chance by level, with a plain knife and each upgrade (superseded by the level-50 curve):
 
   | Skinning level | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
   |---|---|---|---|---|---|---|---|---|---|---|
@@ -582,7 +582,7 @@ It also switches the title to the desert through Settings (checking the cross-fa
   | Level II | 49% | 53% | 57% | 61% | 65% | 68% | 72% | 76% | 80% | 84% |
   | Level III | 55% | 59% | 63% | 67% | 71% | 74% | 78% | 82% | 86% | 90% |
 
-  A whole hide gives 5 XP and a torn one 2, so a novice reaches level 2 in three or four tries and level 10 after about ninety.
+  This table records the original round-10 curve. The current level-50 curve and animal requirements are in [skill and gear progression](docs/progression.md); small-animal whole hides give 5 XP and torn hides give 2, with more XP for harder unlocked animals.
 - **Carcass models.** A dead animal lies as before. Skinned, it swaps to its own model where it lies: no fur, raw muscle with pale sinew streaks, and slimmer (body 20% narrower and 14% shallower, thinner legs, head and tail). Butchered, it's gone. Both states sync in multiplayer and saves.
 - **Onboarding pacing.** "Survive the night" after the fire, meal and wood steps, holding the next steps until the morning, and a knife step after the bow. Day 1 only allows what the onboarding has reached. See **Gradual progression** above.
 - **Health and needs audit.** Checked every path that can hurt the player on both maps, awake and asleep:
@@ -651,7 +651,7 @@ It also switches the title to the desert through Settings (checking the cross-fa
 - Round 8 has had no visual review: the workbench and storage models, the seated pose, the axe angle and the tab layout are checked by tests and the headless smoke run only.
 - Round 9 has had no visual review either: the pool banks, stone shapes and colours, the scorpion model and burrowing, the javelina charge and the new menu layouts are checked by tests and the headless smoke run only.
 - Round 10 has had no visual review: the knife icon (painted to match Jon's set until he draws his own), the knife in hand, the skinned carcass model and the locked crafting tiles are checked by tests and the headless smoke run only.
-- The day-1 limit covers recipes (crafting, cooking and building) but not tool, shelter or storage upgrades, which need materials that are hard to reach on day 1 anyway. The fishing, spear, bow and knife steps list what they open, but those steps only start after the night, when nothing is locked.
+- The day-1 limit covers recipes (crafting, cooking and building) but not tool, shelter or storage upgrades, which now require both their Crafting milestone and materials. The fishing, spear, bow and knife steps list what they open, but those steps only start after the night, when the day restriction has ended and skill requirements remain.
 - The day-1 limit, the asleep drain share (a quarter) and the knife and skinning numbers are tuned from the numbers only; Jon will tune them in play.
 - If two players skin the same carcass at the same moment, both may get the hide, like the older butchering race.
 - A carcass from an older save with only its hide left (the pack was full when it was butchered) takes a skinning cut for the hide, then an empty butchering cut to clear it.
@@ -665,7 +665,7 @@ It also switches the title to the desert through Settings (checking the cross-fa
 - If two players upgrade the same shelter at the same moment, both spend their materials and it only goes up one tier.
 - Bow upgrades improve accuracy through faster, flatter arrows; there's no aim spread to tighten.
 - Saves from before round 5 load with every tool at level 0, lean-tos and hide tents as the first and last tiers, the Foraging guide unlocked for every plant already harvested, and onboarding replayed against the new track (a finished old track stays finished).
-- Saves from before round 6 load as before; the list of learned recipes they carry is simply dropped, since every recipe is available now.
+- Saves from before round 6 load as before; the list of learned recipes they carry is simply dropped, since every recipe is visible now and skill requirements determine what can be crafted.
 - A birch only shows bare wood once all its bark is peeled; with one of its two strips left it still looks whole.
 - Other players see your fishing pole but not your line or float, and fishing makes no sound for them.
 - The lake loop measures distance to each lake's round outline (centre and radius), so on irregular shores it can be a few metres off. It keeps streaming silently when you are far from water.

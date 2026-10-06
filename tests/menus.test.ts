@@ -1,18 +1,17 @@
 // @vitest-environment happy-dom
+import { hasAll, countItem } from '../src/sim/inventory';
+import { trainSkill, gatherOutcome, buildFresh, give, giveRecipe, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { recipesFor } from '../src/data/recipes';
 import { PREFABS } from '../src/data/prefabs';
 import { BIN_UPGRADES, SHELTER_TIERS, SHELTER_UPGRADES, UPGRADABLE_TOOLS } from '../src/data/upgrades';
-import { hasAll } from '../src/sim/inventory';
 import { Simulation } from '../src/sim/simulation';
 import { campfireTiles, craftTiles, UPGRADE_ONLY_SHELTERS, upgradeTiles } from '../src/ui/catalog';
 import { attachTooltip, el } from '../src/ui/dom';
 import { CRAFT_TABS, Panels } from '../src/ui/panels';
 import { BALANCE } from '../src/data/balance';
-import { countItem } from '../src/sim/inventory';
 import { repairCost } from '../src/sim/repair';
 import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillLevel } from '../src/sim/skills';
-import { buildFresh, give, giveRecipe, placeShelter, placeStructure, quietSim, teleport } from './helpers';
 
 const RECIPES = recipesFor('pnw');
 
@@ -33,11 +32,13 @@ describe('all recipes visible from the start (round 6)', () => {
     expect(all.filter((t) => t.kind === 'recipe').map((t) => t.id)).toEqual(RECIPES.map((r) => r.id));
     expect(all.filter((t) => t.kind === 'shelter').map((t) => t.id)).toEqual(UPGRADE_ONLY_SHELTERS);
     expect(all.every((t) => t.greyed && !t.ready)).toBe(true);
-    expect(all.find((t) => t.id === 'rod')!.name).toBe('Fishing Pole');
+    expect(all.find((t) => t.id === 'rod')!.name).toBe('Fishing Pole · Crafting Lv 2');
   });
 
-  it('greys a tile exactly when the pack lacks its materials', () => {
+  it('greys an unlocked tile when the pack lacks its materials', () => {
     const sim = quietSim();
+    trainSkill(sim, 'crafting', 50);
+    trainSkill(sim, 'cooking', 50);
     give(sim, { stick: 6, stone: 6, fiber: 6 });
     for (const t of craftTiles(sim, 'all').filter((x) => x.kind === 'recipe')) {
       const r = RECIPES.find((x) => x.id === t.id)!;
@@ -168,6 +169,7 @@ describe('crafting menu sections', () => {
 
   it.each([['pnw', 5], ['desert', 9], ['island', 8]] as const)('shows the %s guide and keeps its live unlocks on refresh', (biome, total) => {
     const sim = Simulation.newGame(42, biome);
+    gatherOutcome(sim);
     const { panels, root } = openPanels(sim);
     panels.open('crafting', { section: 'forage' });
     expect(root.querySelectorAll('.forage-card')).toHaveLength(total);
@@ -193,7 +195,7 @@ describe('crafting menu sections', () => {
     panels.refresh();
     expect(section(root, 'skills').getAttribute('aria-selected')).toBe('true');
     expect(root.querySelector('[data-skill="gathering"] .skill-head')!.textContent).toContain(`Lv ${skillLevel(sim.state.skills.gathering)}`);
-    expect(root.querySelector('[data-skill="fishing"] .skill-head')!.textContent).toContain(`Lv ${MAX_SKILL_LEVEL} · max`);
+    expect(root.querySelector('[data-skill="fishing"] .skill-head')!.textContent).toContain(`Lv ${MAX_SKILL_LEVEL} / ${MAX_SKILL_LEVEL} · max`);
     expect(root.querySelector('[data-skill="fishing"] [role="progressbar"]')!.getAttribute('aria-valuenow')).toBe('100');
   });
 
@@ -226,7 +228,7 @@ describe('tile tooltip (round 6)', () => {
     expect(tip.classList.contains('show')).toBe(true);
     expect(tip.textContent).toBe('Stone Axe');
     hover(tiles(root).find((t) => t.dataset.key === 'r:rod')!);
-    expect(tip.textContent).toBe('Fishing Pole');
+    expect(tip.textContent).toBe('Fishing Pole · Crafting Lv 2');
     root.querySelector('.panel .tile-grid')!.dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: root.querySelector('.panel-head') }));
     expect(tip.classList.contains('show')).toBe(false);
   });
@@ -478,6 +480,7 @@ describe('Upgrades tab polish (round 9)', () => {
     expect(d.querySelector<HTMLButtonElement>('.btn.primary')!.disabled).toBe(true);
     expect(d.querySelector('.craft-reason')).not.toBeNull();
 
+    trainSkill(sim, 'crafting', 8);
     give(sim, Object.fromEntries(SHELTER_UPGRADES.aFrame!.map((c) => [c.item, c.count])));
     ui.tile('l:shelter').click();
     expect(ui.tile('l:shelter').classList.contains('ready')).toBe(true);
@@ -518,6 +521,7 @@ describe('Upgrades tab polish (round 9)', () => {
     const ui = upgradesTab(sim);
     expect(ui.tile('l:storage').querySelectorAll('.level-pips i')).toHaveLength(2);
     expect(ui.lit('l:storage')).toBe(0);
+    trainSkill(sim, 'crafting', 10);
     give(sim, Object.fromEntries(BIN_UPGRADES.storageCrate!.map((c) => [c.item, c.count])));
     ui.tile('l:storage').click();
     expect(ui.detail().textContent).toContain('After: 15 slots');

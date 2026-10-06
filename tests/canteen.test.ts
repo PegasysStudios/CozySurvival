@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { trainSkill, drain, give, placeStructure, quietSim } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { ITEMS } from '../src/data/items';
@@ -8,7 +9,6 @@ import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
 import { STATE_VERSION } from '../src/sim/state';
 import { Panels } from '../src/ui/panels';
-import { drain, give, placeStructure, quietSim } from './helpers';
 
 const CAP = BALANCE.carry.canteenCapacity;
 const clickLake = (sim: Simulation) => sim.perform({ kind: 'water', dist: 1, x: 0, z: 0 });
@@ -57,6 +57,7 @@ describe('canteen water (round 8)', () => {
     expect(sim.craft('boilWater').ok).toBe(true);
     expect(sim.state.canteen).toEqual({ lakeWater: CAP - 1, boiledWater: 1 });
     give(sim, { berries: 2 });
+    trainSkill(sim, 'cooking', 2);
     expect(sim.craft('berryTea').ok).toBe(true);
     expect(sim.state.canteen.boiledWater).toBe(0);
     expect(countItem(sim.state.inventory, 'berryTea')).toBe(1);

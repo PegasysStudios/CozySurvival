@@ -8,7 +8,7 @@ import type { SeasonState } from './seasons';
 import type { WeatherState } from './weather';
 import type { PnwGeneration } from './pnw';
 
-export const STATE_VERSION = 6;
+export const STATE_VERSION = 7;
 
 export type SkillId = 'gathering' | 'hunting' | 'cooking' | 'crafting' | 'fishing' | 'skinning';
 

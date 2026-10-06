@@ -1,9 +1,9 @@
+import { trainSkill, drain, give, placeStructure, quietSim } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { recipesFor } from '../src/data/recipes';
 import { countItem } from '../src/sim/inventory';
 import { campfireMenu } from '../src/ui/campfire';
-import { drain, give, placeStructure, quietSim } from './helpers';
 
 const RECIPES = recipesFor('pnw');
 
@@ -95,6 +95,7 @@ describe('campfire menu', () => {
     expect(m.recipes.map((r) => r.id)).not.toContain('campfire');
     expect(m.recipes.map((r) => r.id)).toContain('berryTea');
     expect(m.recipes.map((r) => r.id)).toEqual(RECIPES.filter((r) => r.station === 'fire').map((r) => r.id));
+    trainSkill(sim, 'cooking', 2);
     expect(sim.craft('berryTea').ok).toBe(true);
     expect(countItem(sim.state.inventory, 'berryTea') + countItem(sim.state.inventory, 'charredMeal')).toBe(1);
   });

@@ -1,3 +1,5 @@
+import { trainSkill, gatherOutcome, drain, nearestResource, nearestTree, quietSim } from './helpers';
+import { RESOURCE_LEVELS } from '../src/data/progression';
 import { describe, expect, it } from 'vitest';
 import { FORAGE_GUIDE, forageForResource, forageGuideFor } from '../src/data/forage';
 import { ITEMS } from '../src/data/items';
@@ -6,9 +8,10 @@ import { RESOURCES, type ResourceKind } from '../src/data/resources';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
 import { foragePage, forageGuide } from '../src/ui/forage';
-import { drain, nearestResource, nearestTree, quietSim } from './helpers';
 
 function harvest(sim: Simulation, kind: ResourceKind) {
+  trainSkill(sim, 'gathering', RESOURCE_LEVELS[kind]);
+  gatherOutcome(sim);
   const i = nearestResource(sim, kind);
   sim.state.resources[i].charges = Math.max(1, sim.state.resources[i].charges);
   sim.perform({ kind: 'resource', index: i, dist: 1 });
@@ -36,6 +39,7 @@ describe('Foraging guide', () => {
 
   it('starts empty and unlocks a plant the first time you harvest it, once', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     expect(sim.state.forage).toEqual([]);
     expect(forageGuide(sim.state)).toMatchObject({ unlocked: 0, total: 5 });
     expect(harvest(sim, 'stickPile').some((e) => e.type === 'forageUnlocked')).toBe(false);
@@ -52,6 +56,7 @@ describe('Foraging guide', () => {
 
   it('peeling birch bark unlocks the birch page', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     sim.selectTool('hands');
     const b = nearestTree(sim, 'birch');
     sim.state.trees[b].bark = 2;
@@ -62,6 +67,7 @@ describe('Foraging guide', () => {
 
   it('pages show effects and hunger, recipes that use the plant, and notes; locked pages hide them', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     const berry = FORAGE_GUIDE.find((e) => e.id === 'berryBush')!;
     expect(foragePage(sim.state, berry).unlocked).toBe(false);
     harvest(sim, 'berryBush');
@@ -83,6 +89,7 @@ describe('Foraging guide', () => {
 
   it('unlocks persist through save and load', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     harvest(sim, 'berryBush');
     harvest(sim, 'onion');
     const loaded = deserializeState(serializeState(sim.state))!;
@@ -95,6 +102,7 @@ describe('Foraging guide', () => {
 
   it('old saves unlock every plant already harvested', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     sim.state.stats.gathered = { fiber: 12, mushroom: 1, bark: 4, stick: 9 };
     const raw = JSON.parse(serializeState(sim.state));
     raw.version = 2;
@@ -107,6 +115,7 @@ describe('Foraging guide', () => {
 
   it('respawning after a multiplayer death starts a fresh guide, like skills and recipes', () => {
     const sim = quietSim();
+    gatherOutcome(sim);
     harvest(sim, 'berryBush');
     sim.state.needs.health = 0;
     sim.respawn();

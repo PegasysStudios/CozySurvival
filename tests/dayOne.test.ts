@@ -210,7 +210,7 @@ describe('the crafting menu on day 1 (round 10)', () => {
     expect(tiles.filter((t) => t.badge === 'locked').map((t) => t.id).sort()).toEqual(locked(sim).sort());
 
     const root = openCrafting(sim);
-    expect(root.textContent).toContain('Day 1: only what your onboarding steps have reached so far can be made; locked tiles unlock tomorrow.');
+    expect(root.textContent).toContain('Day 1: only what your onboarding steps have reached so far can be made; day locks end tomorrow; skill requirements still apply.');
     const tile = root.querySelector<HTMLElement>('.tile[data-key="r:spear"]')!;
     expect(tile.classList.contains('greyed')).toBe(true);
     expect(tile.querySelector('.tile-badge.locked')).not.toBeNull();
@@ -220,12 +220,13 @@ describe('the crafting menu on day 1 (round 10)', () => {
     expect(detail.querySelector<HTMLButtonElement>('.btn.primary')!.disabled).toBe(true);
   });
 
-  it('from day 2 there are no locks and the usual header returns', () => {
+  it('from day 2 the day locks end while skill locks remain visible', () => {
     const sim = newGame();
     sim.state.totalHours = 30;
-    expect(craftTiles(sim, 'all').some((t) => t.badge === 'locked' || t.name.includes('tomorrow'))).toBe(false);
+    expect(craftTiles(sim, 'all').some((t) => t.name.includes('tomorrow'))).toBe(false);
+    expect(craftTiles(sim, 'all').find((t) => t.id === 'bow')).toMatchObject({ badge: 'locked', name: 'Bow · Crafting Lv 5' });
     const root = openCrafting(sim);
     expect(root.textContent).toContain('Every recipe is here from the start.');
-    expect(root.querySelector('.tile-badge.locked')).toBeNull();
+    expect(root.querySelector('.tile-badge.locked')).not.toBeNull();
   });
 });

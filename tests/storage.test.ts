@@ -1,3 +1,4 @@
+import { trainSkill, drain, give, keepAlive, placeStructure, quietSim, teleport } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { PREFABS } from '../src/data/prefabs';
 import { BIN_TIERS, BIN_UPGRADES } from '../src/data/upgrades';
@@ -6,12 +7,12 @@ import { deserializeState, serializeState } from '../src/sim/save';
 import type { StructureState } from '../src/sim/state';
 import { storeTotals } from '../src/sim/storage';
 import { storageMenu } from '../src/ui/structure';
-import { drain, give, keepAlive, placeStructure, quietSim, teleport } from './helpers';
 import type { Simulation } from '../src/sim/simulation';
 
 /** A storage bin, with the player stepped well clear of it so upgrades have room. */
 function binSim(): { sim: Simulation; bin: StructureState } {
   const sim = quietSim();
+    trainSkill(sim, 'crafting', 20);
   const bin = placeStructure(sim, 'storageBin');
   teleport(sim, bin.x + 6, bin.z);
   keepAlive(sim);

@@ -1,3 +1,4 @@
+import { trainSkill, give, giveRecipe, placeStructure, quietSim, run } from './helpers';
 import { describe, expect, it } from 'vitest';
 import { BALANCE } from '../src/data/balance';
 import { countItem } from '../src/sim/inventory';
@@ -5,10 +6,10 @@ import { checkPlacement } from '../src/sim/placement';
 import { deserializeState, serializeState, SAVE_FORMAT } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
 import { STATE_VERSION } from '../src/sim/state';
-import { give, giveRecipe, placeStructure, quietSim, run } from './helpers';
 
 function playedSim(): Simulation {
   const sim = Simulation.newGame(42);
+  trainSkill(sim, 'gathering', 8);
   run(sim, 2, { moveZ: 1 });
   giveRecipe(sim, 'axe');
   give(sim, { berries: 4 });

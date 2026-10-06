@@ -1,4 +1,6 @@
 import { BALANCE } from '../data/balance';
+import { STRUCTURE_LEVELS } from '../data/progression';
+import { skillRequirementText } from '../sim/skills';
 import { ITEMS, itemName, type ItemId } from '../data/items';
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { TOOLS } from '../data/items';
@@ -38,6 +40,7 @@ export interface ShelterMenu {
     prefab: PrefabId;
     name: string;
     text: string;
+    requirement: string;
     rest: string;
     inputs: Ingredient[];
     check: UpgradeCheck;
@@ -107,10 +110,11 @@ export function nextTierInfo(sim: Simulation, id: number, prefab: PrefabId): She
     prefab: nextId,
     name: def.name,
     text: tierText(nextId),
+    requirement: skillRequirementText('crafting', STRUCTURE_LEVELS[nextId]),
     rest: def.shelter ? restText(nextId) : def.storage ? `${def.storage.slots} slots` : '',
     inputs: ingredients(sim, cost),
     check,
-    reason: check.ok ? null : blocker ? `${PLACEMENT_REASON_TEXT[blocker]}. It needs a little more room to grow.` : UPGRADE_FAILURE_TEXT[check.reason!],
+    reason: check.ok ? null : check.reason === 'skill' ? `Requires ${skillRequirementText('crafting', STRUCTURE_LEVELS[nextId])}.` : blocker ? `${PLACEMENT_REASON_TEXT[blocker]}. It needs a little more room to grow.` : UPGRADE_FAILURE_TEXT[check.reason!],
     room: packRoomNote(sim.state, cost),
   };
 }

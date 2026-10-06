@@ -5,6 +5,7 @@ export type Cost = { item: ItemId; count: number }[];
 
 export interface ToolUpgrade {
   name: string;
+  requiredLevel: number;
   inputs: Cost;
 }
 
@@ -20,34 +21,34 @@ export const LEVEL_NUMERALS = ['', 'I', 'II', 'III'];
  */
 export const TOOL_UPGRADES: Record<UpgradableTool, ToolUpgrade[]> = {
   axe: [
-    { name: 'Honed Edge', inputs: [{ item: 'stone', count: 8 }, { item: 'stick', count: 8 }, { item: 'cordage', count: 2 }] },
-    { name: 'Bound Haft', inputs: [{ item: 'stone', count: 20 }, { item: 'log', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }] },
-    { name: 'Heavy Bit', inputs: [{ item: 'stone', count: 30 }, { item: 'log', count: 8 }, { item: 'cordage', count: 12 }, { item: 'hide', count: 3 }] },
+    { name: 'Honed Edge', requiredLevel: 6, inputs: [{ item: 'stone', count: 8 }, { item: 'stick', count: 8 }, { item: 'cordage', count: 2 }] },
+    { name: 'Bound Haft', requiredLevel: 15, inputs: [{ item: 'stone', count: 20 }, { item: 'log', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }] },
+    { name: 'Heavy Bit', requiredLevel: 30, inputs: [{ item: 'stone', count: 30 }, { item: 'log', count: 8 }, { item: 'cordage', count: 12 }, { item: 'hide', count: 3 }] },
   ],
   spear: [
-    { name: 'Fire-Hardened Shaft', inputs: [{ item: 'stick', count: 10 }, { item: 'stone', count: 6 }, { item: 'cordage', count: 2 }] },
-    { name: 'Barbed Point', inputs: [{ item: 'stick', count: 16 }, { item: 'stone', count: 14 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 4 }] },
-    { name: 'Balanced Spear', inputs: [{ item: 'stick', count: 12 }, { item: 'stone', count: 24 }, { item: 'cordage', count: 12 }, { item: 'hide', count: 3 }] },
+    { name: 'Fire-Hardened Shaft', requiredLevel: 6, inputs: [{ item: 'stick', count: 10 }, { item: 'stone', count: 6 }, { item: 'cordage', count: 2 }] },
+    { name: 'Barbed Point', requiredLevel: 15, inputs: [{ item: 'stick', count: 16 }, { item: 'stone', count: 14 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 4 }] },
+    { name: 'Balanced Spear', requiredLevel: 30, inputs: [{ item: 'stick', count: 12 }, { item: 'stone', count: 24 }, { item: 'cordage', count: 12 }, { item: 'hide', count: 3 }] },
   ],
   bow: [
-    { name: 'Waxed String', inputs: [{ item: 'stick', count: 12 }, { item: 'cordage', count: 3 }, { item: 'bark', count: 4 }] },
-    { name: 'Recurved Limbs', inputs: [{ item: 'stick', count: 18 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }, { item: 'stone', count: 6 }] },
-    { name: "Hunter's Bow", inputs: [{ item: 'stick', count: 12 }, { item: 'log', count: 6 }, { item: 'cordage', count: 16 }, { item: 'bark', count: 10 }, { item: 'hide', count: 3 }] },
+    { name: 'Waxed String', requiredLevel: 6, inputs: [{ item: 'stick', count: 12 }, { item: 'cordage', count: 3 }, { item: 'bark', count: 4 }] },
+    { name: 'Recurved Limbs', requiredLevel: 15, inputs: [{ item: 'stick', count: 18 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }, { item: 'stone', count: 6 }] },
+    { name: "Hunter's Bow", requiredLevel: 30, inputs: [{ item: 'stick', count: 12 }, { item: 'log', count: 6 }, { item: 'cordage', count: 16 }, { item: 'bark', count: 10 }, { item: 'hide', count: 3 }] },
   ],
   torch: [
-    { name: 'Bark Wrap', inputs: [{ item: 'bark', count: 10 }, { item: 'fiber', count: 12 }, { item: 'stick', count: 4 }] },
-    { name: 'Pitch Soak', inputs: [{ item: 'bark', count: 16 }, { item: 'cordage', count: 5 }, { item: 'stick', count: 8 }, { item: 'stone', count: 8 }, { item: 'log', count: 2 }] },
-    { name: 'Everburning Torch', inputs: [{ item: 'bark', count: 24 }, { item: 'cordage', count: 10 }, { item: 'stone', count: 16 }, { item: 'log', count: 4 }, { item: 'hide', count: 2 }] },
+    { name: 'Bark Wrap', requiredLevel: 6, inputs: [{ item: 'bark', count: 10 }, { item: 'fiber', count: 12 }, { item: 'stick', count: 4 }] },
+    { name: 'Pitch Soak', requiredLevel: 15, inputs: [{ item: 'bark', count: 16 }, { item: 'cordage', count: 5 }, { item: 'stick', count: 8 }, { item: 'stone', count: 8 }, { item: 'log', count: 2 }] },
+    { name: 'Everburning Torch', requiredLevel: 30, inputs: [{ item: 'bark', count: 24 }, { item: 'cordage', count: 10 }, { item: 'stone', count: 16 }, { item: 'log', count: 4 }, { item: 'hide', count: 2 }] },
   ],
   rod: [
-    { name: 'Bark Float', inputs: [{ item: 'stick', count: 10 }, { item: 'stone', count: 4 }, { item: 'cordage', count: 3 }] },
-    { name: 'Weighted Line', inputs: [{ item: 'stick', count: 14 }, { item: 'stone', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }] },
-    { name: "Angler's Pole", inputs: [{ item: 'stick', count: 12 }, { item: 'stone', count: 16 }, { item: 'cordage', count: 14 }, { item: 'bark', count: 8 }, { item: 'hide', count: 2 }] },
+    { name: 'Bark Float', requiredLevel: 6, inputs: [{ item: 'stick', count: 10 }, { item: 'stone', count: 4 }, { item: 'cordage', count: 3 }] },
+    { name: 'Weighted Line', requiredLevel: 15, inputs: [{ item: 'stick', count: 14 }, { item: 'stone', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 8 }] },
+    { name: "Angler's Pole", requiredLevel: 30, inputs: [{ item: 'stick', count: 12 }, { item: 'stone', count: 16 }, { item: 'cordage', count: 14 }, { item: 'bark', count: 8 }, { item: 'hide', count: 2 }] },
   ],
   knife: [
-    { name: 'Knapped Edge', inputs: [{ item: 'stone', count: 8 }, { item: 'stick', count: 6 }, { item: 'cordage', count: 2 }] },
-    { name: 'Wrapped Grip', inputs: [{ item: 'stone', count: 16 }, { item: 'stick', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 6 }] },
-    { name: "Skinner's Blade", inputs: [{ item: 'stone', count: 24 }, { item: 'cordage', count: 12 }, { item: 'bark', count: 8 }, { item: 'hide', count: 3 }] },
+    { name: 'Knapped Edge', requiredLevel: 6, inputs: [{ item: 'stone', count: 8 }, { item: 'stick', count: 6 }, { item: 'cordage', count: 2 }] },
+    { name: 'Wrapped Grip', requiredLevel: 15, inputs: [{ item: 'stone', count: 16 }, { item: 'stick', count: 8 }, { item: 'cordage', count: 6 }, { item: 'bark', count: 6 }] },
+    { name: "Skinner's Blade", requiredLevel: 30, inputs: [{ item: 'stone', count: 24 }, { item: 'cordage', count: 12 }, { item: 'bark', count: 8 }, { item: 'hide', count: 3 }] },
   ],
 };
 

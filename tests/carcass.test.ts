@@ -1,3 +1,5 @@
+import { trainSkill, drain, keepAlive, quietSim } from './helpers';
+import { ANIMAL_LEVELS } from '../src/data/progression';
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { Rng } from '../src/core/rng';
@@ -13,16 +15,17 @@ import { Simulation } from '../src/sim/simulation';
 import { catchChance, MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skinChance } from '../src/sim/skills';
 import type { CarcassState } from '../src/sim/state';
 import { skinChance as knifeSkinChance } from '../src/sim/upgrades';
-import { drain, keepAlive, quietSim } from './helpers';
 
 const K = BALANCE.skills;
 const HIDE_SPECIES: SpeciesId[] = ['rabbit', 'squirrel', 'deer', 'jackrabbit', 'javelina', 'wolf', 'bear', 'cougar', 'boar', 'goat'];
 const HIDELESS: SpeciesId[] = ['quail', 'roadrunner', 'lizard', 'snake', 'junglefowl', 'crab', 'viper'];
-/** XP at the start of each level, 1..10. */
+/** XP at the start of each level, 1..50. */
 const LEVEL_XP = [0, ...K.thresholds];
 
 /** A carcass of `species` right in front of the player, as a kill leaves it. */
 function carcass(sim: Simulation, species: SpeciesId): CarcassState {
+  trainSkill(sim, 'hunting', ANIMAL_LEVELS[species].hunt);
+  trainSkill(sim, 'skinning', ANIMAL_LEVELS[species].skin);
   const s = sim.state;
   const p = s.player;
   const c: CarcassState = {
@@ -62,6 +65,8 @@ const messages = (ev: SimEvent[]) => ev.flatMap((e) => (e.type === 'message' ? [
 describe('no knife, no processing (round 10)', () => {
   it('you can still kill without a knife, but the carcass says "Needs a knife" and nothing comes off it', () => {
     const sim = quietSim();
+    trainSkill(sim, 'hunting', 5);
+    trainSkill(sim, 'skinning', 5);
     sim.state.tools.push('spear');
     sim.selectTool('spear');
     const p = sim.state.player;
@@ -189,9 +194,11 @@ describe('the Skinning skill (round 10)', () => {
     expect(skillEffect('skinning', K.thresholds.at(-1)!)).toBe('+35% skinning chance (70% with a plain knife)');
   });
 
-  it('success curve: 35% at level 1 (a new fisher\'s catch), up about 4% a level to 70% at level 10', () => {
+  it('success curve: 35% at level 1 (a new fisher\'s catch), up gradually to 70% at level 50', () => {
     const curve = LEVEL_XP.map((xp) => Math.round(skinChance(xp) * 100));
-    expect(curve).toEqual([35, 39, 43, 47, 51, 54, 58, 62, 66, 70]);
+    expect(curve[0]).toBe(35);
+    expect(curve.at(-1)).toBe(70);
+    expect(curve.every((chance, i) => i === 0 || chance >= curve[i - 1])).toBe(true);
     expect(curve).toHaveLength(MAX_SKILL_LEVEL);
     for (const xp of LEVEL_XP) expect(skinChance(xp)).toBeCloseTo(catchChance(xp), 10);
   });

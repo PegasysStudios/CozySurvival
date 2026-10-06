@@ -1,17 +1,19 @@
 import { BALANCE } from '../data/balance';
 import type { ForageId } from '../data/forage';
 import { GEAR, ITEMS, TOOLS, TOOL_ORDER, itemName, type GearId, type ToolId } from '../data/items';
+import { STRUCTURE_LEVELS } from '../data/progression';
+import { nextSkillUnlock, skillXpText } from '../sim/progression';
 import { PREFABS, type PrefabId } from '../data/prefabs';
 import { CATEGORY_LABELS, RECIPE_BY_ID, recipesFor, type Recipe, type RecipeCategory } from '../data/recipes';
 import { isUpgradable, LEVEL_NUMERALS, MAX_TOOL_LEVEL, SHELTER_TIERS, SHELTER_UPGRADE_TEXT, SHELTER_UPGRADES, shelterTier, TOOL_UPGRADES, UPGRADABLE_TOOLS, type Cost, type UpgradableTool } from '../data/upgrades';
 import { CANTEEN_ITEMS, canteenFill, canteenServings, nextServing } from '../sim/canteen';
 import { isPinned, MAX_PINS } from '../sim/checklist';
-import { CRAFT_FAILURE_TEXT, craftableCount } from '../sim/crafting';
+import { CRAFT_FAILURE_TEXT, craftableCount, recipeRequirementText } from '../sim/crafting';
 import { newStructureWear, newToolWear, prefabWears, toolWears, wearFraction, type WearingTool } from '../sim/durability';
 import { usedSlots } from '../sim/inventory';
 import { REPAIR_FAILURE_TEXT } from '../sim/repair';
 import type { Slot } from '../sim/state';
-import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skillProgress } from '../sim/skills';
+import { MAX_SKILL_LEVEL, SKILL_IDS, SKILL_INFO, skillEffect, skillLevel, skillProgress, skillRequirementText } from '../sim/skills';
 import type { Simulation } from '../sim/simulation';
 import { nextToolUpgrade, toolBreakdown, toolEffectLines, toolLevel, UPGRADE_FAILURE_TEXT } from '../sim/upgrades';
 import { campfireMenu } from './campfire';
@@ -316,7 +318,7 @@ export class Panels {
     box.innerHTML = `<h4>All upgrades</h4>${TOOL_UPGRADES[tool].map((u, i) => {
       const n = i + 1;
       const state = n <= lv ? 'done' : n === lv + 1 ? 'next' : 'later';
-      return `<div class="ladder-step ${state}"><b>${LEVEL_NUMERALS[n]} · ${escapeHtml(u.name)}</b><span>${escapeHtml(costText(u.inputs))}</span></div>`;
+      return `<div class="ladder-step ${state}"><b>${LEVEL_NUMERALS[n]} · ${escapeHtml(u.name)}</b><span>${escapeHtml(skillRequirementText('crafting', u.requiredLevel))} · ${escapeHtml(costText(u.inputs))}</span></div>`;
     }).join('')}`;
     return box;
   }
@@ -356,20 +358,20 @@ export class Panels {
     const check = sim.canUpgradeTool(tool);
     const nextLines = toolEffectLines(s, tool, lv + 1);
     const box = el('div', 'upgrade-next');
-    box.innerHTML = `<h4>${MISC_ICONS.upgrade} Upgrade to level ${LEVEL_NUMERALS[lv + 1]}: ${escapeHtml(up.name)}</h4><div class="effects">${nextLines.map(escapeHtml).join('<br>')}</div>${ingredientsHtml(ingredients(sim, up.inputs))}`;
+    box.innerHTML = `<h4>${MISC_ICONS.upgrade} Upgrade to level ${LEVEL_NUMERALS[lv + 1]}: ${escapeHtml(up.name)}</h4><div class="effects">${nextLines.map(escapeHtml).join('<br>')}</div><div class="effects">Requires ${escapeHtml(skillRequirementText('crafting', up.requiredLevel))}</div>${ingredientsHtml(ingredients(sim, up.inputs))}`;
     const actions = el('div', 'detail-actions');
     const go = button('Upgrade', `btn primary ${check.ok ? '' : 'disabled'}`, () => {
       const res = sim.upgradeTool(tool);
       if (!res.ok) {
         this.host.sfx('deny');
-        this.host.toast(UPGRADE_FAILURE_TEXT[res.reason!], 'warn');
+        this.host.toast(res.reason === 'skill' ? `Requires ${skillRequirementText('crafting', up.requiredLevel)}.` : UPGRADE_FAILURE_TEXT[res.reason!], 'warn');
       }
       this.render();
     });
     go.disabled = !check.ok;
     actions.append(go);
     box.append(actions);
-    if (!check.ok && check.reason) box.append(el('div', 'craft-reason', escapeHtml(UPGRADE_FAILURE_TEXT[check.reason])));
+    if (!check.ok && check.reason) box.append(el('div', 'craft-reason', escapeHtml(check.reason === 'skill' ? `Requires ${skillRequirementText('crafting', up.requiredLevel)}.` : UPGRADE_FAILURE_TEXT[check.reason])));
     const room = packRoomNote(s, up.inputs);
     if (room) box.append(el('div', 'effects muted', escapeHtml(room)));
     d.append(box, this.upgradeLadder(tool));
@@ -387,7 +389,7 @@ export class Panels {
       ? `Only built by upgrading ${a} ${prev} in place: build one from the Build tab, click it and choose Upgrade.`
       : `Only built by upgrading ${a} ${prev} in place: click it and choose Upgrade.`;
     const d = el('div', 'shelter-detail');
-    d.innerHTML = `<div class="detail-icon big">${prefabIcon(p)}</div><h3>${escapeHtml(PREFABS[p].name)}</h3><p>${escapeHtml(SHELTER_UPGRADE_TEXT[p] ?? '')}</p><div class="effects">${escapeHtml(`Shelter tier ${tier} of ${SHELTER_TIERS.length} · ${restText(p)}`)}</div><div class="how-to">${MISC_ICONS.upgrade}<span>${escapeHtml(how)}</span></div>${ingredientsHtml(ingredients(sim, inputs))}`;
+    d.innerHTML = `<div class="detail-icon big">${prefabIcon(p)}</div><h3>${escapeHtml(PREFABS[p].name)}</h3><p>${escapeHtml(SHELTER_UPGRADE_TEXT[p] ?? '')}</p><div class="effects">${escapeHtml(`Shelter tier ${tier} of ${SHELTER_TIERS.length} · ${restText(p)}`)}</div><div class="how-to">${MISC_ICONS.upgrade}<span>${escapeHtml(how)}</span></div><div class="effects">Requires ${escapeHtml(skillRequirementText('crafting', STRUCTURE_LEVELS[p]))}</div>${ingredientsHtml(ingredients(sim, inputs))}`;
     const room = packRoomNote(sim.state, inputs);
     if (room) d.append(el('div', 'effects muted', escapeHtml(room)));
     return d;
@@ -420,7 +422,7 @@ export class Panels {
       return d;
     }
     const box = el('div', 'upgrade-next');
-    box.innerHTML = `<h4>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h4><p>${escapeHtml(n.text)}</p><div class="effects">Now: ${escapeHtml(gives(st.prefab))}<br>After: ${escapeHtml(n.rest)}</div>${ingredientsHtml(n.inputs)}`;
+    box.innerHTML = `<h4>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h4><p>${escapeHtml(n.text)}</p><div class="effects">Requires ${escapeHtml(n.requirement)}</div><div class="effects">Now: ${escapeHtml(gives(st.prefab))}<br>After: ${escapeHtml(n.rest)}</div>${ingredientsHtml(n.inputs)}`;
     const actions = el('div', 'detail-actions');
     const go = button('Upgrade', `btn primary ${n.check.ok ? '' : 'disabled'}`, () => {
       const res = sim.upgradeStructure(st.id);
@@ -539,7 +541,7 @@ export class Panels {
       const xp = s.skills[id];
       const level = skillLevel(xp);
       const pct = Math.round(skillProgress(xp) * 100);
-      return `<div class="skill" data-skill="${id}"><div class="skill-head"><b>${SKILL_INFO[id].name}</b><span>Lv ${level}${level >= MAX_SKILL_LEVEL ? ' · max' : ''}</span></div><div class="skill-track" role="progressbar" aria-label="${SKILL_INFO[id].name} level progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="transform:scaleX(${pct / 100})"></i></div><div class="skill-effect">${escapeHtml(skillEffect(id, xp))}</div><div class="skill-how">${escapeHtml(SKILL_INFO[id].how)}</div></div>`;
+      return `<div class="skill" data-skill="${id}"><div class="skill-head"><b>${SKILL_INFO[id].name}</b><span>Lv ${level} / ${MAX_SKILL_LEVEL}${level >= MAX_SKILL_LEVEL ? ' · max' : ''}</span></div><div class="skill-track" role="progressbar" aria-label="${SKILL_INFO[id].name} level progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="transform:scaleX(${pct / 100})"></i></div><div class="skill-effect">${escapeHtml(skillEffect(id, xp))}</div><div class="skill-how">${escapeHtml(SKILL_INFO[id].how)}</div><div class="skill-how">${escapeHtml(skillXpText(xp))}</div><div class="skill-how">${escapeHtml(nextSkillUnlock(this.host.sim(), id))}</div></div>`;
     }).join('');
     body.append(skills);
     return body;
@@ -554,17 +556,17 @@ export class Panels {
       return;
     }
     if (this.section === 'skills') {
-      const head = this.craftingHead('Your skills improve as you use them. Track your levels, progress and current benefits.');
+      const head = this.craftingHead('Your skills improve as you use them. Progress to level 50. Successful work earns more XP than failed attempts; unlocks are shown below.');
       this.appendCraftSection(head, this.skillsBody());
       return;
     }
     const recipes = recipesFor(sim.biome);
     const dayOne = recipes.some((r) => sim.canCraft(r.id).reason === 'tomorrow');
     const head = this.craftingHead(this.tab === 'upgrades'
-      ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have.'
+      ? 'Each tool and weapon has three upgrade levels, each much costlier than the last. Bigger shelters and storage come from upgrading the one you have. Each upgrade also requires a Crafting level.'
       : dayOne
-        ? `Day 1: only what your onboarding steps have reached so far can be made; locked tiles unlock tomorrow. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist (up to ${MAX_PINS}).`
-        : `Every recipe is here from the start. Greyed-out tiles need more materials; hover a tile for its name. Shift-click a recipe to pin its checklist to your screen (up to ${MAX_PINS}).`);
+        ? `Day 1: only what your onboarding steps have reached so far can be made; day locks end tomorrow; skill requirements still apply. Greyed-out tiles need skills or materials; hover a tile for its name. Shift-click a recipe to pin its checklist (up to ${MAX_PINS}).`
+        : `Every recipe is here from the start. Greyed-out tiles need skills or materials; select a tile to see its required level. Shift-click a recipe to pin its checklist to your screen (up to ${MAX_PINS}).`);
 
     const shown = CRAFT_TABS.filter((t) => t.id === 'upgrades' || recipes.some((r) => r.category === t.id));
     if (!shown.some((t) => t.id === this.tab)) this.tab = shown[0].id;
@@ -656,7 +658,7 @@ export class Panels {
       upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Fully upgraded</h3><p class="muted">${escapeHtml(maxedText)}</p>`;
       return upg;
     }
-    upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h3><p>${escapeHtml(n.text)}</p>${n.rest ? `<div class="effects">${escapeHtml(n.rest)}</div>` : ''}${ingredientsHtml(n.inputs)}`;
+    upg.innerHTML = `<h3>${MISC_ICONS.upgrade} Upgrade to ${escapeHtml(n.name)}</h3><p>${escapeHtml(n.text)}</p><div class="effects">Requires ${escapeHtml(n.requirement)}</div>${n.rest ? `<div class="effects">${escapeHtml(n.rest)}</div>` : ''}${ingredientsHtml(n.inputs)}`;
     const ua = el('div', 'detail-actions');
     const go = button('Upgrade', `btn primary ${n.check.ok ? '' : 'disabled'}`, () => {
       const res = sim.upgradeStructure(id);
@@ -882,7 +884,7 @@ export class Panels {
         : '';
     const shelterNote = out.kind === 'place' && PREFABS[out.prefab].shelter ? '<div class="effects muted">Click it once built to sleep in it or upgrade it into a bigger shelter.</div>' : '';
     const note = lasts ? `<div class="effects muted">${escapeHtml(lasts)}</div>` : '';
-    detail.innerHTML = `<div class="detail-icon big">${recipeIcon(r, s)}</div><h3>${escapeHtml(r.name)}</h3><p>${escapeHtml(r.description)}</p><div class="effects">${escapeHtml(outText)}</div>${note}${shelterNote}${station}${inputs}`;
+    detail.innerHTML = `<div class="detail-icon big">${recipeIcon(r, s)}</div><h3>${escapeHtml(r.name)}</h3><p>${escapeHtml(r.description)}</p><div class="effects">${escapeHtml(outText)}</div>${note}${shelterNote}<div class="effects">Requires ${escapeHtml(recipeRequirementText(r))}</div>${station}${inputs}`;
     const label = out.kind === 'place' ? 'Place' : r.station === 'fire' ? 'Cook' : 'Craft';
     const maxN = out.kind === 'item' ? craftableCount(s, r) : 0;
     const actions = el('div', 'detail-actions');
@@ -894,7 +896,7 @@ export class Panels {
     pin.title = `Shift-click a recipe to pin its ingredients to your screen (up to ${MAX_PINS})`;
     actions.append(pin);
     detail.append(actions);
-    if (!check.ok && check.reason) detail.append(el('div', 'craft-reason', escapeHtml(CRAFT_FAILURE_TEXT[check.reason])));
+    if (!check.ok && check.reason) detail.append(el('div', 'craft-reason', escapeHtml(check.reason === 'skill' ? `Requires ${recipeRequirementText(r)}.` : CRAFT_FAILURE_TEXT[check.reason])));
     return detail;
   }
 
@@ -918,7 +920,7 @@ export class Panels {
       if (!res.ok) {
         if (made === 0) {
           this.host.sfx('deny');
-          this.host.toast(CRAFT_FAILURE_TEXT[res.reason!], 'warn');
+          this.host.toast(res.reason === 'skill' ? `Requires ${recipeRequirementText(recipe)}.` : CRAFT_FAILURE_TEXT[res.reason!], 'warn');
         }
         break;
       }
