@@ -146,6 +146,8 @@ export interface ActiveQuest {
 
 export interface QuestLogState {
   active?: ActiveQuest;
+  /** Personal day number at the last handover; a new quest opens at the following dawn. */
+  lastCompletedDay?: number;
   tribes: Record<string, { discovered: boolean; reputation: number; completed: number }>;
 }
 

@@ -4306,3 +4306,65 @@ b {
 .hud-quest[hidden] { display: none; }
 .hud-quest.ready { border-color: #b6c9989a; }
 @media (max-height: 700px) { .hud-quest .obj-hint { display: none; } .hud-quest .obj-needs { max-height: 90px; overflow-y: auto; } }
+
+/* The supplied dialogue artwork has transparent margins above and below its central frame. */
+.panel-overlay.conversation {
+  align-items: flex-end;
+  padding: 12px 14px max(12px, var(--safe-b));
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+.panel-dialog {
+  width: min(812px, 70%);
+  height: clamp(171px, 21.7vw, 252px);
+  max-height: calc(100dvh - 32px);
+  background: url('/ui/oruun-dialogue-panel.png') center / 100% 195% no-repeat;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: #fff;
+  transform: none;
+  transition: none;
+}
+.panel-dialog .dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: clamp(22px, 2.66vw, 34px) calc(clamp(28px, 4.5vw, 56px) + 8px) clamp(20px, 2.45vw, 30px);
+  overflow: hidden;
+}
+.dialog-speaker { font-weight: 800; font-size: clamp(12px, 1.26vw, 15px); color: #fff; }
+.dialog-speaker span { margin-left: 8px; font-size: 0.75em; font-weight: 500; opacity: 0.8; }
+.panel-dialog .dialog-speech {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: #fff;
+  font-family: var(--serif);
+  font-size: clamp(12px, 1.4vw, 17px);
+  line-height: 1.45;
+  text-shadow: 0 2px 3px #000;
+}
+.panel-dialog .dialog-actions { justify-content: flex-end; flex-wrap: wrap; margin: 0; gap: 8px; }
+.panel-dialog .dialog-actions .btn {
+  min-width: 77px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 13px;
+  border: 1px solid #dba957;
+  background: linear-gradient(#4a3320, #2b1e15);
+  text-shadow: 0 1px 2px #000;
+}
+.panel-dialog .dialog-actions .btn.primary { background: linear-gradient(#9a6527, #603913); }
+.panel-dialog .dialog-actions .btn:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .panel-overlay.conversation { padding-inline: 6px; }
+  .panel-dialog .dialog-body { padding: 22px 32px 21px; gap: 6px; }
+  .panel-dialog .dialog-actions .btn { min-width: 63px; font-size: 12px; }
+}

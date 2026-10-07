@@ -14,6 +14,7 @@ import { PLACEMENT_REASON_TEXT } from '../sim/placement';
 import type { Simulation } from '../sim/simulation';
 import type { GameState } from '../sim/state';
 import { canSleepAt } from '../sim/time';
+import { canUseTribeStructure } from '../sim/quests';
 import { UPGRADE_FAILURE_TEXT, type UpgradeCheck } from '../sim/upgrades';
 import type { Tile } from './catalog';
 import { toolIcon } from './icons';
@@ -177,7 +178,7 @@ export interface WorkbenchMenu {
 export function workbenchMenu(sim: Simulation, id: number): WorkbenchMenu | null {
   const s = sim.state;
   const st = sim.structures.find((x) => x.id === id);
-  if (!st || !PREFABS[st.prefab].workbench) return null;
+  if (!st || !PREFABS[st.prefab].workbench || !canUseTribeStructure(s, st)) return null;
   const rows = repairableTools(s).map((tool): RepairRow => {
     const level = toolLevel(s, tool);
     const w = s.toolWear[tool];

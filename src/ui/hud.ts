@@ -351,7 +351,7 @@ export class Hud {
     const pins = pinnedRecipes(s);
     toggle(this.checklist, 'show', pins.length > 0);
     if (pins.length) {
-      const rows = checklistNeeds(s, sim.isNearLitFire());
+      const rows = checklistNeeds(s, sim.isNearCookingFire());
       const ready = checklistReady(rows);
       toggle(this.checklist, 'ready', ready);
       setText(this.checkState, ready ? 'Ready to craft' : '');

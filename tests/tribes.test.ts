@@ -4,7 +4,7 @@ import { ORUUN } from '../src/data/tribes';
 import { ORUUN_QUESTLINE } from '../src/data/quests';
 import { PREFABS } from '../src/data/prefabs';
 import { footprintShape } from '../src/sim/placement';
-import { activeQuest, nextQuest, questNeeds, tribeDialog } from '../src/sim/quests';
+import { activeQuest, casualTribeStory, MAX_REPUTATION_LEVEL, nextQuest, questNeeds, questPauseReason, reputationLevel, reputationProgress, reputationXpForLevel, tribeDialog } from '../src/sim/quests';
 import { countItem } from '../src/sim/inventory';
 import { deserializeState, serializeState } from '../src/sim/save';
 import { Simulation } from '../src/sim/simulation';
@@ -13,7 +13,9 @@ import { getTerrain } from '../src/sim/terrain';
 import { VillagerView } from '../src/render/villagers';
 import { stateFromSnapshot, takeSnapshot } from '../src/net/worldSync';
 import { MemoryStorage, RunManager } from '../src/sim/run';
-import { drain, give, giveRecipe, placeStructure, run } from './helpers';
+import { campfireMenu } from '../src/ui/campfire';
+import { workbenchMenu } from '../src/ui/structure';
+import { drain, give, giveRecipe, input, placeStructure, run } from './helpers';
 
 function visit(sim: Simulation, member: string) {
   const npc = sim.state.settlements![0].members.find((m) => m.id === member)!;
@@ -21,7 +23,14 @@ function visit(sim: Simulation, member: string) {
   return npc;
 }
 
+function questSim() {
+  const sim = Simulation.newGame(42);
+  sim.state.totalHours = 24;
+  return sim;
+}
+
 function completeFirst(sim: Simulation) {
+  sim.state.totalHours = Math.max(24, sim.state.totalHours);
   visit(sim, 'aven'); sim.talkTo('oruun', 'aven'); sim.acceptQuest('oruun', 'aven'); give(sim, { stick: 12 });
   expect(sim.turnInQuest('oruun', 'aven')).toBe(true);
 }
@@ -79,8 +88,82 @@ describe('Oruun placement and map isolation', () => {
 });
 
 describe('Sequential quests and reputation', () => {
-  it('requires discovery, offers only through the correct giver, and permits exactly one active quest', () => {
+  it('introduces all five people on day one and opens the first offer at the next dawn', () => {
     const sim = Simulation.newGame(42);
+    for (const person of ORUUN.members) {
+      visit(sim, person.id); sim.talkTo('oruun', person.id);
+      const dialog = tribeDialog(sim.state, 'oruun', person.id)!;
+      expect(dialog.mode).toBe('chat');
+      expect(dialog.text).toBe(person.greeting);
+      expect(dialog.quest).toBeUndefined();
+      expect(sim.acceptQuest('oruun', person.id)).toBe(false);
+    }
+    expect(questPauseReason(sim.state)).toBe('firstDay');
+    sim.state.totalHours = 23.99;
+    expect(nextQuest(sim.state, 'oruun')).toBeUndefined();
+    run(sim, 1);
+    visit(sim, 'aven');
+    expect(tribeDialog(sim.state, 'oruun', 'aven')!.mode).toBe('offer');
+    expect(sim.acceptQuest('oruun', 'aven')).toBe(true);
+  });
+
+  it('persists the daily limit, shares only stories after handover, and reopens quests at dawn', () => {
+    const sim = questSim(); completeFirst(sim);
+    expect(sim.state.questLog!.lastCompletedDay).toBe(2);
+    for (const person of ORUUN.members) {
+      visit(sim, person.id);
+      const dialog = tribeDialog(sim.state, 'oruun', person.id)!;
+      expect(dialog.mode).toBe('chat');
+      expect(person.stories).toContain(dialog.text);
+      expect(dialog.quest).toBeUndefined();
+      expect(sim.acceptQuest('oruun', person.id)).toBe(false);
+    }
+    const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
+    expect(questPauseReason(loaded.state)).toBe('completedToday');
+    expect(nextQuest(loaded.state, 'oruun')).toBeUndefined();
+    loaded.state.totalHours = 47.99;
+    expect(nextQuest(loaded.state, 'oruun')).toBeUndefined();
+    run(loaded, 1);
+    visit(loaded, 'sela');
+    expect(loaded.acceptQuest('oruun', 'sela')).toBe(true);
+  });
+
+  it('allows a quest to span days and starts the limit on its actual handover day', () => {
+    const sim = questSim();
+    visit(sim, 'aven'); sim.talkTo('oruun', 'aven'); sim.acceptQuest('oruun', 'aven');
+    sim.state.totalHours = 48; give(sim, { stick: 12 });
+    expect(sim.turnInQuest('oruun', 'aven')).toBe(true);
+    expect(sim.state.questLog!.lastCompletedDay).toBe(3);
+    visit(sim, 'sela');
+    expect(sim.acceptQuest('oruun', 'sela')).toBe(false);
+    sim.state.totalHours = 72;
+    expect(sim.acceptQuest('oruun', 'sela')).toBe(true);
+  });
+
+  it('holds a legacy day-one quest until day two without losing it or taking supplies', () => {
+    const sim = questSim();
+    visit(sim, 'aven'); sim.talkTo('oruun', 'aven'); sim.acceptQuest('oruun', 'aven');
+    give(sim, { stick: 12 }); sim.state.totalHours = 1;
+    const loaded = new Simulation(deserializeState(serializeState(sim.state))!);
+    expect(activeQuest(loaded.state)!.id).toBe('oruun-firewood');
+    expect(loaded.turnInQuest('oruun', 'aven')).toBe(false);
+    expect(countItem(loaded.state.inventory, 'stick')).toBe(12);
+    loaded.state.totalHours = 24;
+    expect(loaded.turnInQuest('oruun', 'aven')).toBe(true);
+  });
+
+  it('provides different brief stories without advancing simulation randomness or progression', () => {
+    const sim = questSim(); completeFirst(sim);
+    const log = structuredClone(sim.state.questLog), rng = sim.state.rng;
+    for (const person of ORUUN.members) {
+      expect(casualTribeStory(sim.state, 'oruun', person.id, 0)).not.toBe(casualTribeStory(sim.state, 'oruun', person.id, 1));
+    }
+    expect(sim.state.questLog).toEqual(log);
+    expect(sim.state.rng).toBe(rng);
+  });
+
+  it('requires discovery, offers only through the correct giver, and permits exactly one active quest', () => {
+    const sim = questSim();
     expect(sim.acceptQuest('oruun', 'aven')).toBe(false);
     visit(sim, 'lio'); sim.talkTo('oruun', 'lio');
     expect(tribeDialog(sim.state, 'oruun', 'lio')!.text).toContain('Aven');
@@ -94,7 +177,7 @@ describe('Sequential quests and reputation', () => {
   });
 
   it('delivers atomically, rejects other members and remote delivery, and cannot repeat rewards', () => {
-    const sim = Simulation.newGame(42);
+    const sim = questSim();
     visit(sim, 'aven'); sim.talkTo('oruun', 'aven'); sim.acceptQuest('oruun', 'aven');
     give(sim, { stick: 11 });
     expect(sim.turnInQuest('oruun', 'aven')).toBe(false);
@@ -108,13 +191,15 @@ describe('Sequential quests and reputation', () => {
     expect(countItem(sim.state.inventory, 'stick')).toBe(0);
     expect(sim.state.questLog!.tribes.oruun).toEqual({ discovered: true, reputation: 3, completed: 1 });
     expect(sim.turnInQuest('oruun', 'aven')).toBe(false);
+    expect(nextQuest(sim.state, 'oruun')).toBeUndefined();
+    sim.state.totalHours = 48;
     expect(nextQuest(sim.state, 'oruun')!.id).toBe('oruun-campfire');
   });
 
   it('requires a real player-built campfire and credits a camp built before discovery', () => {
-    const sim = Simulation.newGame(42);
+    const sim = questSim();
     placeStructure(sim, 'campfire');
-    completeFirst(sim);
+    completeFirst(sim); sim.state.totalHours = 48;
     visit(sim, 'sela'); expect(sim.acceptQuest('oruun', 'sela')).toBe(true);
     give(sim, { log: 5 });
     expect(questNeeds(sim.state, activeQuest(sim.state)!).find((r) => r.label === 'Build your own campfire')!.have).toBe(1);
@@ -123,8 +208,9 @@ describe('Sequential quests and reputation', () => {
   });
 
   it('can complete all ten in order, keeps activity skill gates, and ends at 100 trust', () => {
-    const sim = Simulation.newGame(42);
-    for (const q of ORUUN_QUESTLINE.quests) {
+    const sim = questSim();
+    for (const [i, q] of ORUUN_QUESTLINE.quests.entries()) {
+      sim.state.totalHours = (i + 1) * 24;
       visit(sim, q.giver); sim.talkTo('oruun', q.giver);
       expect(nextQuest(sim.state, 'oruun')!.id).toBe(q.id);
       expect(sim.acceptQuest('oruun', q.giver)).toBe(true);
@@ -141,6 +227,7 @@ describe('Sequential quests and reputation', () => {
     }
     expect(sim.state.questLog!.tribes.oruun.completed).toBe(10);
     expect(sim.state.questLog!.tribes.oruun.reputation).toBe(100);
+    expect(reputationLevel(sim.state.questLog!.tribes.oruun.reputation)).toBe(5);
     expect(nextQuest(sim.state, 'oruun')).toBeUndefined();
     expect(sim.acceptQuest('oruun', 'aven')).toBe(false);
     expect(sim.canCraft('workbench').reason).toBe('skill');
@@ -149,7 +236,7 @@ describe('Sequential quests and reputation', () => {
   });
 
   it('repairs performed before accepting do not complete the repair lesson', () => {
-    const sim = Simulation.newGame(42);
+    const sim = questSim();
     visit(sim, 'tor'); sim.talkTo('oruun', 'tor');
     sim.state.questLog!.tribes.oruun.completed = 6;
     sim.state.stats.events.repairs = 2;
@@ -161,9 +248,10 @@ describe('Sequential quests and reputation', () => {
   });
 
   it('teaches real tool repair at the tribe bench without crediting it as a player build', () => {
-    const sim = Simulation.newGame(42);
+    const sim = questSim();
     visit(sim, 'tor'); sim.talkTo('oruun', 'tor');
     sim.state.questLog!.tribes.oruun.completed = 6;
+    sim.state.questLog!.tribes.oruun.reputation = reputationXpForLevel(5);
     sim.acceptQuest('oruun', 'tor');
     const bench = sim.structures.find((st) => st.prefab === 'workbench')!;
     giveRecipe(sim, 'axe'); sim.craft('axe');
@@ -176,6 +264,81 @@ describe('Sequential quests and reputation', () => {
     const needs = questNeeds(sim.state, activeQuest(sim.state)!);
     expect(needs.find((n) => n.label === 'Finish a tool repair')!.have).toBe(1);
     expect(needs.find((n) => n.label === 'Build your own repair workbench')!.have).toBe(0);
+  });
+});
+
+describe('Reputation levels and camp station access', () => {
+  it('levels up on an increasing curve to level ten, with room after the current quests', () => {
+    expect([0, 9, 10, 29, 30, 57, 58, 91, 92, 130, 131, 335, 336, 1000].map(reputationLevel))
+      .toEqual([1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 9, 10, 10]);
+    expect(MAX_REPUTATION_LEVEL).toBe(10);
+    expect(reputationXpForLevel(10)).toBe(336);
+    expect(reputationProgress(0)).toBe(0);
+    expect(reputationProgress(5)).toBe(0.5);
+    expect(reputationProgress(10)).toBe(0);
+    expect(reputationProgress(1000)).toBe(1);
+  });
+
+  it('blocks fire menus, fuel and crafting-menu cooking until reputation level two', () => {
+    const sim = questSim(); visit(sim, 'aven'); sim.talkTo('oruun', 'aven');
+    const fire = sim.structures.find((st) => st.prefab === 'campfire')!;
+    Object.assign(sim.state.player, { x: fire.x, z: fire.z + 2, y: fire.y });
+    giveRecipe(sim, 'cookedMeat'); give(sim, { stick: 1 }); drain(sim);
+    const fuel = fire.fuel, pack = structuredClone(sim.state.inventory);
+    sim.state.questLog!.tribes.oruun.reputation = reputationXpForLevel(2) - 1;
+    sim.target = { kind: 'structure', id: fire.id, dist: 1 };
+    expect(sim.describeTarget()).toMatchObject({ enabled: false, action: 'Oruun Reputation Lv 2 required' });
+    expect(campfireMenu(sim, fire.id)).toBeNull();
+    sim.perform(sim.target!);
+    expect(drain(sim).some((e) => e.type === 'openCooking')).toBe(false);
+    expect(sim.addFuel(fire.id, 'stick')).toBe(false);
+    expect(sim.craft('cookedMeat')).toMatchObject({ ok: false, reason: 'station' });
+    expect(sim.state.inventory).toEqual(pack);
+    expect(fire.fuel).toBe(fuel);
+    sim.state.questLog!.tribes.oruun.reputation = reputationXpForLevel(2);
+    expect(sim.describeTarget()).toMatchObject({ enabled: true });
+    expect(campfireMenu(sim, fire.id)).not.toBeNull();
+    sim.perform(sim.target!);
+    expect(drain(sim)).toContainEqual({ type: 'openCooking', structure: fire.id });
+    expect(sim.addFuel(fire.id, 'stick')).toBe(true);
+    expect(sim.craft('cookedMeat').ok).toBe(true);
+  });
+
+  it('blocks workbench menus and repair payment until reputation level five', () => {
+    const sim = questSim(); visit(sim, 'aven'); sim.talkTo('oruun', 'aven');
+    const bench = sim.structures.find((st) => st.prefab === 'workbench')!;
+    giveRecipe(sim, 'axe'); sim.craft('axe'); sim.state.toolWear.axe!.dur /= 2;
+    give(sim, { stick: 2, stone: 2, fiber: 2 }); drain(sim);
+    const pack = structuredClone(sim.state.inventory);
+    sim.state.questLog!.tribes.oruun.reputation = reputationXpForLevel(5) - 1;
+    sim.target = { kind: 'structure', id: bench.id, dist: 1 };
+    expect(sim.describeTarget()).toMatchObject({ enabled: false, action: 'Oruun Reputation Lv 5 required' });
+    expect(workbenchMenu(sim, bench.id)).toBeNull();
+    sim.perform(sim.target!);
+    expect(drain(sim).some((e) => e.type === 'openStructure')).toBe(false);
+    expect(sim.startRepair('axe', bench.id)).toEqual({ ok: false, reason: 'reputation' });
+    expect(sim.state.inventory).toEqual(pack);
+    expect(sim.state.repair).toBeUndefined();
+    sim.state.questLog!.tribes.oruun.reputation = reputationXpForLevel(5);
+    expect(workbenchMenu(sim, bench.id)).not.toBeNull();
+    expect(sim.describeTarget()).toMatchObject({ enabled: true });
+    sim.perform(sim.target!);
+    expect(drain(sim)).toContainEqual({ type: 'openStructure', structure: bench.id });
+    expect(sim.startRepair('axe', bench.id).ok).toBe(true);
+  });
+
+  it('keeps player-built fire and workbench use independent of tribe reputation', () => {
+    const sim = questSim();
+    const fire = placeStructure(sim, 'campfire'), bench = placeStructure(sim, 'workbench');
+    Object.assign(sim.state.player, { x: fire.x, z: fire.z + 1.5, y: fire.y });
+    giveRecipe(sim, 'cookedMeat');
+    expect(sim.craft('cookedMeat').ok).toBe(true);
+    expect(campfireMenu(sim, fire.id)).not.toBeNull();
+    giveRecipe(sim, 'axe'); sim.craft('axe'); sim.state.toolWear.axe!.dur /= 2;
+    give(sim, { stick: 2, stone: 2, fiber: 2 });
+    expect(workbenchMenu(sim, bench.id)).not.toBeNull();
+    expect(sim.startRepair('axe', bench.id).ok).toBe(true);
+    expect(sim.state.questLog).toBeUndefined();
   });
 });
 
@@ -214,7 +377,8 @@ describe('Village life, persistence and models', () => {
 
   it('saves village property, routines, active quest, reputation and baselines without duplication', () => {
     const sim = Simulation.newGame(42);
-    completeFirst(sim); visit(sim, 'sela'); sim.acceptQuest('oruun', 'sela');
+    completeFirst(sim); sim.state.totalHours = 48; visit(sim, 'sela'); sim.acceptQuest('oruun', 'sela');
+    sim.followWeather(sim.state.weather);
     const loaded = deserializeState(serializeState(sim.state))!;
     expect(loaded.questLog).toEqual(sim.state.questLog);
     expect(loaded.settlements).toEqual(sim.state.settlements);
@@ -250,6 +414,8 @@ describe('Village life, persistence and models', () => {
     const fire = guest.structures.find((st) => st.prefab === 'campfire')!;
     Object.assign(guest.state.player, { x: fire.x, z: fire.z + 2 });
     const pack = structuredClone(host.state.inventory);
+    guest.talkTo('oruun', 'aven');
+    guest.state.questLog!.tribes.oruun.reputation = reputationXpForLevel(2);
     give(guest, { stick: 1 });
     expect(guest.addFuel(fire.id, 'stick')).toBe(true);
     const request = guest.netOut.find((r) => r.k === 'tribeFuel')!;
@@ -261,7 +427,7 @@ describe('Village life, persistence and models', () => {
     expect(host.state.inventory).toEqual(pack);
   });
 
-  it('reserves family shelters and supplies while sharing warmth and repair stations', () => {
+  it('keeps family shelters and supplies inert while sharing passive warmth', () => {
     const sim = Simulation.newGame(42);
     const camp = sim.state.settlements![0], bin = camp.structures.find((st) => st.store)!;
     const tent = camp.structures.find((st) => st.prefab === 'hideTent')!;
@@ -270,8 +436,20 @@ describe('Village life, persistence and models', () => {
     expect(sim.takeItem(bin.id, 0)).toBe(0);
     sim.devSetHour(21);
     expect(sim.trySleep(tent.id)).toBe(false);
-    sim.perform({ kind: 'structure', id: bin.id, dist: 1 });
-    expect(drain(sim)).toContainEqual({ type: 'openTribeStation', structure: bin.id });
+    drain(sim);
+    for (const st of [bin, tent]) {
+      sim.perform({ kind: 'structure', id: st.id, dist: 1 });
+      expect(drain(sim).some((e) => e.type.startsWith('open'))).toBe(false);
+      sim.target = { kind: 'structure', id: st.id, dist: 1 };
+      expect(sim.describeTarget()).toBeNull();
+      Object.assign(sim.state.player, { x: st.x, z: st.z + 3, y: sim.terrain.heightAt(st.x, st.z + 3) });
+      sim.step(0.02, input({ resolveAim: (eye, out) => {
+        out.x = st.x - eye.x; out.y = st.y + PREFABS[st.prefab].interactHeight - eye.y; out.z = st.z - eye.z;
+        const length = Math.hypot(out.x, out.y, out.z);
+        out.x /= length; out.y /= length; out.z /= length;
+      } }, sim));
+      expect(sim.target?.kind === 'structure' && sim.target.id === st.id).toBe(false);
+    }
     Object.assign(sim.state.player, { x: camp.x, z: camp.z + 2 });
     expect(sim.isNearLitFire()).toBe(true);
   });

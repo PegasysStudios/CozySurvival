@@ -41,7 +41,7 @@ import { parseWeather, weatherForSeason, WEATHER_NAMES, type Weather, type Weath
 import { snowAmount, snowCovered, snowScale } from './snow';
 import { TRIBES, tribeFor } from '../data/tribes';
 import { createSettlement, planSettlement, settlementStructures } from './settlements';
-import { acceptQuest as acceptTribeQuest, completeQuest, discoverTribe, tribeDialog } from './quests';
+import { acceptQuest as acceptTribeQuest, canUseTribeStructure, completeQuest, discoverTribe, privateTribeStructure, tribeDialog, tribeStationRequirementText } from './quests';
 import { updateVillagers } from './villagers';
 import type { SettlementState, VillagerState } from './state';
 import { removeFromStore } from './storage';
@@ -1087,12 +1087,13 @@ export class Simulation {
     for (const st of this.structures) if (PREFABS[st.prefab].fire && st.fuel > 0) this.litFires.push({ x: st.x, z: st.z });
   }
 
-  nearestStructure(prefabFilter: (id: PrefabId) => boolean, radius: number, litOnly = false, playerOwned = false): StructureState | null {
+  nearestStructure(prefabFilter: (id: PrefabId) => boolean, radius: number, litOnly = false, playerOwned = false, usableOnly = false): StructureState | null {
     const p = this.state.player;
     let best: StructureState | null = null;
     let bestD = radius;
     for (const st of playerOwned ? this.state.structures : this.structures) {
       if (!prefabFilter(st.prefab)) continue;
+      if (usableOnly && !canUseTribeStructure(this.state, st)) continue;
       if (litOnly && st.fuel <= 0) continue;
       const d = Math.hypot(st.x - p.x, st.z - p.z);
       if (d <= bestD) {
@@ -1105,6 +1106,11 @@ export class Simulation {
 
   isNearLitFire(radius = COOK_RADIUS): boolean {
     return this.nearestStructure((id) => !!PREFABS[id].fire, radius, true) !== null;
+  }
+
+  /** Cooking respects camp permissions; passive warmth still comes from any lit fire. */
+  isNearCookingFire(): boolean {
+    return this.nearestStructure((id) => !!PREFABS[id].fire, COOK_RADIUS, true, false, true) !== null;
   }
 
   /** How this map's climate changes a night's sleep (the island's thirst and warm nights). */
@@ -1205,7 +1211,7 @@ export class Simulation {
         }
       } else if (c.kind === 'structure') {
         const st = this.structures.find((x) => x.id === c.ref);
-        if (!st) continue;
+        if (!st || privateTribeStructure(s, st)) continue;
         const def = PREFABS[st.prefab];
         const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, st.x, st.y + def.interactHeight, st.z, def.interactRadius);
         if (hitT >= 0 && hitT < bestT) {
@@ -1334,8 +1340,9 @@ export class Simulation {
       }
       case 'structure': {
         const st = this.structures.find((d) => d.id === t.id);
-        if (!st) return null;
+        if (!st || privateTribeStructure(s, st)) return null;
         const def = PREFABS[st.prefab];
+        if (!canUseTribeStructure(s, st)) return { name: def.name, action: tribeStationRequirementText(s, st), enabled: false };
         if (def.fire) return st.fuel > 0 ? { name: 'Campfire', action: 'Cook & add fuel', enabled: true } : { name: 'Campfire (out)', action: 'Add fuel to relight', enabled: true };
         const name = st.wear ? `${def.name} · ${conditionText(st.wear)}` : def.name;
         if (def.shelter) return { name, action: canSleepAt(this.hour) ? 'Sleep or upgrade' : 'Upgrade (sleep after 7 PM)', enabled: true };
@@ -2056,11 +2063,11 @@ export class Simulation {
 
   private useStructure(id: number): void {
     const st = this.structures.find((x) => x.id === id);
-    if (!st) return;
+    if (!st || privateTribeStructure(this.state, st)) return;
     const def = PREFABS[st.prefab];
-    if (st.settlement && (def.shelter || def.storage)) {
-      discoverTribe(this.state, st.settlement);
-      this.emit({ type: 'openTribeStation', structure: st.id });
+    if (!canUseTribeStructure(this.state, st)) {
+      this.actionCooldown = 0.3;
+      this.message(tribeStationRequirementText(this.state, st), 'warn');
       return;
     }
     this.actionCooldown = 0.3;
@@ -2567,7 +2574,7 @@ export class Simulation {
   canCraft(recipeId: string): CraftCheck {
     const r = RECIPE_BY_ID[recipeId];
     if (!r || !recipeOnMap(r, this.biome)) return { ok: false, reason: 'unknown' };
-    return canCraft(this.state, r, { nearFire: this.isNearLitFire() });
+    return canCraft(this.state, r, { nearFire: this.isNearCookingFire() });
   }
 
   craft(recipeId: string): CraftCheck {
@@ -2581,7 +2588,7 @@ export class Simulation {
     const s = this.state;
     const cooking = recipe.station === 'fire';
     const firstTime = (s.stats.crafted[recipeId] ?? 0) === 0;
-    const res = craftRecipe(s, recipeId, { nearFire: this.isNearLitFire() });
+    const res = craftRecipe(s, recipeId, { nearFire: this.isNearCookingFire() });
     if (res.ok) {
       const out = recipe.output;
       let item = out.kind === 'item' ? out.item : null;
@@ -2836,6 +2843,7 @@ export class Simulation {
     const s = this.state;
     const st = this.structures.find((x) => x.id === structureId);
     if (!st || !PREFABS[st.prefab].fire) return false;
+    if (!canUseTribeStructure(s, st)) { this.message(tribeStationRequirementText(s, st), 'warn'); return false; }
     const f = BALANCE.fire;
     if (st.fuel >= f.maxFuelHours - 0.5) {
       this.message('The fire is roaring already.');
@@ -2989,6 +2997,7 @@ export class Simulation {
   canRepair(tool: WearingTool, structureId: number): RepairCheck {
     const st = this.structures.find((x) => x.id === structureId);
     if (!st || !PREFABS[st.prefab].workbench) return { ok: false, reason: 'gone' };
+    if (!canUseTribeStructure(this.state, st)) return { ok: false, reason: 'reputation' };
     return canRepair(this.state, tool);
   }
 

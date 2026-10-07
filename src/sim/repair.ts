@@ -10,7 +10,7 @@ import { toolLevel } from './upgrades';
 
 const R = BALANCE.repair;
 
-export type RepairFailure = 'notOwned' | 'full' | 'missing' | 'busy' | 'gone';
+export type RepairFailure = 'notOwned' | 'full' | 'missing' | 'busy' | 'gone' | 'reputation';
 
 export interface RepairCheck {
   ok: boolean;
@@ -23,6 +23,7 @@ export const REPAIR_FAILURE_TEXT: Record<RepairFailure, string> = {
   missing: 'Missing materials.',
   busy: 'You are already repairing something.',
   gone: 'That workbench is gone.',
+  reputation: 'Build reputation with these people before using their workbench.',
 };
 
 /** Everything the crafting recipe for `tool` takes. */

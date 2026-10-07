@@ -311,7 +311,7 @@ export const RECIPES: Recipe[] = [
   // ---- structures (placed in the world)
   {
     id: 'campfire', requiredLevel: 1, name: 'Campfire', category: 'structures',
-    inputs: [{ item: 'stone', count: 25 }, { item: 'stick', count: 20 }, { item: 'fiber', count: 5 }],
+    inputs: [{ item: 'stone', count: 10 }, { item: 'stick', count: 6 }, { item: 'fiber', count: 5 }],
     output: { kind: 'place', prefab: 'campfire' },
     description: 'Warmth, light, cooking. Predators avoid it.',
   },

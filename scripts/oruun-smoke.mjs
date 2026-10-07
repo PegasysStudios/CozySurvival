@@ -23,6 +23,7 @@ try {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`http://127.0.0.1:${server.httpServer.address().port}/?dev=1`, { waitUntil: 'load', timeout: 90_000 });
   await page.waitForFunction(() => window.__cozy?.ready, { timeout: 90_000 });
+  assert.equal(await page.evaluate(async () => (await fetch('/ui/oruun-dialogue-panel.png')).status), 200);
   const frames = () => page.evaluate(() => new Promise((resolve) => {
     let n = 0;
     const frame = () => ++n === 4 ? resolve() : requestAnimationFrame(frame);
@@ -61,6 +62,16 @@ try {
     game.syncCameraToPlayer(); game.hud.setVisible(true); game.mode = 'playing'; game.input.locked = true;
   });
   await page.click('canvas.view');
+  await page.waitForSelector('.panel-dialog .dialog-more');
+  assert.equal(await page.$('[data-quest-action]'), null);
+  assert.ok(await page.$eval('.dialog-speech', (el) => el.textContent.includes('We are the Oruun')));
+  assert.equal(await page.evaluate(() => window.__cozy.game.sim.acceptQuest('oruun', 'aven')), false);
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const game = window.__cozy.game;
+    game.sim.state.totalHours = 24;
+    game.sim.talkTo('oruun', 'aven');
+  });
   await page.waitForSelector('.panel-dialog [data-quest-action="accept"]');
   assert.ok(await page.$eval('.dialog-speech', (el) => el.textContent.includes('twelve sticks')));
   await screenshot('offer');
@@ -82,30 +93,58 @@ try {
     const game = window.__cozy.game;
     game.run.save(game.sim);
     const loaded = game.run.loadCurrent();
-    return { log: loaded.state.questLog, campCount: loaded.state.settlements.length, ownBuilds: loaded.state.structures.length };
+    const sela = loaded.state.settlements[0].members.find((n) => n.id === 'sela');
+    Object.assign(loaded.state.player, { x: sela.x, z: sela.z + 2, y: sela.y });
+    return { log: loaded.state.questLog, campCount: loaded.state.settlements.length, ownBuilds: loaded.state.structures.length,
+      canAcceptAfterReload: loaded.acceptQuest('oruun', 'sela') };
   });
   assert.deepEqual(quest.log.tribes.oruun, { discovered: true, completed: 1, reputation: 3 });
+  assert.equal(quest.log.lastCompletedDay, 2); assert.equal(quest.canAcceptAfterReload, false);
   assert.equal(quest.campCount, 1); assert.equal(quest.ownBuilds, 0);
   await screenshot('thanks');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => window.__cozy.game.sim.talkTo('oruun', 'aven'));
+  await page.waitForSelector('.panel-dialog .dialog-more');
+  assert.equal(await page.$('[data-quest-action]'), null);
+  const story = await page.$eval('.dialog-speech', (el) => el.textContent);
+  await page.locator('.dialog-more').click();
+  assert.notEqual(await page.$eval('.dialog-speech', (el) => el.textContent), story);
   await page.keyboard.press('Escape');
   await page.keyboard.press('KeyC');
   await page.waitForSelector('.menu-section[data-section="skills"]');
   await page.locator('.menu-section[data-section="skills"]').click();
-  assert.ok(await page.$eval('[data-reputation="oruun"]', (el) => el.textContent.includes('3 / 100') && el.textContent.includes('Sela')));
+  assert.ok(await page.$eval('[data-reputation="oruun"]', (el) => el.textContent.includes('Lv 1 / 10') && el.textContent.includes('3 reputation') && el.textContent.includes('next dawn (6 AM)')));
+  assert.ok(await page.$eval('[data-reputation="oruun"]', (el) => !el.textContent.includes('All quests complete')));
   await page.$eval('[data-reputation="oruun"]', (el) => el.scrollIntoView({ block: 'center' }));
   await screenshot('skills');
+  await page.keyboard.press('Escape');
+  await page.evaluate(() => {
+    const game = window.__cozy.game, sim = game.sim, sela = sim.state.settlements[0].members.find((n) => n.id === 'sela');
+    sim.state.totalHours = 48;
+    Object.assign(sim.state.player, { x: sela.x, z: sela.z + 2, y: sela.y });
+    sim.talkTo('oruun', 'sela');
+  });
+  await page.waitForSelector('.panel-dialog [data-quest-action="accept"]');
+  assert.ok(await page.$eval('.dialog-speaker', (el) => el.textContent.includes('Sela')));
+  await page.$$eval('.dialog-actions button', (buttons) => buttons.find((b) => b.textContent === 'No').click());
 
-  // Station menus retain the established cooking/repair behavior, and village storage is informational.
+  // Camp property stays private; reputation opens the fire at level two and the bench at level five.
   const stations = await page.evaluate(() => {
     const game = window.__cozy.game, sim = game.sim, camp = sim.state.settlements[0], results = [];
-    for (const prefab of ['campfire', 'workbench', 'storageBin', 'hideTent']) {
-      const st = camp.structures.find((v) => v.prefab === prefab);
-      sim.perform({ kind: 'structure', id: st.id, dist: 1 });
-      results.push({ prefab, opens: sim.takeEvents([]).filter((e) => ['openCooking', 'openStructure', 'openTribeStation'].includes(e.type)).map((e) => e.type) });
+    for (const points of [3, 10, 92]) {
+      sim.state.questLog.tribes.oruun.reputation = points;
+      const opens = [];
+      sim.takeEvents([]);
+      for (const prefab of ['campfire', 'workbench', 'storageBin', 'hideTent']) {
+        const st = camp.structures.find((v) => v.prefab === prefab);
+        sim.perform({ kind: 'structure', id: st.id, dist: 1 });
+        opens.push(sim.takeEvents([]).filter((e) => ['openCooking', 'openStructure', 'openTribeStation'].includes(e.type)).map((e) => e.type));
+      }
+      results.push(opens);
     }
     return results;
   });
-  assert.deepEqual(stations.map((v) => v.opens[0]), ['openCooking', 'openStructure', 'openTribeStation', 'openTribeStation']);
+  assert.deepEqual(stations, [[[], [], [], []], [['openCooking'], [], [], []], [['openCooking'], ['openStructure'], [], []]]);
 
   for (const biome of ['desert', 'island']) {
     await page.evaluate((id) => {

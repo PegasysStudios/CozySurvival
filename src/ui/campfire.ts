@@ -4,6 +4,7 @@ import { recipesFor, type Recipe } from '../data/recipes';
 import { countItem } from '../sim/inventory';
 import type { Simulation } from '../sim/simulation';
 import { canSleepAt } from '../sim/time';
+import { canUseTribeStructure } from '../sim/quests';
 
 export interface FuelOption {
   item: 'stick' | 'log';
@@ -35,7 +36,7 @@ export const isCampfireRecipe = (r: Recipe): boolean => r.station === 'fire';
 export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | null {
   const s = sim.state;
   const fire = sim.structures.find((x) => x.id === fireId);
-  if (!fire || !PREFABS[fire.prefab].fire) return null;
+  if (!fire || !PREFABS[fire.prefab].fire || !canUseTribeStructure(s, fire)) return null;
   const f = BALANCE.fire;
   const full = fire.fuel >= f.maxFuelHours - 0.5;
   const fuelOptions: FuelOption[] = (['stick', 'log'] as const).map((item) => {
@@ -43,7 +44,7 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
     return { item, hours: item === 'log' ? f.logFuelHours : f.stickFuelHours, have, enabled: have > 0 && !full };
   });
   const recipes = recipesFor(sim.biome).filter(isCampfireRecipe);
-  const canSleep = canSleepAt(sim.hour);
+  const canSleep = !fire.settlement && canSleepAt(sim.hour);
   return {
     fuel: fire.fuel,
     maxFuel: f.maxFuelHours,
@@ -54,8 +55,8 @@ export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | nu
     fuelOptions,
     recipes,
     canSleep,
-    sleepLabel: canSleep ? 'Sleep by the fire' : 'Sleep (after 7 PM)',
-    sleepNote: fire.fuel > 0
+    sleepLabel: fire.settlement ? 'Rest at your own camp' : canSleep ? 'Sleep by the fire' : 'Sleep (after 7 PM)',
+    sleepNote: fire.settlement ? 'This communal fire is for cooking. Rest at your own camp.' : fire.fuel > 0
       ? 'Bed down beside the flames until dawn. A burning fire keeps you warm, but you get none of a shelter\'s bonuses.'
       : 'The fire is out. Sleep here and you will wake up cold, so add fuel first.',
   };
