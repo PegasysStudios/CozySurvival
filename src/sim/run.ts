@@ -254,6 +254,7 @@ export class RunManager {
     if (!s) return null;
     const sim = new Simulation(s);
     sim.initializePnwWildlife();
+    sim.initializeSettlements();
     return sim;
   }
 
@@ -269,6 +270,7 @@ export class RunManager {
     }
     const sim = Simulation.newGame(seed, this.biome, pnwGen);
     sim.initializePnwWildlife();
+    sim.initializeSettlements();
     this.writeSnapshot(sim);
     this.save(sim);
     return sim;
@@ -300,7 +302,7 @@ export class RunManager {
       } else if (e.type === 'death') {
         death = this.recordDeath(sim);
         dirty = true;
-      } else if (e.type === 'placed' || e.type === 'crafted' || e.type === 'slept') {
+      } else if (e.type === 'placed' || e.type === 'crafted' || e.type === 'slept' || e.type === 'questChanged' || e.type === 'openDialog' || e.type === 'openTribeStation') {
         dirty = true;
       }
     }
@@ -354,6 +356,7 @@ export class RunManager {
     snap.deathCause = null;
     const sim = new Simulation(snap);
     sim.initializePnwWildlife();
+    sim.initializeSettlements();
     this.save(sim);
     return sim;
   }

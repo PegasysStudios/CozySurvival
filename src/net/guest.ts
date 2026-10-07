@@ -104,7 +104,7 @@ export class GuestSession extends Session {
     const old = this.sim?.state;
     if (old) {
       // Keep this player's own character across a resync; only the world is replaced.
-      for (const k of ['player', 'needs', 'inventory', 'canteen', 'tools', 'activeTool', 'toolWear', 'toolLevels', 'gear', 'skills', 'forage', 'stats', 'objective', 'dead', 'deathCause', 'lastDamage', 'repair', 'pinned', 'nextId', 'runId'] as const) {
+      for (const k of ['player', 'needs', 'inventory', 'canteen', 'tools', 'activeTool', 'toolWear', 'toolLevels', 'gear', 'skills', 'forage', 'stats', 'objective', 'questLog', 'dead', 'deathCause', 'lastDamage', 'repair', 'pinned', 'nextId', 'runId'] as const) {
         (state as unknown as Record<string, unknown>)[k] = old[k];
       }
       state.animals = old.animals;
@@ -207,6 +207,7 @@ export class GuestSession extends Session {
     sim.followClock(t.h, t.r);
     sim.followSeason(t.season);
     sim.followWeather(t.weather);
+    sim.followSettlements(t.settlements);
     for (const row of t.p ?? []) {
       const pid = row[0];
       if (pid === this.pid || typeof pid !== 'string') continue;

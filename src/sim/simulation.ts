@@ -1,5 +1,5 @@
 import { box, circle, overlaps, raySphere, rayCylinder } from '../core/geom2d';
-import { clamp, damp, lerp } from '../core/math';
+import { clamp, damp, lerp, headingTo } from '../core/math';
 import { Rng } from '../core/rng';
 import { BALANCE } from '../data/balance';
 import { FISHING_CATCHES, type FishingCatch } from '../data/fishing';
@@ -39,6 +39,13 @@ import { getWorldGen, type WorldGen } from './worldgen';
 import { parseSeason, seasonAtDawn, seasonDay, seasonDeadline, seasonalForage, SEASON_NAMES, SEASON_SLEEP_COLD, SEASON_WARMTH, type Season, type SeasonState } from './seasons';
 import { parseWeather, weatherForSeason, WEATHER_NAMES, type Weather, type WeatherState } from './weather';
 import { snowAmount, snowCovered, snowScale } from './snow';
+import { TRIBES, tribeFor } from '../data/tribes';
+import { createSettlement, planSettlement, settlementStructures } from './settlements';
+import { acceptQuest as acceptTribeQuest, completeQuest, discoverTribe, tribeDialog } from './quests';
+import { updateVillagers } from './villagers';
+import type { SettlementState, VillagerState } from './state';
+import { removeFromStore } from './storage';
+import { questlineFor } from '../data/quests';
 
 export interface SimInput {
   moveX: number;
@@ -60,6 +67,7 @@ export const IDLE_INPUT: Readonly<SimInput> = {
 };
 
 export type Target =
+  | { kind: 'villager'; tribe: string; member: string; dist: number }
   | { kind: 'tree'; index: number; dist: number }
   | { kind: 'resource'; index: number; dist: number }
   | { kind: 'drop'; id: number; dist: number }
@@ -133,6 +141,8 @@ export interface RemotePlayer {
 
 /** Requests a guest's simulation leaves for its network session. */
 export type NetRequest =
+  | { k: 'questDelivery'; tribe: string; quest: string }
+  | { k: 'tribeFuel'; tribe: string; fuel: 'stick' | 'log' }
   | { k: 'hit'; id: number; dmg: number; t?: number }
   | { k: 'sleep'; structure: number }
   | { k: 'wake' }
@@ -382,6 +392,7 @@ export class Simulation {
     this.rng = new Rng(state.rng);
     this.wasNight = isNight(this.hour);
     this.buildColliders();
+    if (this.biome !== 'pnw' || this.terrain.pnw) this.initializeSettlements();
     const query = (x: number, z: number, r: number, out: Collider[]) => this.colliders.query(x, z, r, out);
     const self = this;
     this.moveEnv = { terrain: this.terrain, query, get frozen() { return self.frozen; } };
@@ -430,6 +441,154 @@ export class Simulation {
   /** Run activation also gives legacy PNW saves their requested wildlife without regenerating the map. */
   initializePnwWildlife(): void {
     if (this.biome === 'pnw' && this.state.pnwWildlife !== 1) this.seedPnwSquirrels();
+  }
+
+  /** Village property is separate from player builds, but uses the same stations, colliders and render models. */
+  get structures(): StructureState[] { return settlementStructures(this.state); }
+
+  initializeSettlements(): void {
+    if (!TRIBES.some((def) => def.biome === this.biome) || this.state.settlements?.length) return;
+    const plans = this.gen.settlements ?? [];
+    this.state.settlements = [];
+    for (const seedPlan of plans) {
+      const def = tribeFor(seedPlan.tribe, this.biome)!;
+      const plan = this.state.structures.length ? planSettlement(this.terrain, this.gen, def, this.state.structures) : seedPlan;
+      if (!plan) continue;
+      const camp = createSettlement(plan, this.terrain, () => this.state.nextId++);
+      this.state.settlements.push(camp);
+      for (const st of camp.structures) this.addStructureCollider(st);
+      const store = camp.structures.find((st) => st.store)?.store;
+      if (store) { addToStore(store, 'stick', 12); addToStore(store, 'fiber', 6); addToStore(store, 'rawMeat', 2); }
+    }
+    this.refreshLitFires();
+    this.worldVersion++;
+  }
+
+  /** Shared NPC state follows the host while every player keeps their own quests and reputation. */
+  followSettlements(camps: SettlementState[] | undefined): void {
+    if (!camps) return;
+    camps = camps.filter((camp) => tribeFor(camp.tribe, this.biome));
+    const previous = (this.state.settlements ?? []).flatMap((camp) => camp.structures);
+    const incoming = camps.flatMap((camp) => camp.structures);
+    const changed = previous.length !== incoming.length || previous.some((st, i) => {
+      const next = incoming[i];
+      return st.id !== next.id || st.prefab !== next.prefab || st.x !== next.x || st.z !== next.z || st.rot !== next.rot;
+    });
+    const flamesChanged = changed || previous.some((st, i) => (st.fuel > 0) !== (incoming[i].fuel > 0));
+    if (changed) for (const st of previous) {
+      const collider = this.structureColliders.get(st.id);
+      if (collider) this.colliders.remove(collider);
+      this.structureColliders.delete(st.id);
+    }
+    this.state.settlements = structuredClone(camps);
+    if (changed) for (const st of incoming) this.addStructureCollider(st);
+    if (flamesChanged) { this.refreshLitFires(); this.worldVersion++; }
+  }
+
+  private nearVillager(tribe: string, member: string): VillagerState | undefined {
+    if (this.state.dead) return;
+    const npc = this.state.settlements?.find((v) => v.tribe === tribe)?.members.find((m) => m.id === member);
+    return npc && Math.hypot(npc.x - this.state.player.x, npc.z - this.state.player.z) <= 4.5 ? npc : undefined;
+  }
+
+  talkTo(tribe: string, member: string): boolean {
+    if (!this.nearVillager(tribe, member)) return false;
+    this.cancelFishing();
+    this.bowDraw = -1;
+    if (discoverTribe(this.state, tribe)) this.message(`You discovered the ${tribeFor(tribe, this.biome)!.name}. Speak with them to learn how to live off the land.`, 'good');
+    this.actionCooldown = 0.4;
+    this.emit({ type: 'openDialog', tribe, member });
+    return true;
+  }
+
+  acceptQuest(tribe: string, member: string): boolean {
+    if (!this.nearVillager(tribe, member) || !acceptTribeQuest(this.state, tribe, member)) return false;
+    this.emit({ type: 'questChanged' });
+    this.message(`Quest accepted: ${tribeDialog(this.state, tribe, member)?.quest?.title}.`, 'good');
+    return true;
+  }
+
+  turnInQuest(tribe: string, member: string): boolean {
+    if (!this.nearVillager(tribe, member)) return false;
+    const q = completeQuest(this.state, tribe, member);
+    if (!q) { this.message('Bring all the requested supplies and finish the lesson before handing them over.', 'warn'); return false; }
+    if (this.authority === 'guest') this.netOut.push({ k: 'questDelivery', tribe, quest: q.id });
+    else this.receiveTribeDelivery(tribe, q.id, this.state.player);
+    this.emit({ type: 'questChanged' });
+    this.message(`Quest complete: ${q.title} · +${q.reputation} ${tribeFor(tribe, this.biome)!.name} reputation.`, 'good');
+    return true;
+  }
+
+  receiveTribeDelivery(tribe: string, quest: string, from: { x: number; z: number }): void {
+    const camp = this.state.settlements?.find((v) => v.tribe === tribe);
+    const q = questlineFor(tribe, this.biome)?.quests.find((v) => v.id === quest);
+    const giver = q && camp?.members.find((n) => n.id === q.giver);
+    if (!camp || !q || !giver || Math.hypot(giver.x - from.x, giver.z - from.z) > 10) return;
+    const bin = camp.structures.find((st) => st.store);
+    if (bin?.store) for (const r of q.deliveries) addToStore(bin.store, r.item, r.count);
+  }
+
+  receiveTribeFuel(tribe: string, fuel: 'stick' | 'log', from: { x: number; z: number }): void {
+    const fire = this.state.settlements?.find((v) => v.tribe === tribe)?.structures.find((st) => PREFABS[st.prefab].fire);
+    if (!fire || !['stick', 'log'].includes(fuel) || Math.hypot(fire.x - from.x, fire.z - from.z) > 10) return;
+    fire.fuel = Math.min(BALANCE.fire.maxFuelHours, fire.fuel + (fuel === 'log' ? BALANCE.fire.logFuelHours : BALANCE.fire.stickFuelHours));
+    this.refreshLitFires(); this.worldVersion++;
+  }
+
+  private updateVillageLife(dt: number): void {
+    if (this.authority === 'guest' || !this.state.settlements?.length) return;
+    const visitors = [...(this.state.dead ? [] : [this.state.player]), ...this.remotePlayers.filter((p) => !p.dead)];
+    for (const camp of this.state.settlements) {
+      updateVillagers(camp, { terrain: this.terrain, gen: this.gen, state: this.state, night: this.night,
+        query: (x, z, r, out) => this.queryColliders(x, z, r, out), forageAvailable: (i) => this.forageAvailable(i), visitors,
+        work: (v, n) => this.villagerWork(v, n) }, dt);
+      const fire = camp.structures.find((st) => st.prefab === 'campfire');
+      const store = camp.structures.find((st) => st.store)?.store;
+      if (fire && store && fire.fuel < 2) {
+        const logs = removeFromStore(store, 'log', 1);
+        const sticks = logs ? 0 : removeFromStore(store, 'stick', 1);
+        if (logs || sticks) { fire.fuel = Math.min(BALANCE.fire.maxFuelHours, fire.fuel + (logs ? BALANCE.fire.logFuelHours : BALANCE.fire.stickFuelHours)); this.refreshLitFires(); this.worldVersion++; }
+      }
+    }
+  }
+
+  private villagerWork(camp: SettlementState, n: VillagerState): boolean {
+    const store = camp.structures.find((st) => st.store)?.store;
+    if (!store) return false;
+    const target = n.target;
+    if (n.task === 'gather' && target?.kind === 'resource') {
+      const g = this.gen.resources[target.ref], dyn = this.state.resources[target.ref];
+      if (!g || !dyn || dyn.charges <= 0 || !this.forageAvailable(target.ref) || Math.hypot(g.x - n.x, g.z - n.z) > 2) return false;
+      if (!addToStore(store, RESOURCES[g.kind].item, 1)) return false;
+      dyn.charges--; if (!dyn.charges) dyn.respawnAt = this.state.totalHours + RESOURCES[g.kind].respawnHours;
+      this.worldVersion++; return true;
+    }
+    if (n.task === 'chop' && target?.kind === 'tree') {
+      const g = this.gen.trees[target.ref], dyn = this.state.trees[target.ref];
+      if (!g || !dyn || dyn.felled || Math.hypot(g.x - n.x, g.z - n.z) > g.trunkR + 2) return false;
+      const fall = headingTo(n.x, n.z, g.x, g.z);
+      this.setTree(target.ref, { ...dyn, hp: 0, felled: true, fall, logs: 0, cuts: 0 });
+      this.emit({ type: 'treeFell', tree: target.ref, dirX: Math.sin(fall), dirZ: Math.cos(fall) });
+      addToStore(store, 'log', TREES[g.species].logs); addToStore(store, 'stick', TREES[g.species].sticks);
+      return true;
+    }
+    if (n.task === 'hunt' && target?.kind === 'animal') {
+      const animal = this.state.animals.find((a) => a.id === target.ref);
+      if (!animal || Math.hypot(animal.x - n.x, animal.z - n.z) > 9 || animalHidden(animal) || animal.y > this.terrain.heightAt(animal.x, animal.z) + 1) return false;
+      if (!['rabbit', 'squirrel'].includes(animal.species)) return false;
+      this.state.animals.splice(this.state.animals.indexOf(animal), 1);
+      for (const drop of SPECIES[animal.species].drops) addToStore(store, drop.item, drop.count);
+      this.worldVersion++; return true;
+    }
+    if (n.task === 'craft') {
+      const inv = { slots: store };
+      const fire = camp.structures.find((st) => st.prefab === 'campfire');
+      if (fire && fire.fuel > 0 && countItem(inv, 'rawMeat') > 0 && roomFor(inv, 'cookedMeat') > 0) {
+        removeItem(inv, 'rawMeat', 1); addToStore(store, 'cookedMeat', 1); return true;
+      }
+      if (countItem(inv, 'fiber') >= 4 && roomFor(inv, 'cordage') > 0) { removeItem(inv, 'fiber', 4); addToStore(store, 'cordage', 1); return true; }
+    }
+    return false;
   }
 
   /** One-time density correction, independent of the saved map generation. */
@@ -620,7 +779,7 @@ export class Simulation {
         this.colliders.add(makeCollider('cave', i, circle(x, z, 0.78), circle(x, z, 0.9)));
       }
     });
-    for (const s of state.structures) this.addStructureCollider(s);
+    for (const s of this.structures) this.addStructureCollider(s);
   }
 
   private makeTreeCollider(i: number, felled: boolean): Collider {
@@ -704,6 +863,7 @@ export class Simulation {
       }
       this.updateProjectiles(dt);
       this.updateAnimals(dt);
+      this.updateVillageLife(dt);
       if (world) {
         this.updateFires(gameHours);
         this.updateWear(gameHours, false, true, false);
@@ -759,6 +919,7 @@ export class Simulation {
 
     this.updateProjectiles(dt);
     this.updateAnimals(dt);
+    this.updateVillageLife(dt);
     if (world) this.updateFires(gameHours);
     this.updateWear(gameHours, true, world);
     if (world) this.updateRespawns(dt);
@@ -923,14 +1084,14 @@ export class Simulation {
 
   private refreshLitFires(): void {
     this.litFires.length = 0;
-    for (const st of this.state.structures) if (PREFABS[st.prefab].fire && st.fuel > 0) this.litFires.push({ x: st.x, z: st.z });
+    for (const st of this.structures) if (PREFABS[st.prefab].fire && st.fuel > 0) this.litFires.push({ x: st.x, z: st.z });
   }
 
-  nearestStructure(prefabFilter: (id: PrefabId) => boolean, radius: number, litOnly = false): StructureState | null {
+  nearestStructure(prefabFilter: (id: PrefabId) => boolean, radius: number, litOnly = false, playerOwned = false): StructureState | null {
     const p = this.state.player;
     let best: StructureState | null = null;
     let bestD = radius;
-    for (const st of this.state.structures) {
+    for (const st of playerOwned ? this.state.structures : this.structures) {
       if (!prefabFilter(st.prefab)) continue;
       if (litOnly && st.fuel <= 0) continue;
       const d = Math.hypot(st.x - p.x, st.z - p.z);
@@ -1043,7 +1204,7 @@ export class Simulation {
           best = { kind: 'resource', index: c.ref, dist: hitT };
         }
       } else if (c.kind === 'structure') {
-        const st = s.structures.find((x) => x.id === c.ref);
+        const st = this.structures.find((x) => x.id === c.ref);
         if (!st) continue;
         const def = PREFABS[st.prefab];
         const hitT = raySphere(ex, ey, ez, d.x, d.y, d.z, st.x, st.y + def.interactHeight, st.z, def.interactRadius);
@@ -1065,6 +1226,14 @@ export class Simulation {
       if (hitT >= 0 && hitT < bestT) {
         bestT = hitT;
         best = { kind: 'carcass', id: cc.id, dist: hitT };
+      }
+    }
+    for (const camp of s.settlements ?? []) {
+      const tribe = tribeFor(camp.tribe, this.biome);
+      for (const n of camp.members) {
+        const young = tribe?.members.find((m) => m.id === n.id)?.role === 'young';
+        const hitT = rayCylinder(ex, ey, ez, d.x, d.y, d.z, n.x, n.z, 0.48, n.y, n.y + (young ? 1.48 : 2.1));
+        if (hitT >= 0 && hitT < bestT) { bestT = hitT; best = { kind: 'villager', tribe: camp.tribe, member: n.id, dist: hitT }; }
       }
     }
     for (const a of s.animals) {
@@ -1104,6 +1273,10 @@ export class Simulation {
     const s = this.state;
     if (!t) return null;
     switch (t.kind) {
+      case 'villager': {
+        const tribe = tribeFor(t.tribe, this.biome), person = tribe?.members.find((m) => m.id === t.member);
+        return person ? { name: `${person.name} · ${tribe!.name} ${person.title}`, action: 'Talk & learn', enabled: true } : null;
+      }
       case 'tree': {
         const g = this.gen.trees[t.index];
         const def = TREES[g.species];
@@ -1160,7 +1333,7 @@ export class Simulation {
         return { name, action: s.tools.includes('knife') ? `Equip knife [${TOOLS.knife.slot}] to ${step}` : 'Needs a knife', enabled: false };
       }
       case 'structure': {
-        const st = s.structures.find((d) => d.id === t.id);
+        const st = this.structures.find((d) => d.id === t.id);
         if (!st) return null;
         const def = PREFABS[st.prefab];
         if (def.fire) return st.fuel > 0 ? { name: 'Campfire', action: 'Cook & add fuel', enabled: true } : { name: 'Campfire (out)', action: 'Add fuel to relight', enabled: true };
@@ -1243,6 +1416,10 @@ export class Simulation {
     const s = this.state;
     const tool = s.activeTool;
     const t = this.target;
+    if (t?.kind === 'villager') {
+      if (input.primaryPressed && this.actionCooldown <= 0) this.perform(t);
+      return;
+    }
     if (tool === 'bow') {
       const interactable = t && t.kind !== 'animal' && t.kind !== 'tree';
       if (input.primaryPressed && interactable) {
@@ -1466,6 +1643,9 @@ export class Simulation {
   /** Execute the primary action on a target (exposed for tests and UI). */
   perform(t: Target): void {
     switch (t.kind) {
+      case 'villager':
+        this.talkTo(t.tribe, t.member);
+        return;
       case 'tree':
         return this.actOnTree(t.index);
       case 'resource':
@@ -1875,9 +2055,14 @@ export class Simulation {
   }
 
   private useStructure(id: number): void {
-    const st = this.state.structures.find((x) => x.id === id);
+    const st = this.structures.find((x) => x.id === id);
     if (!st) return;
     const def = PREFABS[st.prefab];
+    if (st.settlement && (def.shelter || def.storage)) {
+      discoverTribe(this.state, st.settlement);
+      this.emit({ type: 'openTribeStation', structure: st.id });
+      return;
+    }
     this.actionCooldown = 0.3;
     if (def.fire) {
       if (st.fuel <= 0) this.addFuel(id);
@@ -2280,7 +2465,7 @@ export class Simulation {
 
   private updateFires(gameHours: number): void {
     let changed = false;
-    for (const st of this.state.structures) {
+    for (const st of this.structures) {
       if (!PREFABS[st.prefab].fire || st.fuel <= 0) continue;
       st.fuel -= gameHours;
       if (st.fuel <= 0) {
@@ -2338,7 +2523,7 @@ export class Simulation {
       avoidPrey.push({ x: r.x, z: r.z, minDist: PREY_MIN_SPAWN_DIST });
       avoidPred.push({ x: r.x, z: r.z, minDist: PREDATOR_MIN_SPAWN_DIST });
     }
-    for (const st of s.structures) avoidPred.push({ x: st.x, z: st.z, minDist: 35 });
+    for (const st of this.structures) avoidPred.push({ x: st.x, z: st.z, minDist: 35 });
     for (const { species: id, count } of this.biomeDef.prey) {
       if (id === 'squirrel' && !this.terrain.pnw && s.pnwWildlife !== 1) continue;
       const target = id === 'squirrel' && !this.terrain.pnw ? count / 4 : count;
@@ -2649,14 +2834,14 @@ export class Simulation {
   /** Feed a fire one log or stick: the chosen `fuel`, or a log when there is one. */
   addFuel(structureId: number, fuel?: 'stick' | 'log'): boolean {
     const s = this.state;
-    const st = s.structures.find((x) => x.id === structureId);
+    const st = this.structures.find((x) => x.id === structureId);
     if (!st || !PREFABS[st.prefab].fire) return false;
     const f = BALANCE.fire;
     if (st.fuel >= f.maxFuelHours - 0.5) {
       this.message('The fire is roaring already.');
       return false;
     }
-    const item: ItemId | null = fuel
+    const item: 'stick' | 'log' | null = fuel
       ? (countItem(s.inventory, fuel) > 0 ? fuel : null)
       : countItem(s.inventory, 'log') > 0 ? 'log' : countItem(s.inventory, 'stick') > 0 ? 'stick' : null;
     if (!item) {
@@ -2664,6 +2849,7 @@ export class Simulation {
       return false;
     }
     removeItem(s.inventory, item, 1);
+    if (st.settlement && this.authority === 'guest') this.netOut.push({ k: 'tribeFuel', tribe: st.settlement, fuel: item });
     const wasOut = st.fuel <= 0;
     st.fuel = Math.min(f.maxFuelHours, st.fuel + (item === 'log' ? f.logFuelHours : f.stickFuelHours));
     if (wasOut) this.refreshLitFires();
@@ -2680,9 +2866,9 @@ export class Simulation {
    */
   trySleep(structureId: number): boolean {
     const s = this.state;
-    const st = s.structures.find((x) => x.id === structureId);
+    const st = this.structures.find((x) => x.id === structureId);
     const rest = st ? restBonus(st.prefab) : null;
-    if (!st || !rest) return false;
+    if (!st || !rest || st.settlement) return false;
     if (s.repair) {
       this.emit({ type: 'sleepDenied', reason: 'Finish your repair first.' });
       return false;
@@ -2719,7 +2905,7 @@ export class Simulation {
     s.totalHours = nextDayStart(s.totalHours);
     this.advanceCalendarAtDawn();
     const elapsed = s.totalHours - before;
-    for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
+    for (const f of this.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
     const night = applySleep(s.needs, rest, byFire, elapsed, coldLethal, this.sleepClimate);
     this.updateWear(elapsed, false);
@@ -2767,9 +2953,9 @@ export class Simulation {
   /** Move up to `count` from pack slot `index` into storage `id`. Returns how many moved. */
   storeItem(id: number, index: number, count = Infinity): number {
     const s = this.state;
-    const st = s.structures.find((x) => x.id === id);
+    const st = this.structures.find((x) => x.id === id);
     const slot = s.inventory.slots[index];
-    if (!st || !PREFABS[st.prefab].storage || !slot) return 0;
+    if (!st || st.settlement || !PREFABS[st.prefab].storage || !slot) return 0;
     const moved = addToStore(ensureStore(st), slot.item, Math.min(count, slot.count));
     if (moved === 0) {
       this.message(`The ${PREFABS[st.prefab].name.toLowerCase()} is full.`, 'warn');
@@ -2783,9 +2969,9 @@ export class Simulation {
   /** Move up to `count` from slot `index` of storage `id` into the pack. Returns how many moved. */
   takeItem(id: number, index: number, count = Infinity): number {
     const s = this.state;
-    const st = s.structures.find((x) => x.id === id);
+    const st = this.structures.find((x) => x.id === id);
     const slot = st?.store?.[index];
-    if (!st || !slot) return 0;
+    if (!st || st.settlement || !slot) return 0;
     const moved = addItem(s.inventory, slot.item, Math.min(count, slot.count));
     if (moved === 0) {
       s.stats.events.packFull = (s.stats.events.packFull ?? 0) + 1;
@@ -2801,7 +2987,7 @@ export class Simulation {
   // ------------------------------------------------------------------ repairs
 
   canRepair(tool: WearingTool, structureId: number): RepairCheck {
-    const st = this.state.structures.find((x) => x.id === structureId);
+    const st = this.structures.find((x) => x.id === structureId);
     if (!st || !PREFABS[st.prefab].workbench) return { ok: false, reason: 'gone' };
     return canRepair(this.state, tool);
   }
@@ -2837,7 +3023,7 @@ export class Simulation {
     const r = s.repair;
     if (!r) return;
     if (!s.tools.includes(r.tool)) return this.cancelRepair('Your tool is gone.');
-    if (!s.structures.some((x) => x.id === r.structure && PREFABS[x.prefab].workbench)) return this.cancelRepair('The workbench is gone.');
+    if (!this.structures.some((x) => x.id === r.structure && PREFABS[x.prefab].workbench)) return this.cancelRepair('The workbench is gone.');
     r.elapsed += dt;
     if (r.elapsed < r.duration) return;
     s.repair = undefined;
@@ -2889,8 +3075,9 @@ export class Simulation {
   /** Whether shelter or storage `id` can be upgraded in place into its next tier right now. */
   canUpgradeStructure(id: number): UpgradeCheck {
     const fail = (reason: UpgradeCheck['reason']): UpgradeCheck => ({ ok: false, reason });
-    const st = this.state.structures.find((x) => x.id === id);
+    const st = this.structures.find((x) => x.id === id);
     if (!st) return fail('gone');
+    if (st.settlement) return fail('fixed');
     if (!tierLine(st.prefab)) return fail('fixed');
     const next = nextTier(st.prefab);
     if (!next) return fail('maxed');
@@ -2902,7 +3089,7 @@ export class Simulation {
 
   /** Why an upgrade into the next tier has no room (null when it fits), for the structure menu. */
   upgradeBlocker(id: number): PlacementReason | null {
-    const st = this.state.structures.find((x) => x.id === id);
+    const st = this.structures.find((x) => x.id === id);
     const next = st ? nextTier(st.prefab) : null;
     return st && next ? checkUpgradeRoom(this.placementEnv(), next, st.x, st.z, st.rot, st.id) : null;
   }
@@ -2915,7 +3102,7 @@ export class Simulation {
     const check = this.canUpgradeStructure(id);
     if (!check.ok) return check;
     const s = this.state;
-    const st = s.structures.find((x) => x.id === id)!;
+    const st = this.structures.find((x) => x.id === id)!;
     const from = st.prefab;
     const next = nextTier(from)!;
     removeAll(s.inventory, tierCost(next)!);
@@ -2957,7 +3144,7 @@ export class Simulation {
     s.totalHours = nextDayStart(s.totalHours);
     this.advanceCalendarAtDawn();
     const elapsed = s.totalHours - before;
-    for (const f of s.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
+    for (const f of this.structures) if (PREFABS[f.prefab].fire && f.fuel > 0) f.fuel = Math.max(0, f.fuel - elapsed);
     this.refreshLitFires();
     this.updateWear(elapsed, false, true, false);
     s.animals = s.animals.filter((a) => SPECIES[a.species].kind !== 'pest');
@@ -2983,7 +3170,7 @@ export class Simulation {
     if (id === null) return;
     this.sleepingIn = null;
     const s = this.state;
-    const st = s.structures.find((x) => x.id === id);
+    const st = this.structures.find((x) => x.id === id);
     const rest = st ? restBonus(st.prefab) : id === -1 ? { warmthBonus: 0, healthBonus: 0 } : null;
     const coldLethal = dayOf(Math.max(0, s.totalHours - elapsed)) > BALANCE.needs.coldGraceNights;
     const night = rest ? applySleep(s.needs, rest, this.sleepByFire, elapsed, coldLethal, this.sleepClimate) : null;
@@ -3111,8 +3298,8 @@ export class Simulation {
   }
 
   deleteStructure(id: number): void {
-    const st = this.state.structures.find((x) => x.id === id);
-    if (!st) return;
+    const st = this.structures.find((x) => x.id === id);
+    if (!st || st.settlement) return;
     this.removeStructure(st);
     this.refreshLitFires();
   }

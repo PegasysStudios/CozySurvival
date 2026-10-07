@@ -7,6 +7,7 @@ import type { WearingTool } from './durability';
 import type { SeasonState } from './seasons';
 import type { WeatherState } from './weather';
 import type { PnwGeneration } from './pnw';
+import type { VillagerTask } from '../data/tribes';
 
 export const STATE_VERSION = 7;
 
@@ -108,6 +109,44 @@ export interface StructureState {
   wear?: Wear;
   /** Storage bins only: shared slots anyone can put things in or take them out of. */
   store?: (Slot | null)[];
+  /** Village property: never counts as a player-built structure or an upgrade target. */
+  settlement?: string;
+}
+
+export interface VillagerState {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  heading: number;
+  task: VillagerTask;
+  phase: 'idle' | 'travel' | 'work' | 'return';
+  timer: number;
+  tx: number;
+  tz: number;
+  speed: number;
+  target?: { kind: 'resource' | 'tree' | 'animal'; ref: number };
+}
+
+export interface SettlementState {
+  tribe: string;
+  x: number;
+  z: number;
+  structures: StructureState[];
+  members: VillagerState[];
+  /** Independent AI randomness never changes the player's harvest/cooking/wildlife rolls. */
+  rng: number;
+}
+
+export interface ActiveQuest {
+  tribe: string;
+  id: string;
+  baseline: Record<string, number>;
+}
+
+export interface QuestLogState {
+  active?: ActiveQuest;
+  tribes: Record<string, { discovered: boolean; reputation: number; completed: number }>;
 }
 
 /** A tool being mended at a workbench. Its materials are paid up front and refunded if the repair is interrupted. */
@@ -234,6 +273,10 @@ export interface GameState {
   trees: TreeDyn[];
   resources: ResourceDyn[];
   structures: StructureState[];
+  /** Shared village life and property; separate from player-built camps. PNW only for now. */
+  settlements?: SettlementState[];
+  /** Personal quest progress and reputation, independent of the six activity skills. */
+  questLog?: QuestLogState;
   drops: DropState[];
   carcasses: CarcassState[];
   animals: AnimalState[];

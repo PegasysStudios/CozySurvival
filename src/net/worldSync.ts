@@ -1,9 +1,10 @@
 import { BALANCE } from '../data/balance';
+import { tribeFor } from '../data/tribes';
 import { PREFABS } from '../data/prefabs';
 import { RESOURCES, TREES } from '../data/resources';
 import { DEFAULT_BIOME, isBiomeId, type BiomeId } from '../data/biomes';
 import { createNewState, type Simulation } from '../sim/simulation';
-import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, TreeDyn } from '../sim/state';
+import type { CarcassState, DropState, GameState, ResourceDyn, StructureState, TreeDyn, SettlementState } from '../sim/state';
 import { addToStore, cloneStore, ensureStore, removeFromStore, sameStore, storeTotals } from '../sim/storage';
 import { freshTree } from '../sim/trunks';
 import { getWorldGen } from '../sim/worldgen';
@@ -368,6 +369,7 @@ function mergeTree(sim: Simulation, i: number, v: TreeDyn, p: TreeDyn, from: { x
 
 /** The world as a sparse diff from the seed's fresh world: terrain and placement regenerate from the seed. */
 export interface WorldSnapshot {
+  settlements?: SettlementState[];
   pnwGen?: PnwGeneration;
   season?: SeasonState;
   weather?: WeatherState;
@@ -396,6 +398,7 @@ export function takeSnapshot(sim: Simulation): WorldSnapshot {
   });
   return {
     seed: s.seed,
+    ...(s.settlements?.length ? { settlements: structuredClone(s.settlements) } : {}),
     ...(sim.biome === 'pnw' && s.pnwGen ? { pnwGen: s.pnwGen } : {}),
     ...(sim.biome !== DEFAULT_BIOME ? { b: sim.biome } : {}),
     h: s.totalHours,
@@ -419,6 +422,10 @@ export function stateFromSnapshot(snap: WorldSnapshot): GameState {
   for (const [i, dyn] of snap.t) if (i >= 0 && i < gen.trees.length) state.trees[i] = { ...dyn };
   for (const [i, dyn] of snap.rs) if (i >= 0 && i < gen.resources.length) state.resources[i] = { ...dyn };
   state.structures = snap.st.map(cloneStructure);
+  if (snap.settlements) {
+    const camps = snap.settlements.filter((camp) => tribeFor(camp.tribe, biome));
+    if (camps.length) state.settlements = structuredClone(camps);
+  }
   state.drops = snap.dr.map((d) => ({ ...d }));
   state.carcasses = snap.ca.map(cloneCarcass);
   state.animals = [];

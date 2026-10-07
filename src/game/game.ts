@@ -412,12 +412,13 @@ export class Game {
     if (this.sim.fishing?.phase === 'charging') this.sim.cancelFishing();
   }
 
-  private openPanel(kind: 'inventory' | 'crafting' | 'campfire' | 'structure', targetId?: number): void {
+  private openPanel(kind: 'inventory' | 'crafting' | 'campfire' | 'structure' | 'dialog' | 'tribeStation', targetId?: number, dialog?: { tribe: string; member: string }): void {
     if (this.mode !== 'playing' && this.mode !== 'panel') return;
     this.sim.cancelPlacement();
     this.dropCharge();
     if (this.dev?.open) this.dev.toggle();
-    this.panels.open(kind, { targetId });
+    if (dialog) this.panels.openDialog(dialog.tribe, dialog.member);
+    else this.panels.open(kind, { targetId });
     this.mode = 'panel';
     this.expectUnlock = true;
     this.input.exitLock();
@@ -943,6 +944,15 @@ export class Game {
         break;
       case 'openStructure':
         this.openPanel('structure', e.structure);
+        break;
+      case 'openDialog':
+        this.openPanel('dialog', undefined, e);
+        break;
+      case 'openTribeStation':
+        this.openPanel('tribeStation', e.structure);
+        break;
+      case 'questChanged':
+        this.panels.refresh();
         break;
       case 'upgraded': {
         if ('tool' in e) {

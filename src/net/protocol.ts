@@ -1,7 +1,7 @@
 import { TOOL_ORDER, type ToolId } from '../data/items';
 import type { SpeciesId } from '../data/species';
 import type { NetRequest } from '../sim/simulation';
-import type { AnimalMode, AnimalState, DamageSource } from '../sim/state';
+import type { AnimalMode, AnimalState, DamageSource, SettlementState } from '../sim/state';
 import type { Delta, WorldSnapshot } from './worldSync';
 import type { SeasonState } from '../sim/seasons';
 import type { WeatherState } from '../sim/weather';
@@ -162,6 +162,7 @@ export interface UpMsg {
 
 /** host → everyone (room), a few times a second. */
 export interface TickMsg {
+  settlements?: SettlementState[];
   season?: SeasonState;
   weather?: WeatherState;
   rev: number;

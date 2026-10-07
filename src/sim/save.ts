@@ -22,6 +22,8 @@ import { dayOf } from './time';
 import { parseSeason } from './seasons';
 import { parseWeather } from './weather';
 import { getWorldGen, WORLD_REVISION } from './worldgen';
+import { parseSettlements } from './settlements';
+import { parseQuestLog } from './quests';
 
 export const SAVE_FORMAT = 'cozysurvival-save';
 
@@ -217,6 +219,15 @@ export function deserializeState(json: string | null): GameState | null {
   if (pinned.length) state.pinned = pinned;
   else delete state.pinned;
   if (regrown) settleOnNewGround(state);
+  const camps = parseSettlements(raw.settlements, getTerrain(state.seed, biome, pnwGen), new Set([
+    ...state.structures.map((st) => st.id), ...state.drops.map((d) => d.id), ...state.carcasses.map((c) => c.id), ...state.animals.map((a) => a.id),
+  ]));
+  if (camps) state.settlements = camps;
+  else delete state.settlements;
+  const questLog = parseQuestLog(raw.questLog, state);
+  if (questLog) state.questLog = questLog;
+  else delete state.questLog;
+  if (camps) state.nextId = Math.max(state.nextId, ...camps.flatMap((c) => c.structures.map((st) => st.id + 1)));
   return state;
 }
 

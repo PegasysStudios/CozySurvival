@@ -17,6 +17,8 @@ import { COMPASS_NAMES, compassPoint, headingDegrees } from './compass';
 import { el, escapeHtml, setHtml, setText, toggle } from './dom';
 import { anyIcon, itemIcon, MISC_ICONS, NEED_ICONS, toolIcon, WEATHER_ICONS } from './icons';
 import { SeasonDisplay } from './seasons';
+import { activeQuest, questNeeds, questReady } from '../sim/quests';
+import { tribeFor, TASK_LABELS } from '../data/tribes';
 
 type NeedKey = 'health' | 'hunger' | 'thirst' | 'warmth' | 'energy';
 const NEEDS: { key: NeedKey; label: string }[] = [
@@ -79,6 +81,8 @@ export class Hud {
   private readonly objStep = el('div', 'obj-step');
   private readonly objective = el('div', 'hud-objective');
   private readonly checklist = el('div', 'hud-checklist');
+  private readonly quest = el('div', 'hud-quest');
+  private readonly questKey: { last?: string } = {};
   private readonly checkState = el('div', 'obj-step');
   private readonly checkTitle = el('div', 'obj-title');
   private readonly checkNeeds = el('div', 'obj-needs');
@@ -134,7 +138,7 @@ export class Hud {
     checkLabel.append(this.checkState);
     this.checklist.append(checkLabel, this.checkTitle, this.checkNeeds, el('div', 'obj-hint', 'Shift-click a pinned recipe in Crafting (C) to unpin it.'));
     const left = el('div', 'hud-left');
-    left.append(this.objective, this.checklist);
+    left.append(this.objective, this.checklist, this.quest);
     const topLeft = el('div', 'hud-top-left');
     topLeft.append(clock, left);
 
@@ -182,6 +186,7 @@ export class Hud {
 
   setGoalsVisible(visible: boolean): void {
     this.objective.hidden = !visible;
+    this.quest.hidden = !visible;
   }
 
   setFps(fps: number | null): void {
@@ -330,6 +335,18 @@ export class Hud {
     setText(this.objHint, text.hint);
     setHtml(this.objNeeds, o ? objectiveNeedsHtml(o.needs) : '', this.objNeedsKey);
     setText(this.objStep, o ? `${s.objective + 1}/${OBJECTIVES.length}` : '');
+
+    const q = activeQuest(s), tribeId = s.questLog?.active?.tribe;
+    toggle(this.quest, 'show', !!q);
+    if (q && tribeId) {
+      const def = tribeFor(tribeId, sim.biome)!;
+      const giver = def.members.find((m) => m.id === q.giver)!;
+      const npc = s.settlements?.find((v) => v.tribe === tribeId)?.members.find((n) => n.id === q.giver);
+      const distance = npc ? Math.round(Math.hypot(npc.x - s.player.x, npc.z - s.player.z)) : null;
+      const ready = questReady(s, q);
+      toggle(this.quest, 'ready', ready);
+      setHtml(this.quest, `<div class="obj-label">${escapeHtml(def.name)} quest<span class="obj-step">${ready ? 'Ready to deliver' : ''}</span></div><div class="obj-title">${escapeHtml(q.title)}</div><div class="obj-needs">${objectiveNeedsHtml(questNeeds(s, q))}</div><div class="obj-hint">Return to ${escapeHtml(giver.name)}${distance === null ? '' : ` · ${distance} m · ${npc ? TASK_LABELS[npc.task] : ''}`}<br>Lesson: Crafting (C) → Skills</div>`, this.questKey);
+    }
 
     const pins = pinnedRecipes(s);
     toggle(this.checklist, 'show', pins.length > 0);

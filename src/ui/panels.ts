@@ -23,8 +23,12 @@ import { forageGuide, type ForagePage } from './forage';
 import { effectSummary } from './hud';
 import { CRAFT_TAB_ICON_DIR, gearIcon, iconImg, itemIcon, MISC_ICONS, prefabIcon, toolIcon } from './icons';
 import { ingredients, nextTierInfo, packRoomNote, repairTile, restText, shelterMenu, storageMenu, workbenchMenu, type Ingredient, type RepairRow, type ShelterMenu } from './structure';
+import { questNeeds, questRequirementsText, reputationName, tribeDialog } from '../sim/quests';
+import { tribeFor } from '../data/tribes';
+import { objectiveNeedsHtml } from './hud';
+import { reputationHtml } from './tribe';
 
-export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure';
+export type PanelMode = 'none' | 'inventory' | 'crafting' | 'campfire' | 'structure' | 'dialog' | 'tribeStation';
 export type CraftTab = RecipeCategory | 'upgrades';
 export type CraftSection = 'crafting' | 'forage' | 'skills';
 
@@ -98,6 +102,8 @@ export class Panels {
   private selectedRepair: WearingTool | null = null;
   /** The campfire or structure the panel belongs to. */
   private targetId: number | null = null;
+  private dialogTarget: { tribe: string; member: string } | null = null;
+  private dialogReply: string | null = null;
 
   constructor(parent: HTMLElement, host: PanelHost) {
     this.host = host;
@@ -108,6 +114,15 @@ export class Panels {
       if (e.target === this.root) host.close();
     });
     this.root.addEventListener('contextmenu', (e) => e.preventDefault());
+    this.card.addEventListener('keydown', (e) => {
+      if (this.mode !== 'dialog' && this.mode !== 'tribeStation') return;
+      if (e.key === 'Tab') {
+        const buttons = [...this.card.querySelectorAll<HTMLElement>('button:not(:disabled), summary')];
+        const first = buttons[0], last = buttons.at(-1);
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    });
     parent.append(this.root);
   }
 
@@ -130,6 +145,8 @@ export class Panels {
     this.targetId = null;
     this.root.classList.remove('show');
     this.tip.classList.remove('show');
+    this.dialogTarget = null;
+    this.dialogReply = null;
   }
 
   refresh(): void {
@@ -141,10 +158,15 @@ export class Panels {
     this.card.innerHTML = '';
     const framed = this.mode === 'crafting' || this.mode === 'inventory';
     this.card.className = `panel panel-${this.mode}${framed ? ' panel-framed' : ''}`;
+    const conversation = this.mode === 'dialog' || this.mode === 'tribeStation';
+    if (conversation) { this.card.setAttribute('role', 'dialog'); this.card.setAttribute('aria-modal', 'true'); }
+    else { this.card.removeAttribute('role'); this.card.removeAttribute('aria-modal'); this.card.removeAttribute('aria-label'); }
     if (this.mode === 'inventory') this.renderInventory();
     else if (this.mode === 'crafting') this.renderCrafting();
     else if (this.mode === 'campfire') this.renderCampfire();
     else if (this.mode === 'structure') this.renderStructure();
+    else if (this.mode === 'dialog') this.renderDialog();
+    else if (this.mode === 'tribeStation') this.renderTribeStation();
   }
 
   private head(title: string, sub: string): HTMLElement {
@@ -543,8 +565,85 @@ export class Panels {
       const pct = Math.round(skillProgress(xp) * 100);
       return `<div class="skill" data-skill="${id}"><div class="skill-head"><b>${SKILL_INFO[id].name}</b><span>Lv ${level} / ${MAX_SKILL_LEVEL}${level >= MAX_SKILL_LEVEL ? ' · max' : ''}</span></div><div class="skill-track" role="progressbar" aria-label="${SKILL_INFO[id].name} level progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="transform:scaleX(${pct / 100})"></i></div><div class="skill-effect">${escapeHtml(skillEffect(id, xp))}</div><div class="skill-how">${escapeHtml(SKILL_INFO[id].how)}</div><div class="skill-how">${escapeHtml(skillXpText(xp))}</div><div class="skill-how">${escapeHtml(nextSkillUnlock(this.host.sim(), id))}</div></div>`;
     }).join('');
+    skills.insertAdjacentHTML('beforeend', reputationHtml(s));
     body.append(skills);
     return body;
+  }
+
+  openDialog(tribe: string, member: string): void {
+    this.dialogTarget = { tribe, member };
+    this.dialogReply = null;
+    this.open('dialog');
+    this.card.setAttribute('aria-label', `Conversation with ${tribeDialog(this.host.sim().state, tribe, member)?.member.name ?? 'a villager'}`);
+    this.card.querySelector<HTMLButtonElement>('[data-quest-action], .dialog-close')?.focus();
+  }
+
+  private renderDialog(): void {
+    if (!this.dialogTarget) return;
+    const { tribe, member } = this.dialogTarget;
+    const sim = this.host.sim(), s = sim.state;
+    const dialog = tribeDialog(s, tribe, member);
+    if (!dialog) return;
+    const rep = s.questLog?.tribes[tribe]?.reputation ?? 0;
+    const def = tribeFor(tribe, sim.biome)!;
+    this.card.append(this.head(`${escapeHtml(dialog.member.name)} <span class="dialog-tribe">${escapeHtml(def.name)}</span>`, `${escapeHtml(dialog.member.title)} · ${escapeHtml(reputationName(rep))} · Reputation ${rep}/100`));
+    const body = el('div', 'panel-body dialog-body');
+    body.append(el('p', 'dialog-greeting', escapeHtml(dialog.greeting)));
+    const text = el('p', 'dialog-speech', escapeHtml(this.dialogReply ?? dialog.text));
+    text.setAttribute('aria-live', 'polite');
+    body.append(text);
+    if (!this.dialogReply && dialog.quest) {
+      const q = dialog.quest;
+      body.append(el('div', 'dialog-quest-label', `QUEST · ${escapeHtml(q.title)}`));
+      body.append(el('div', 'obj-needs', objectiveNeedsHtml(questNeeds(s, q))));
+      body.append(el('p', 'dialog-lesson', escapeHtml(q.lesson)));
+      const requirements = questRequirementsText(q);
+      body.append(el('div', 'dialog-reward', `+${q.reputation} reputation${requirements ? ` · ${escapeHtml(requirements)}` : ''}`));
+    }
+    const actions = el('div', 'dialog-actions');
+    if (!this.dialogReply && dialog.mode === 'offer') {
+      const yes = button('Yes', 'btn primary', () => {
+        if (sim.acceptQuest(tribe, member)) { this.host.sfx('click'); this.dialogReply = 'Thank you. Take your time, and ask us for guidance whenever you need it. Your quest and its lesson are in Crafting → Skills.'; }
+        else this.host.toast('Speak with the quest giver nearby; finish your current quest first.', 'warn');
+        this.render(); this.card.querySelector<HTMLButtonElement>('.dialog-close')?.focus();
+      });
+      yes.dataset.questAction = 'accept';
+      actions.append(yes, button('No', 'btn', () => this.host.close()));
+    } else if (!this.dialogReply && dialog.mode === 'active') {
+      const deliver = button('Hand over supplies', 'btn primary', () => {
+        if (sim.turnInQuest(tribe, member)) { this.host.sfx('craft'); this.dialogReply = dialog.quest!.thanks; }
+        this.render(); this.card.querySelector<HTMLButtonElement>('.dialog-close')?.focus();
+      });
+      deliver.disabled = !dialog.ready; deliver.dataset.questAction = 'deliver';
+      actions.append(deliver, button('Not yet', 'btn dialog-close', () => this.host.close()));
+    } else actions.append(button('Goodbye', 'btn dialog-close', () => this.host.close()));
+    body.append(actions);
+    const knowledge = el('div', 'dialog-knowledge');
+    knowledge.append(el('h3', '', `Learn from ${escapeHtml(dialog.member.name)}`));
+    for (const lesson of def.lessons[dialog.member.role]) {
+      const detail = el('details', 'dialog-advice');
+      detail.append(el('summary', '', escapeHtml(lesson.title)), el('p', '', escapeHtml(lesson.text)));
+      knowledge.append(detail);
+    }
+    body.append(knowledge);
+    this.card.append(body);
+  }
+
+  private renderTribeStation(): void {
+    const sim = this.host.sim();
+    const st = sim.structures.find((v) => v.id === this.targetId);
+    if (!st?.settlement) return;
+    const def = PREFABS[st.prefab], tribe = tribeFor(st.settlement, sim.biome)!;
+    this.card.setAttribute('aria-label', `${tribe.name} ${def.name}`);
+    this.card.append(this.head(`${escapeHtml(tribe.name)} ${escapeHtml(def.name)}`, 'A home built from the land'));
+    const body = el('div', 'panel-body dialog-body');
+    const role = def.storage ? 'gatherer' : 'elder';
+    body.append(el('p', 'dialog-speech', escapeHtml(def.storage ? tribe.storageGreeting : tribe.shelterGreeting)));
+    const lesson = tribe.lessons[role][def.storage ? 0 : 1];
+    body.append(el('h3', '', lesson.title), el('p', 'dialog-lesson', escapeHtml(lesson.text)));
+    if (st.store) body.append(el('div', 'tribe-pantry', `<h3>Camp provisions</h3>${st.store.filter((v) => v).map((v) => `<span>${itemIcon(v!.item)} ${v!.count} ${escapeHtml(itemName(v!.item, v!.count))}</span>`).join('') || '<span>The bin is empty.</span>'}`));
+    body.append(button('Close', 'btn dialog-close', () => this.host.close()));
+    this.card.append(body);
   }
 
   private renderCrafting(): void {
@@ -636,7 +735,7 @@ export class Panels {
   /** A placed structure's own menu: a shelter's, a storage bin's or a workbench's. */
   private renderStructure(): void {
     const sim = this.host.sim();
-    const st = this.targetId !== null ? sim.state.structures.find((x) => x.id === this.targetId) : undefined;
+    const st = this.targetId !== null ? sim.structures.find((x) => x.id === this.targetId) : undefined;
     const def = st ? PREFABS[st.prefab] : null;
     if (def?.workbench) return this.renderWorkbench();
     if (def?.storage) return this.renderStorage();
@@ -728,7 +827,7 @@ export class Panels {
     const sim = this.host.sim();
     const id = this.targetId!;
     const m = storageMenu(sim, id);
-    const st = sim.state.structures.find((x) => x.id === id);
+    const st = sim.structures.find((x) => x.id === id);
     if (!m || !st) {
       this.card.append(this.head('Storage', 'This storage is gone.'));
       return;

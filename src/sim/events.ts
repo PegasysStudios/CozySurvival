@@ -7,6 +7,9 @@ import type { PlacementReason } from './placement';
 import type { DamageSource, SkillId } from './state';
 
 export type SimEvent =
+  | { type: 'openDialog'; tribe: string; member: string }
+  | { type: 'openTribeStation'; structure: number }
+  | { type: 'questChanged' }
   | { type: 'gathered'; item: ItemId; count: number; x: number; y: number; z: number; source: ResourceKind | 'tree' | 'drop' | 'carcass' | 'water' | 'craft' | 'bark' | 'fishing' }
   | { type: 'packFull'; item: ItemId }
   | { type: 'swing'; tool: ToolId; hit: boolean }

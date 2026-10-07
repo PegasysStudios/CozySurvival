@@ -7,6 +7,7 @@ import { PNW_GENERATION, type PnwGeneration } from './pnw';
 import { generateIsland } from './islandgen';
 import { Occupancy } from './occupancy';
 import { generateSnow, type SnowPatch } from './snow';
+import { generateSettlements, type SettlementGen } from './settlements';
 import { getTerrain, isDrinkable, PLAY_HALF, WATER_LEVEL, type Terrain } from './terrain';
 
 export interface TreeGen {
@@ -70,6 +71,8 @@ export interface WorldGen {
   rocks: RockGen[];
   logs: LogGen[];
   cacti: CactusGen[];
+  /** Independent placement leaves tree/resource indices and all other maps untouched. */
+  settlements?: SettlementGen[];
 }
 
 export const SPAWN_CLEAR_RADIUS = 12;
@@ -233,6 +236,7 @@ export function generateWorld(seed: number, pnwGen: PnwGeneration = PNW_GENERATI
   const snow = generateSnow(t, gen);
   gen.resources.push(...snow);
   gen.resourceSpots += snow.length;
+  gen.settlements = generateSettlements(t, gen);
   return gen;
 }
 

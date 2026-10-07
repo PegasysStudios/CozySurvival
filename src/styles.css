@@ -4276,3 +4276,33 @@ b {
     height: 22px;
   }
 }
+/* Oruun conversations and the personal quest journal share the existing camp UI palette. */
+.panel-dialog, .panel-tribeStation { width: min(670px, calc(100vw - 40px)); max-height: calc(100dvh - 56px); }
+.dialog-body { display: block; overflow-y: auto; }
+.dialog-tribe { color: #b6c9a5; font-size: 0.65em; margin-left: 10px; letter-spacing: 0.15em; text-transform: uppercase; }
+.dialog-greeting { color: #bdc7b3; line-height: 1.65; margin: 0 0 20px; }
+.dialog-speech { font-size: 18px; line-height: 1.65; color: #f0e6cd; padding-left: 18px; border-left: 2px solid #b7c995; margin: 0 0 22px; }
+.dialog-quest-label { color: #dec697; letter-spacing: 0.07em; font-size: 12px; margin: 16px 0 12px; }
+.dialog-lesson { color: #c4c8b7; line-height: 1.6; font-size: 13px; }
+.dialog-reward { color: #afc594; font-size: 12px; margin-top: 12px; }
+.dialog-actions { display: flex; gap: 12px; margin: 24px 0; }
+.dialog-actions .btn { min-width: 110px; }
+.dialog-knowledge { border-top: 1px solid #ffffff17; padding-top: 14px; }
+.dialog-knowledge h3, .tribe-pantry h3 { font-size: 13px; color: #ddcba9; }
+.dialog-advice { margin: 12px 0; line-height: 1.6; font-size: 13px; color: #c4c8b7; }
+.dialog-advice summary { color: #c4d6b3; cursor: pointer; padding: 5px 0; }
+.dialog-advice p { padding-left: 15px; }
+.tribe-pantry { margin: 20px 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.tribe-pantry h3 { width: 100%; }
+.tribe-pantry span { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.tribe-pantry img, .tribe-pantry svg { width: 26px; height: 26px; }
+.tribe-reputation { grid-column: 1 / -1; }
+.quest-summary { margin-top: 14px; font-size: 13px; line-height: 1.6; }
+.quest-summary h3 { color: #ddcba9; font-size: 15px; }
+.quest-summary .obj-need { display: flex; }
+.quest-summary small { color: #afc594; }
+.hud-quest { display: none; background: #15201cdb; border: 1px solid #b6c99844; border-radius: 8px; padding: 12px 14px; margin-top: 12px; }
+.hud-quest.show { display: block; }
+.hud-quest[hidden] { display: none; }
+.hud-quest.ready { border-color: #b6c9989a; }
+@media (max-height: 700px) { .hud-quest .obj-hint { display: none; } .hud-quest .obj-needs { max-height: 90px; overflow-y: auto; } }

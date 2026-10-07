@@ -81,7 +81,7 @@ export function restText(prefab: PrefabId): string {
 
 /** Everything a shelter's structure menu shows (sleep, then the next tier), kept free of DOM so it can be tested. */
 export function shelterMenu(sim: Simulation, id: number): ShelterMenu | null {
-  const st = sim.state.structures.find((x) => x.id === id);
+  const st = sim.structures.find((x) => x.id === id);
   if (!st || !PREFABS[st.prefab].shelter) return null;
   const canSleep = canSleepAt(sim.hour);
   return {
@@ -133,7 +133,7 @@ export interface StorageMenu {
 
 /** A storage bin's menu: its shared slots and the next, roomier tier. */
 export function storageMenu(sim: Simulation, id: number): StorageMenu | null {
-  const st = sim.state.structures.find((x) => x.id === id);
+  const st = sim.structures.find((x) => x.id === id);
   const def = st ? PREFABS[st.prefab] : null;
   if (!st || !def?.storage) return null;
   const line = tierLine(st.prefab) ?? [st.prefab];
@@ -176,7 +176,7 @@ export interface WorkbenchMenu {
 /** Every carried tool or weapon that wears, with what mending it costs and how long it takes. */
 export function workbenchMenu(sim: Simulation, id: number): WorkbenchMenu | null {
   const s = sim.state;
-  const st = s.structures.find((x) => x.id === id);
+  const st = sim.structures.find((x) => x.id === id);
   if (!st || !PREFABS[st.prefab].workbench) return null;
   const rows = repairableTools(s).map((tool): RepairRow => {
     const level = toolLevel(s, tool);

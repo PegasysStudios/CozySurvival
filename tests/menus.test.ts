@@ -155,7 +155,8 @@ describe('crafting menu sections', () => {
     expect(section(root, 'forage').getAttribute('aria-selected')).toBe('true');
     expect(root.querySelector('[role="tabpanel"]')!.getAttribute('aria-labelledby')).toBe(section(root, 'forage').id);
     section(root, 'skills').click();
-    expect(root.querySelectorAll('.skills-body .skill')).toHaveLength(SKILL_IDS.length);
+    expect(root.querySelectorAll('.skills-body [data-skill]')).toHaveLength(SKILL_IDS.length);
+    expect(root.querySelector('.skills-body [data-reputation="oruun"]')!.textContent).toContain('Undiscovered');
     expect(root.querySelector('.forage-body')).toBeNull();
     section(root, 'crafting').click();
     expect(root.querySelector('.tile.selected')!.getAttribute('data-key')).toBe('r:bow');

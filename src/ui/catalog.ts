@@ -137,7 +137,7 @@ export const UPGRADE_LINE_IDS = Object.keys(UPGRADE_LINES) as UpgradeLineId[];
 /** The built structure an upgrade line's tile works on: the nearest one of any tier, or null before one is built. */
 export function lineTarget(sim: Simulation, line: UpgradeLineId): StructureState | null {
   const tiers = UPGRADE_LINES[line].tiers;
-  return sim.nearestStructure((p) => tiers.includes(p), Infinity);
+  return sim.nearestStructure((p) => tiers.includes(p), Infinity, false, true);
 }
 
 /** An upgrade line's tile: the target's tier as diamonds, greyed like a tool (nothing built, or short of the next tier's cost). */

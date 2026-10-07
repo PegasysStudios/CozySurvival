@@ -1,3 +1,4 @@
+import { settlementStructures } from '../sim/settlements';
 import * as THREE from 'three';
 import { damp } from '../core/math';
 import type { ItemId } from '../data/items';
@@ -8,6 +9,7 @@ import type { AnimalState, GameState } from '../sim/state';
 import { WATER_LEVEL, type Terrain } from '../sim/terrain';
 import { buildRig, type Rig } from './creatures';
 import { arrowGeometry, dropGeometry, flameGeometry, structureGeometry } from './props';
+import { VillagerView } from './villagers';
 
 interface AnimalView {
   rig: Rig;
@@ -55,6 +57,7 @@ const FIRE_LIGHTS = 2;
 export class EntityView {
   readonly group = new THREE.Group();
   readonly fireLights: THREE.PointLight[] = [];
+  readonly villagers = new VillagerView();
   private readonly terrain: Terrain;
   private readonly frozen: boolean;
   private readonly animalMat: THREE.MeshLambertMaterial;
@@ -75,6 +78,7 @@ export class EntityView {
   private readonly seen = new Set<number>();
 
   constructor(terrain: Terrain, frozen = false) {
+    this.group.add(this.villagers.group);
     this.terrain = terrain;
     this.frozen = terrain.biome === 'pnw' && frozen;
     this.animalMat = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
@@ -103,7 +107,7 @@ export class EntityView {
   /** Add/remove views for structures, drops and carcasses (called when the world version changes). */
   sync(state: GameState): void {
     this.seen.clear();
-    for (const st of state.structures) {
+    for (const st of settlementStructures(state)) {
       this.seen.add(st.id);
       let v = this.structures.get(st.id);
       if (!v) {
@@ -197,6 +201,7 @@ export class EntityView {
   update(sim: Simulation, dt: number, time: number, camX: number, camZ: number): void {
     this.stamp++;
     const state = sim.state;
+    this.villagers.update(state, dt, time, camX, camZ);
     for (let i = 0; i < state.animals.length; i++) this.updateAnimal(state.animals[i], dt, time, camX, camZ);
     for (const [id, v] of this.animals) {
       if (v.stamp !== this.stamp) {
@@ -371,6 +376,7 @@ export class EntityView {
   }
 
   dispose(): void {
+    this.villagers.dispose();
     for (const g of this.structureGeos.values()) g.dispose();
     for (const g of this.dropGeos.values()) g.dispose();
     this.flameGeo.dispose();

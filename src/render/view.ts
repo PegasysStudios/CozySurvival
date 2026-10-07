@@ -367,7 +367,7 @@ export class GameView {
     this.effects.update(dt);
     this.water?.update(time, dn.horizon, dn.sunDir, dn.sun, ((1 - dn.night) * smoothstep(0.02, 0.2, dn.sunDir.y) + dn.night * 0.25) * (weather ? WEATHER_LOOK[weather].clear : 1), dn.night);
     this.sky?.update(dn, cam, time, weather);
-    this.weatherView?.update(weather, dt, time, cam, this.renderer.domElement.height, dn.night, sim.state.structures);
+    this.weatherView?.update(weather, dt, time, cam, this.renderer.domElement.height, dn.night, sim.structures);
 
     // viewmodel lighting mirrors the world, expressed in camera space
     const v = this.viewModel;

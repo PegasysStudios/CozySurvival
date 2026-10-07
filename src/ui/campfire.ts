@@ -34,7 +34,7 @@ export const isCampfireRecipe = (r: Recipe): boolean => r.station === 'fire';
 
 export function campfireMenu(sim: Simulation, fireId: number): CampfireMenu | null {
   const s = sim.state;
-  const fire = s.structures.find((x) => x.id === fireId);
+  const fire = sim.structures.find((x) => x.id === fireId);
   if (!fire || !PREFABS[fire.prefab].fire) return null;
   const f = BALANCE.fire;
   const full = fire.fuel >= f.maxFuelHours - 0.5;

@@ -148,6 +148,10 @@ export class HostSession extends Session {
         this.checkSleep();
       } else if (r.k === 'wake') {
         this.sleeping.delete(link.pid);
+      } else if (r.k === 'questDelivery' && peer) {
+        this.sim.receiveTribeDelivery(r.tribe, r.quest, peer);
+      } else if (r.k === 'tribeFuel' && peer) {
+        this.sim.receiveTribeFuel(r.tribe, r.fuel, peer);
       } else if (r.k === 'scorpion' && peer && Number.isInteger(r.i) && !spent.has(r.i) && Number.isFinite(r.x) && Number.isFinite(r.z) && Math.hypot(r.x - peer.x, r.z - peer.z) < SCORPION_REACH) {
         const g = this.sim.gen.resources[r.i];
         if (g?.kind !== 'stonePile') continue;
@@ -222,6 +226,7 @@ export class HostSession extends Session {
     }
     const a = sim.state.animals.filter((an) => near.some((q) => Math.abs(q.x - an.x) < ANIMAL_RANGE && Math.abs(q.z - an.z) < ANIMAL_RANGE)).map(encodeAnimal);
     const tick: TickMsg = {
+      ...(sim.state.settlements?.length ? { settlements: structuredClone(sim.state.settlements) } : {}),
       rev: this.rev,
       h: sim.state.totalHours,
       ...(sim.state.season ? { season: { id: sim.state.season.id, startDay: sim.state.season.startDay } } : {}),

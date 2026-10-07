@@ -1,3 +1,4 @@
+import { settlementStructures } from '../sim/settlements';
 import * as THREE from 'three';
 import { smoothstep } from '../core/math';
 import { Rng } from '../core/rng';
@@ -549,10 +550,10 @@ export class NatureView {
       else if (extra) extra.setHidden(local, !up);
       else inst.setHidden(local, !up);
     }
-    for (const st of state.structures) {
+    for (const st of settlementStructures(state)) {
       if (this.structuresSeen.has(st.id)) continue;
       this.structuresSeen.add(st.id);
-      const r = PREFABS[st.prefab].footprint.type === 'circle' ? (PREFABS[st.prefab].footprint as { r: number }).r : Math.hypot((PREFABS[st.prefab].footprint as { hw: number }).hw, (PREFABS[st.prefab].footprint as { hd: number }).hd);
+      const r = st.settlement && PREFABS[st.prefab].fire ? 3.5 : PREFABS[st.prefab].footprint.type === 'circle' ? (PREFABS[st.prefab].footprint as { r: number }).r : Math.hypot((PREFABS[st.prefab].footprint as { hw: number }).hw, (PREFABS[st.prefab].footprint as { hd: number }).hd);
       for (const g of this.grassPos) {
         const dx = g.x - st.x;
         const dz = g.z - st.z;
